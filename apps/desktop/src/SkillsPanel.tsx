@@ -23,12 +23,15 @@ const RESOURCE_MEDIA_TYPES:Record<string,string>={'.gif':'image/gif','.jpeg':'im
 function base64Bytes(encoded:string):number {
   return Math.max(0,Math.floor(encoded.length*3/4)-(encoded.endsWith('==')?2:encoded.endsWith('=')?1:0));
 }
-async function createSkillAsset(file:File,existing:SkillAsset[]):Promise<SkillAsset> {
+async function createSkillAsset(file:File,existing:SkillAsset[],folder:string):Promise<SkillAsset> {
   if(file.size>64*1024)throw new Error('Each linked resource must be 64 KiB or smaller.');
   if(existing.length>=32)throw new Error('A procedure can contain at most 32 linked resources.');
   if(existing.reduce((total,asset)=>total+base64Bytes(asset.content_base64),0)+file.size>1024*1024)throw new Error('Linked resources cannot exceed 1 MiB combined.');
   const rawName=file.name.split(/[\\/]/).filter(Boolean).at(-1)?.replace(/[^a-zA-Z0-9._-]/g,'_').replace(/^\.+/,'')||'resource';
-  const path=`resources/${rawName}`;
+  const normalizedFolder=folder.trim();
+  const folderParts=normalizedFolder?normalizedFolder.split('/'):[];
+  if(normalizedFolder&&(normalizedFolder.startsWith('/')||normalizedFolder.includes('\\')||folderParts.some(part=>!part||part==='.'||part==='..')))throw new Error('Use a relative POSIX resource folder without empty, dot or parent segments.');
+  const path=[...folderParts,rawName].join('/');
   if(existing.some(asset=>asset.path===path))throw new Error(`A resource already uses ${path}. Remove it before adding a replacement.`);
   const dot=rawName.lastIndexOf('.');
   const extension=dot>=0?rawName.slice(dot).toLowerCase():'';
@@ -69,6 +72,7 @@ export function SkillsPanel({client,onTrial,refreshKey,objective,executionDistri
   const [content,setContent]=useState('');
   const [assets,setAssets]=useState<SkillAsset[]>([]);
   const [assetsChanged,setAssetsChanged]=useState(false);
+  const [resourceFolder,setResourceFolder]=useState('resources');
   const [tools,setTools]=useState('');
   const [read,setRead]=useState(false),[write,setWrite]=useState(false);
   const [evidence,setEvidence]=useState<components['schemas']['SkillEvidence']>();
@@ -88,7 +92,7 @@ export function SkillsPanel({client,onTrial,refreshKey,objective,executionDistri
   useEffect(()=>{let active=true;void client.skills().then(rows=>{if(!Array.isArray(rows))throw new Error('Procedure library unavailable.');if(active)setItems(rows);}).catch(failure=>{if(active)setError(String(failure));});return()=>{active=false;};},[client,refreshKey]);
   useEffect(()=>setSuggestions(undefined),[objective]);
   useEffect(()=>setDependencyReadiness(undefined),[executionDistribution]);
-  function reset(){setLifecycle([]);setLifecycleReason('');setEvidence(undefined);setDependencyReadiness(undefined);setDependencyLocks([]);setHasNodeScripts(false);setTrials([]);setSelected(undefined);setVersion(1);setName('');setDescription('');setCategory('');setContent('');setAssets([]);setAssetsChanged(false);setTools('');setRead(false);setWrite(false);setError('');}
+  function reset(){setLifecycle([]);setLifecycleReason('');setEvidence(undefined);setDependencyReadiness(undefined);setDependencyLocks([]);setHasNodeScripts(false);setTrials([]);setSelected(undefined);setVersion(1);setName('');setDescription('');setCategory('');setContent('');setAssets([]);setAssetsChanged(false);setResourceFolder('resources');setTools('');setRead(false);setWrite(false);setError('');}
   async function inspect(item:Summary,revision=item.latest_version){
     setBusy(true);setError('');
     try{const [data,actions,locks]=await Promise.all([client.skillVersion(item.id,revision),client.skillLifecycle(item.id),client.skillPythonDependencyLocks(item.id,revision)]);if(!Array.isArray(actions))throw new Error('Procedure lifecycle unavailable.');if(!Array.isArray(locks.locks))throw new Error('Python dependency lock list unavailable.');setLifecycle(actions);setEvidence(data.evaluation_evidence);setAssets(data.assets??[]);setAssetsChanged(false);setDependencyReadiness(undefined);setDependencyLocks(locks.locks);setHasNodeScripts(data.assets?.some(asset=>['.js','.mjs','.cjs'].some(extension=>asset.path.toLowerCase().endsWith(extension)))??false);setTrials([]);setTrialOne('');setTrialTwo('');setConfirmed(false);setSelected(item);setVersion(revision);setName(item.name);setDescription(data.description??'');setCategory(data.category??'');setContent(data.content);setTools(data.required_tools.map(tool=>`${tool.name}@${tool.version}`).join('\n'));setRead(data.required_permissions.includes('workspace.read'));setWrite(data.required_permissions.includes('workspace.write'));}
@@ -113,7 +117,7 @@ export function SkillsPanel({client,onTrial,refreshKey,objective,executionDistri
       await refresh();await inspect(saved);
     }catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
-  async function addResource(file:File){setError('');try{const asset=await createSkillAsset(file,assets);setAssets(current=>[...current,asset].sort((left,right)=>left.path.localeCompare(right.path)));setAssetsChanged(true);}catch(failure){setError(String(failure));}}
+  async function addResource(file:File){setError('');try{const asset=await createSkillAsset(file,assets,resourceFolder);setAssets(current=>[...current,asset].sort((left,right)=>left.path.localeCompare(right.path)));setAssetsChanged(true);}catch(failure){setError(String(failure));}}
   function removeResource(path:string){setAssets(current=>current.filter(asset=>asset.path!==path));setAssetsChanged(true);}
   async function loadTrials(){if(!selected)return;setBusy(true);setError('');try{const rows=await client.skillTrials(selected.id,version);if(!Array.isArray(rows))throw new Error('Trial list unavailable.');setTrials(rows);}catch(failure){setError(String(failure));}finally{setBusy(false);}}
   async function checkPythonDependencies(){if(!selected||!executionDistribution)return;setBusy(true);setError('');setDependencyReadiness(undefined);try{setDependencyReadiness(await client.skillPythonReadiness(selected.id,version,executionDistribution));}catch(failure){setError(String(failure));}finally{setBusy(false);}}
@@ -167,7 +171,7 @@ export function SkillsPanel({client,onTrial,refreshKey,objective,executionDistri
       <header><div><p className="eyebrow">{selected?`VERSION ${version}`:'NEW PROCEDURE'}</p><h3>Linked resources</h3></div><span>{assets.length} {assets.length===1?'file':'files'}</span></header>
       <p>Resources are untrusted reference material. Text is displayed literally and never executed here.</p>
       {assets.length===0?<p className="procedure-resource-empty">No linked resources yet.</p>:<ul>{assets.map(asset=>{const dataUrl=`data:${asset.media_type};base64,${asset.content_base64}`;return <li key={asset.path}><div className="procedure-resource-heading"><div><strong>{asset.path}</strong><small>{asset.media_type} · SHA-256 <code>{asset.sha256}</code></small></div><div className="procedure-resource-actions"><a href={dataUrl} download={asset.path.split('/').at(-1)}>Download</a>{(!selected||version===selected.latest_version)&&<button type="button" disabled={busy} aria-label={`Remove ${asset.path}`} onClick={()=>removeResource(asset.path)}>Remove</button>}</div></div>{isPreviewableImage(asset)?<img className="procedure-resource-image" src={dataUrl} alt={`Preview of ${asset.path}`}/>:asset.media_type==='application/pdf'?<p className="procedure-resource-note">PDF preview is not embedded. Download the file to inspect it.</p>:isTextResource(asset)?<details><summary>View text resource</summary><pre>{assetText(asset)}</pre></details>:<p className="procedure-resource-note">This file type is available to download.</p>}</li>})}</ul>}
-      <label className="procedure-resource-upload">Add a resource<input aria-label="Add linked resource" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,application/pdf,application/json,application/javascript,application/yaml,application/toml,text/*" disabled={busy||!!selected&&version!==selected.latest_version} onChange={event=>{const file=event.currentTarget.files?.[0];event.currentTarget.value='';if(file)void addResource(file);}}/></label>
+      <label className="procedure-resource-upload">Resource folder<input aria-label="Resource folder" value={resourceFolder} maxLength={512} placeholder="references or references/images" disabled={busy||!!selected&&version!==selected.latest_version} onChange={event=>setResourceFolder(event.target.value)}/><span>Add a resource<input aria-label="Add linked resource" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,application/pdf,application/json,application/javascript,application/yaml,application/toml,text/*" disabled={busy||!!selected&&version!==selected.latest_version} onChange={event=>{const file=event.currentTarget.files?.[0];event.currentTarget.value='';if(file)void addResource(file);}}/></span></label>
       <p className="procedure-resource-note">File changes are staged here. Save the procedure to create a new version with these resources.</p>
     </section>
     {selected&&evidence&&<section aria-label="Procedure evaluation"><h3>Version evaluation</h3>
