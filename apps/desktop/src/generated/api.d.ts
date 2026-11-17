@@ -4763,6 +4763,8 @@ export interface components {
             candidate: string | null;
             /** Evidence */
             evidence: components["schemas"]["TaskEvidence"][];
+            /** Expected Outputs */
+            expected_outputs?: string[];
             /**
              * Status
              * @enum {string}

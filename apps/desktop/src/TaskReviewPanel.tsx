@@ -18,6 +18,7 @@ export function TaskReviewPanel({client,runId,taskId,onReviewed}:{client:EngineC
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
   const hasChanges=!!candidate?.workspace_changes?.length;
+  const expectedOutputs=candidate?.expected_outputs??[];
   const unresolved=preview?.changes.some(change=>change.conflict&&!choices[change.path]);
   const validationMissing=!!candidate?.validation_required&&!validation.length;
   async function inspectOutput(id:string) {
@@ -46,6 +47,7 @@ export function TaskReviewPanel({client,runId,taskId,onReviewed}:{client:EngineC
   return <div className="task-review">
     {!candidate ? <button onClick={load} disabled={busy}>Review candidate</button> : <>
       <h4>Candidate result</h4><pre>{candidate.candidate ?? 'No candidate text recorded.'}</pre>
+      {expectedOutputs.length>0&&<fieldset><legend>Expected outputs</legend><ul>{expectedOutputs.map((item,index)=><li key={index}>{item}</li>)}</ul></fieldset>}
       {hasChanges&&<section aria-label="Private specialist changes"><h4>Proposed changes in the private copy</h4><p>The project has not received these changes. Review the complete differences, then check the current project before integration.</p>
         {candidate.workspace_changes?.map(change=><div key={change.path}><p>{change.path}{change.proposed_sha256===null?' — proposed deletion':''}</p><pre>{change.diff}{change.diff_truncated?'\n[Diff excerpt limited]':''}</pre></div>)}
         <button disabled={busy} onClick={inspectIntegration}>Check current project for integration</button>

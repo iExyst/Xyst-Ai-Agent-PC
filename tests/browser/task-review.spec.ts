@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 
 test('inspect evidence and explicitly accept a specialist candidate',async({page})=>{
   const run={id:'review-run',objective:'Inspect evidence',state:'verifying',acceptance_criteria:[],revision:3,model:'fixture/model'};
-  const task={id:'review-run:inspect',local_id:'inspect',objective:'Inspect evidence',acceptance_criteria:['Reports actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'verifying'};
+  const task={id:'review-run:inspect',local_id:'inspect',objective:'Inspect evidence',acceptance_criteria:['Reports actual file evidence'],input_artifacts:[],expected_outputs:['Concise findings'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'verifying'};
   let reviewed=false;
   let dispatched=false;
   const graph=()=>({tasks:[{...task,status:reviewed?'completed':'verifying'},{...task,id:'review-run:review',local_id:'review',objective:'Inspect prerequisite evidence independently',dependencies:['inspect'],assigned_role:'reviewer',status:dispatched?'verifying':'queued'}],ready:reviewed&&!dispatched?['review']:[],blocked:[]});
@@ -15,7 +15,7 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-    if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'inspect',status:'verifying',candidate:'Found <script>window.reviewExecuted=true</script>',acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'evidence-1',path:'evidence.txt',sha256:'a'.repeat(64),excerpt:'Actual file evidence',excerpt_truncated:false}]},headers});
+    if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'inspect',status:'verifying',candidate:'Found <script>window.reviewExecuted=true</script>',expected_outputs:task.expected_outputs,acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'evidence-1',path:'evidence.txt',sha256:'a'.repeat(64),excerpt:'Actual file evidence',excerpt_truncated:false}]},headers});
     if(path.endsWith('/review')){
       expect(request.postDataJSON()).toEqual({decision:'accept',rationale:'Compared the actual file with the criterion.',confirmed_criteria:[0],evidence_call_ids:['evidence-1'],changes_confirmed:false});
       reviewed=true;
@@ -40,6 +40,8 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
   await page.getByRole('button',{name:'Review candidate',exact:true}).click();
+  await expect(page.getByRole('group',{name:'Expected outputs'})).toContainText('Concise findings');
+  await expect(page.getByText('Candidate result',{exact:true})).toBeVisible();
   const accept=page.getByRole('button',{name:'Accept task result',exact:true});
   await expect(accept).toBeDisabled();
   await expect(page.getByText('Actual file evidence',{exact:true})).toBeVisible();
@@ -155,7 +157,7 @@ for(const choice of ['current','proposed'] as const){
       if(path==='/providers/lm-studio/credential')return route.fulfill({json:{configured:false},headers});
       if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
       if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-      if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'edit',status:'verifying',candidate:'The private candidate proposes a changed file.',acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'read-1',path:'shared.py',sha256:baseHash,excerpt:'Observed original source',excerpt_truncated:false}],workspace_changes:[{path:'shared.py',original_sha256:baseHash,proposed_sha256:proposedHash,diff:'-return "original"\n+return "proposed"',diff_truncated:false}]},headers});
+      if(path.endsWith('/candidate'))return route.fulfill({json:{task_id:'edit',status:'verifying',candidate:'The private candidate proposes a changed file.',expected_outputs:task.expected_outputs,acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'read-1',path:'shared.py',sha256:baseHash,excerpt:'Observed original source',excerpt_truncated:false}],workspace_changes:[{path:'shared.py',original_sha256:baseHash,proposed_sha256:proposedHash,diff:'-return "original"\n+return "proposed"',diff_truncated:false}]},headers});
       if(path.endsWith('/integration-preview')){
         previewRequested=true;
         return route.fulfill({json:{task_id:'edit',changes:[{path:'shared.py',base_sha256:baseHash,current_sha256:currentHash,proposed_sha256:proposedHash,conflict:true,diff:'-return "original"\n+return "proposed"',diff_truncated:false,current_excerpt:'return "current project"',current_excerpt_truncated:false}]},headers});

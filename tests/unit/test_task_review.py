@@ -38,6 +38,7 @@ def setup_candidate(root, *, authorize_plan=False):
             TaskDefinition(
                 id="inspect",
                 objective="Inspect file",
+                expected_outputs=["A concise evidence report"],
                 acceptance_criteria=["Reports actual evidence"],
             ),
             TaskDefinition(id="review", objective="Review", dependencies=["inspect"]),
@@ -171,6 +172,7 @@ def test_review_requires_explicit_criteria_and_unchanged_actual_evidence(workspa
         assert client.get(base + "/candidate").status_code == 401
         candidate = client.get(base + "/candidate", headers=headers).json()
         assert candidate["candidate"] == "The file says actual evidence."
+        assert candidate["expected_outputs"] == ["A concise evidence report"]
         assert candidate["evidence"][0]["excerpt"] == "actual evidence"
         decision = {
             "decision": "accept",

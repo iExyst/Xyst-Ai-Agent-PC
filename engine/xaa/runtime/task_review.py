@@ -71,6 +71,7 @@ def candidate_evidence(
         "task_id": task_id,
         "status": task["status"],
         "candidate": result.get("candidate"),
+        "expected_outputs": task["expected_outputs"],
         "acceptance_criteria": task["acceptance_criteria"],
         "evidence": evidence if include_all_file_evidence else evidence[-16:],
         "workspace_changes": TaskWorkspaces(store).changes(

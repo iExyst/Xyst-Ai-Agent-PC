@@ -368,6 +368,7 @@ class TaskCandidate(BaseModel):
     task_id: str
     status: TaskStatus
     candidate: str | None
+    expected_outputs: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str]
     evidence: list[TaskEvidence]
     validation_required: bool = False

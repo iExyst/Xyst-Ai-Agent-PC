@@ -6762,6 +6762,13 @@
             "title": "Evidence",
             "type": "array"
           },
+          "expected_outputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Expected Outputs",
+            "type": "array"
+          },
           "status": {
             "enum": [
               "queued",
