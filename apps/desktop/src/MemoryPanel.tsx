@@ -77,8 +77,8 @@ export function MemoryPanel({ client }: { client: EngineClient }) {
           <p className="eyebrow">YOUR PERSONAL CONTEXT</p>
           <h2>Memory, with you in control</h2>
           <p>
-            Save preferences and sourced notes to guide future runs. X.A.A. treats saved text as
-            unverified information; it never grants tool access or permissions.
+            Explicit preferences and user-added knowledge can inform future runs. X.A.A. treats
+            saved text as unverified information; it never grants tool access or permissions.
           </p>
         </div>
         <div className="memory-counts" aria-label="Matching memory by type">
