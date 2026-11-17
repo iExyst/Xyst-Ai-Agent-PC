@@ -2,7 +2,7 @@
 
 ## Show loading feedback while reviewing specialist results (2026-11-17)
 
-The specialist review screen now labels the in-flight candidate request, disables the action during loading, and announces progress through an accessible status region. The browser regression delays the fixture response and checks both indicators before the candidate appears. `npm run build:desktop` and the task-review/workspace browser flows pass locally (9 tests). No model inference was used. This is a focused desktop workflow improvement; it does not close a phase gate.
+The specialist review screen now labels the in-flight candidate request, disables the action during loading, and announces progress through an accessible status region. The browser regression delays the fixture response and checks both indicators before the candidate appears. `npm run build:desktop` and the task-review/workspace browser flows pass locally (9 tests). Exact-source workflow [44197455691](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44197455691) passed on `76470014`. Exact-commit Windows installer acceptance is running in [44197868809](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44197868809), including frozen dynamic delegation and the installed lifecycle. No model inference was used. This is a focused desktop workflow improvement; it does not close a phase gate.
 
 ## Verify specialist conflict choices in the packaged desktop (2026-11-17)
 
