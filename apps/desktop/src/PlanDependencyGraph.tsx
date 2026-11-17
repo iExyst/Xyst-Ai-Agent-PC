@@ -7,7 +7,7 @@ type NodePosition = { x: number; y: number; stage: number };
 
 const NODE_WIDTH = 220;
 const COLUMN_GAP = 54;
-const NODE_HEIGHT = 78;
+const NODE_HEIGHT = 116;
 const ROW_GAP = 22;
 const TOP = 48;
 
@@ -83,10 +83,12 @@ export function PlanDependencyGraph({ plan, stages }: { plan: Plan; stages: Stag
             className={`plan-dependency-node is-${status.toLowerCase()}`}
             href={`#plan-task-${encodeURIComponent(task.local_id)}`}
             aria-label={`Open task ${task.local_id}, stage ${position.stage + 1}, ${status}`}
+            title={task.objective}
             style={{ left: position.x, top: position.y, width: NODE_WIDTH }}
           >
             <strong>{task.local_id}</strong>
-            <span>{task.assigned_role}</span>
+            <span className="plan-dependency-objective">{task.objective}</span>
+            <span className="plan-dependency-meta">{task.assigned_role} · {task.expected_outputs.length} {task.expected_outputs.length===1?'expected output':'expected outputs'}</span>
             <small>{status}</small>
           </a>;
         })}

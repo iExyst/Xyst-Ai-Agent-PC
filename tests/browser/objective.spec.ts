@@ -213,6 +213,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(dependencyMap).toContainText('3 tasks · 2 stages');
   await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toBeVisible();
   await expect(dependencyMap.getByRole('link',{name:'Open task inventory, stage 1, Ready'})).toBeVisible();
+  await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toContainText('Inspect <script>window.planExecuted=true</script>');
+  await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toContainText('1 expected output');
+  await dependencyMap.screenshot({path:'test-results/plan-dependency-map.png'});
   await expect(dependencyMap.locator('.plan-dependency-edges > path')).toHaveCount(1);
   const graphReview=dependencyMap.getByRole('link',{name:'Open task review, stage 2, Waiting'});
   await graphReview.click();

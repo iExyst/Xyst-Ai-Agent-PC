@@ -1,5 +1,9 @@
 # Progress
 
+## Show task purpose and deliverables in the plan graph (2026-11-17)
+
+Dependency-map nodes now include a two-line task objective and the count of expected deliverables, so the graph explains each assignment without requiring a jump to the detailed task card. The map sizes its rows and connector paths for the richer nodes; full task text remains available in the destination card and tooltip. Desktop production build and the objective browser acceptance pass locally, including objective escaping and the output-count label. Exact-commit hosted verification is pending; no model inference was used.
+
 ## Verify the bounded specialist plan in the Windows package (2026-11-17)
 
 Exact-source Windows workflow [44048352340](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44048352340) passed on rerun for commit `aabbb877`: 1,441 Python tests passed, 20 were skipped, and the desktop/browser, static, type, contract, and recovery checks passed. Exact-revision installer workflow [44051919980](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44051919980) passed 51 package steps; three cache steps were skipped. The 0.1.1 unsigned installer is 78,241,706 bytes with SHA-256 `2d71ae01ed80056c4ba0f5baa4f2ca74b8cc66bda0ea2d05e55eeace5b756b74`; manifest-bound desktop and engine SHA-256 values are `11ca643bc949fb23a08174b87bf960538c20b9d310742525f95f83ef325ac6a2` and `f900bae61401b0fa3dd623687b6d62bb073195d0cb289de2119e19fdda2ed511`. Installed binary hashes match the manifest. The package and native/recovery reports are retained in [`.acceptance/hosted-installer-44051919980/`](../.acceptance/hosted-installer-44051919980/). Native onboarding used a deterministic local fixture; no live model inference occurred.

@@ -19,11 +19,13 @@
 .plan-dependency-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
 .plan-dependency-edges path:not(:first-child),.plan-dependency-edges>path { fill: none; stroke: #527c68; stroke-width: 2; opacity: .9; }
 .plan-dependency-edges marker path { fill: #82c69b; stroke: none; }
-.plan-dependency-node { position: absolute; z-index: 1; display: grid; align-content: center; gap: 2px; min-height: 78px; box-sizing: border-box; padding: 9px 12px; overflow: hidden; border: 1px solid #385448; border-radius: 10px; background: linear-gradient(145deg,#192722,#141d1d); color: #e4eee8; text-decoration: none; box-shadow: 0 5px 16px #0004,inset 0 1px #ffffff08; transition: border-color .15s,transform .15s,box-shadow .15s; }
+.plan-dependency-node { position: absolute; z-index: 1; display: grid; align-content: center; gap: 3px; min-height: 116px; box-sizing: border-box; padding: 10px 12px; overflow: hidden; border: 1px solid #385448; border-radius: 10px; background: linear-gradient(145deg,#192722,#141d1d); color: #e4eee8; text-decoration: none; box-shadow: 0 5px 16px #0004,inset 0 1px #ffffff08; transition: border-color .15s,transform .15s,box-shadow .15s; }
 .plan-dependency-node:hover { transform: translateY(-2px); border-color: #6aa886; color: #f3fff7; box-shadow: 0 8px 20px #0005,inset 0 1px #ffffff10; }
 .plan-dependency-node:focus-visible { z-index: 2; outline: 3px solid #9cbaff; outline-offset: 3px; }
 .plan-dependency-node strong { overflow: hidden; color: #e6f4eb; font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
 .plan-dependency-node span { overflow: hidden; color: #a7b8b0; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.plan-dependency-node .plan-dependency-objective { display: -webkit-box; color: #d1ded7; line-height: 1.3; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.plan-dependency-node .plan-dependency-meta { color: #90a49a; font-size: .66rem; }
 .plan-dependency-node small { width: fit-content; margin-top: 2px; padding: 2px 7px; border: 1px solid #395349; border-radius: 999px; color: #add6bd; background: #1a2b23; font-size: .65rem; line-height: 1.25; }
 .plan-dependency-node.is-ready,.plan-dependency-node.is-complete { border-color: #4c8061; }
 .plan-dependency-node.is-running { border-color: #5b8c9b; }
