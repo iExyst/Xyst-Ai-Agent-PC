@@ -33,6 +33,7 @@ class RunRecord(BaseModel):
     state: RunState
     created_at: datetime
     updated_at: datetime
+    started_at: datetime | None = None
     revision: int = Field(ge=0)
     limits: RunLimits
     file_checks: list[FileContentCheck]

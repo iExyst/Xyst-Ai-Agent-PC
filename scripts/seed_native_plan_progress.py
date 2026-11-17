@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime, timedelta
 
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
@@ -22,6 +23,9 @@ def main() -> None:
     if owner is None:
         raise SystemExit("could not acquire fixture run lease")
     try:
+        with store.connection() as connection:
+            queued_at = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+            connection.execute("UPDATE runs SET created_at=? WHERE id=?", (queued_at, run_id))
         store.transition(run_id, RunState.PLANNING, reason="native_fixture_seed", owner=owner)
         TaskStore(store).save_plan(
             run_id,

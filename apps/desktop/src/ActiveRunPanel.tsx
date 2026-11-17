@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import type {Run,RunEvent} from './api/client.ts';
 import type {EngineClient} from './api/client.ts';
+import {runElapsedSeconds} from './run-time.ts';
 import {MCPReconciliationPanel} from './MCPReconciliationPanel.tsx';
 import {WorkspaceWriteReconciliationPanel} from './WorkspaceWriteReconciliationPanel.tsx';
 
@@ -41,9 +42,7 @@ export function ActiveRunPanel({run,answer,partial,activity,busy,client,onContro
     return()=>window.clearInterval(timer);
   },[isTerminal,run.id]);
   useEffect(()=>{if(run.state==='blocked')setWorkspaceRecoveryRunId(run.id);},[run.id,run.state]);
-  const elapsedStart=Date.parse(run.created_at);
-  const elapsedEnd=isTerminal?Date.parse(run.updated_at):clockNow;
-  const elapsedSeconds=Number.isFinite(elapsedStart)&&Number.isFinite(elapsedEnd)?Math.max(0,Math.floor((elapsedEnd-elapsedStart)/1000)):null;
+  const elapsedSeconds=runElapsedSeconds(run,clockNow);
   const elapsedLabel=elapsedSeconds===null?'Unavailable':elapsedSeconds>=3600?`${Math.floor(elapsedSeconds/3600)}h ${Math.floor(elapsedSeconds%3600/60)}m ${elapsedSeconds%60}s`:elapsedSeconds>=60?`${Math.floor(elapsedSeconds/60)}m ${elapsedSeconds%60}s`:`${elapsedSeconds}s`;
   const currentActivity=activity[activity.length-1]?.description??'Waiting for the next saved update.';
   const showWorkspaceRecovery=run.state==='blocked'||workspaceRecoveryRunId===run.id;

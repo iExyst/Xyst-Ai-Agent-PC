@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { EngineClient, type Run } from './api/client.ts';
 import type { components } from './generated/api.js';
+import {runRemainingSeconds} from './run-time.ts';
 
 type Usage = components['schemas']['UsageReport'];
 export function RunResources({client, run, refresh}: {client: EngineClient; run: Run; refresh: number}) {
@@ -25,14 +26,7 @@ export function RunResources({client, run, refresh}: {client: EngineClient; run:
     const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [isTerminal, run.id]);
-  const runEnd = isTerminal ? Date.parse(run.updated_at) : clockNow;
-  const runStart = Date.parse(run.created_at);
-  const elapsedSeconds = Number.isFinite(runStart) && Number.isFinite(runEnd)
-    ? Math.max(0, Math.floor((runEnd - runStart) / 1000))
-    : null;
-  const remainingSeconds = elapsedSeconds === null || !run.limits
-    ? null
-    : Math.max(0, run.limits.max_seconds - elapsedSeconds);
+  const remainingSeconds = runRemainingSeconds(run,clockNow);
   const timeRemainingLabel = remainingSeconds === null
     ? 'Unavailable'
     : remainingSeconds >= 3600

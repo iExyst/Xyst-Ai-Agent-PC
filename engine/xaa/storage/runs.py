@@ -1721,6 +1721,13 @@ class RunStore:
             return None
         record: dict[str, Any] = dict(row)
         with self._connection() as connection:
+            started = connection.execute(
+                "SELECT created_at FROM run_events WHERE run_id=? AND event_type='run.state_changed' "
+                "AND json_extract(payload,'$.to')='planning' ORDER BY sequence LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        record["started_at"] = started["created_at"] if started is not None else None
+        with self._connection() as connection:
             grants = connection.execute(
                 "SELECT payload FROM run_events WHERE run_id=? AND event_type='execution.granted'",
                 (run_id,),

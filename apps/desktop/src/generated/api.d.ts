@@ -4133,6 +4133,8 @@ export interface components {
             procedure_trial?: components["schemas"]["SkillTrialRecord"] | null;
             /** Revision */
             revision: number;
+            /** Started At */
+            started_at?: string | null;
             state: components["schemas"]["RunState"];
             /**
              * Updated At

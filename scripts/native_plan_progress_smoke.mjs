@@ -43,9 +43,17 @@ try{
   await page.getByRole('link',{name:/Saved runs/}).click();
   await page.getByRole('button',{name:`Open ${objective}`,exact:true}).click();
   await page.getByRole('heading',{name:'Active run verifying'}).waitFor({timeout:15000});
+  const savedRunResponse=await fetch(`${connection.base_url}/runs/${run.id}`,{headers:{Authorization:`Bearer ${connection.token}`}});
+  if(!savedRunResponse.ok)throw new Error('Could not read the saved native run timestamps.');
+  const savedRun=await savedRunResponse.json();
+  if(Date.parse(savedRun.started_at)-Date.parse(savedRun.created_at)<4*60*1000)throw new Error('The native run start time did not exclude its simulated queue delay.');
+  const elapsedText=await page.getByLabel('Elapsed wall time').textContent();
+  const elapsedMatch=elapsedText?.match(/^(\d+)s$/);
+  if(!elapsedMatch||Number(elapsedMatch[1])>=60)throw new Error('The native elapsed display did not start at planning.');
   const resources=page.getByRole('region',{name:'Run resources'});
   await expect(resources).toContainText('8 iterations · 120 seconds');
   await expect(resources).toContainText('Inference iterations remaining: 7 of 8');
+  await expect(resources).toContainText(/Wall-clock allowance remaining: 1m \d+s/);
   const usageResponse=await fetch(`${connection.base_url}/runs/${run.id}/usage`,{headers:{Authorization:`Bearer ${connection.token}`}});
   if(!usageResponse.ok||(await usageResponse.json()).inference_attempts!==1)throw new Error('Native resource API did not report the saved inference attempt.');
   const plan=page.getByRole('region',{name:'Task plan'});
@@ -62,7 +70,7 @@ try{
   await expect(stageTwo.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
   await expect(stageTwo).toContainText('1 waiting');
   await page.screenshot({path:path.join(root,'plan-progress.png'),fullPage:true});
-  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',singular_task_budget_label_verified:true,dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
+  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',run_wall_clock_begins_at_planning:true,queue_delay_excluded_seconds:300,elapsed_and_remaining_wall_time_verified:true,singular_task_budget_label_verified:true,dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   passed=true;
   await page.evaluate(async()=>{
