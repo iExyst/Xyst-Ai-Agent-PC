@@ -1,5 +1,9 @@
 # Progress
 
+## Verify the current-source Windows installer (2026-11-17)
+
+Exact-source Windows workflow [44044731644](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44044731644) passed all 60 source checks for commit `9bd48eac`. Exact-revision installer workflow [44044839024](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44044839024) then passed 51 package checks, with three cache-related steps skipped. Coverage included the installed AppContainer command, native desktop onboarding and recovery, frozen workspace write/edit/delete recovery, standard-user install, upgrade from 0.1.0, boot, explicit data-removal choice, and uninstall. The unsigned 0.1.1 installer is 78,238,136 bytes with SHA-256 `e90c855bbb33c67956a80cf81eba361e1205d77985e58a0464710e8c42d3302b`; its manifest-bound desktop and engine hashes are `020f16e7e3de52cf7e0271b6d7894332c8fcb8f8089b53912c7bfc9b4bec34c3` and `ce7db61a2ccb8fb43d479858ddbf3ca30b9dca8dd92d5a38414d1c060a6dfb83`. Package, manifest, and CI reports are preserved in [`.acceptance/hosted-installer-44044839024/`](../.acceptance/hosted-installer-44044839024/). Onboarding and package checks used deterministic fixtures; no live model inference occurred. This verifies the current Windows package lifecycle while real LM Studio inference and the broader parity/release gates remain open.
+
 ## Defer run-resource details until a run is loaded (2026-11-17)
 
 The run-resource panel now loads only after the application has a run, reducing the initial desktop JavaScript bundle from 320.97 KB (95.17 KB gzip) to 317.39 KB (93.97 KB gzip). The objective browser regression verifies it is absent at startup and loads for an active run; objective browser checks, production build, native Windows development build, and the model-free native Tauri smoke all pass ([report](../.acceptance/native-plan-progress-f3d95877-d3d5-42d1-a436-be4c1fa6b5c7/report.json)).
