@@ -86,6 +86,12 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await page.getByLabel('Local model or compatible provider model').selectOption('fixture/model');
   await expect.poll(()=>selectedModel).toBe('fixture/model');
   await expect(page.getByRole('status').filter({hasText:'Installed model files: 2.5 GB. Model is installed and not loaded.'})).toBeVisible();
+  const localCapabilities=page.getByRole('region',{name:'Capabilities for fixture/model'});
+  await expect(localCapabilities).toContainText('Vision input');
+  await expect(localCapabilities).toContainText('Not reported');
+  await expect(localCapabilities).toContainText('Tool-use training');
+  await expect(localCapabilities).toContainText('Reported');
+  await expect(localCapabilities).toContainText('Tool use still requires the harmless diagnostic below before workspace tools are enabled.');
   await page.getByRole('button',{name:'Run harmless tool-use diagnostic'}).click();
   await expect(page.getByText('The selected model completed a validated harmless tool round trip.')).toBeVisible();
   await page.getByLabel('Provider server address').fill('https://api.example.test');
@@ -93,6 +99,10 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await expect(page.getByRole('option',{name:'openai-compatible::remote-model',exact:true})).toHaveCount(1);
   await page.getByLabel('Local model or compatible provider model').selectOption('openai-compatible::remote-model');
   await expect.poll(()=>compatibleSelectedModel).toBe('openai-compatible::remote-model');
+  const compatibleCapabilities=page.getByRole('region',{name:'Capabilities for openai-compatible::remote-model'});
+  await expect(compatibleCapabilities).toContainText('Vision input');
+  await expect(compatibleCapabilities).toContainText('Tool-use training');
+  await expect(compatibleCapabilities).toContainText('Not reported');
   await page.getByLabel('Optional provider API token').fill('compatible-test-token');
   await page.getByRole('button',{name:'Save provider token securely'}).click();
   await expect(page.getByLabel('Optional provider API token')).toHaveValue('');

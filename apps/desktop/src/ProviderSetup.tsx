@@ -172,7 +172,17 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
       <option value="">Choose a discovered model</option>
       {models.map(id=><option key={id} value={id}>{id}</option>)}
     </select>
-    {selectedDetails&&<p role="status">{selectedDetails.size_bytes!==null&&selectedDetails.size_bytes!==undefined?`Installed model files: ${(selectedDetails.size_bytes/1_000_000_000).toFixed(1)} GB. `:''}{selectedDetails.loaded===null||selectedDetails.loaded===undefined?'Load status unavailable from this LM Studio server.':selectedDetails.loaded?'Model is loaded.':'Model is installed and not loaded.'}</p>}
+    {selectedDetails&&<>
+      <p role="status">{selectedDetails.size_bytes!==null&&selectedDetails.size_bytes!==undefined?`Installed model files: ${(selectedDetails.size_bytes/1_000_000_000).toFixed(1)} GB. `:''}{selectedDetails.loaded===null||selectedDetails.loaded===undefined?'Load status unavailable from this LM Studio server.':selectedDetails.loaded?'Model is loaded.':'Model is installed and not loaded.'}</p>
+      <section className="provider-capabilities" aria-label={`Capabilities for ${model}`}>
+        <h3>Model capabilities</h3>
+        <ul>
+          <li><span>Vision input</span><strong>{selectedDetails.capabilities?.vision?'Reported':'Not reported'}</strong></li>
+          <li><span>Tool-use training</span><strong>{selectedDetails.capabilities?.trained_for_tool_use?'Reported':'Not reported'}</strong></li>
+        </ul>
+        <p>“Not reported” means this provider supplied no positive capability flag. It does not prove the feature is unsupported. Tool use still requires the harmless diagnostic below before workspace tools are enabled.</p>
+      </section>
+    </>}
     <button type="button" disabled={busy||!model} onClick={()=>void runDiagnostic()}>Run harmless tool-use diagnostic</button>
     {diagnostic==='passed'&&<p role="status">The selected model completed a validated harmless tool round trip.</p>}
     {diagnostic==='failed'&&<p role="alert">Tool use remains unverified for this model. Try a different model or review the error.</p>}

@@ -1257,3 +1257,9 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 .automation-schedule-card>button{margin:4px 6px 4px 0}
 @media(max-width:520px){.automation-schedule-card{padding:13px}.automation-schedule-card>header{align-items:center}}
 @media(prefers-reduced-motion:reduce){.automation-schedule-card{transition:none}}
+.provider-capabilities{display:grid;gap:8px;margin:12px 0 16px;padding:13px;border:1px solid #2c4037;border-radius:10px;background:linear-gradient(145deg,#131e19,#111819)}
+.provider-capabilities h3{margin:0;color:#d6e9dc;font-size:13px}
+.provider-capabilities ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.provider-capabilities li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #293a33;border-radius:8px;background:#111918;color:#acbbb4;font-size:12px}
+.provider-capabilities li strong{color:#bde6c9;font-size:11px}
+.provider-capabilities p{margin:0;color:#91a19a;font-size:11px;line-height:1.5}
