@@ -1,6 +1,7 @@
 import { EngineClient, type Plan } from './api/client.ts';
 import { TaskReviewPanel } from './TaskReviewPanel.tsx';
 import { TaskRecoveryPanel } from './TaskRecoveryPanel.tsx';
+import { PlanDependencyGraph } from './PlanDependencyGraph.tsx';
 import './plan.css';
 
 function dependencyStages(tasks:Plan['tasks']):{stages:Array<[number,Plan['tasks']]>;valid:boolean}{
@@ -42,6 +43,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         <p>{plan.tasks.length} {plan.tasks.length===1?'task':'tasks'} in this plan.</p>
       </section>
       {plan.ready.length>0&&<button disabled={!canDispatch} onClick={onDispatch}>Run ready specialists</button>}
+      {stageLayout.valid&&<PlanDependencyGraph plan={plan} stages={stageLayout.stages}/>}
       <div className="plan-stages">{stageLayout.stages.map(([depth,tasks])=>{
         const stageCompleted=tasks.filter(task=>task.status==='completed').length;
         const stageWorking=tasks.filter(task=>task.status==='running').length;

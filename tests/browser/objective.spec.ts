@@ -198,6 +198,16 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('0 awaiting review');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','3');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('value','0');
+  const dependencyMap=plan.getByRole('region',{name:'Task dependency map'});
+  await expect(dependencyMap.getByRole('heading',{name:'Dependency map'})).toBeVisible();
+  await expect(dependencyMap).toContainText('3 tasks · 2 stages');
+  await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toBeVisible();
+  await expect(dependencyMap.getByRole('link',{name:'Open task inventory, stage 1, Ready'})).toBeVisible();
+  await expect(dependencyMap.locator('.plan-dependency-edges > path')).toHaveCount(1);
+  const graphReview=dependencyMap.getByRole('link',{name:'Open task review, stage 2, Waiting'});
+  await graphReview.click();
+  await expect(page).toHaveURL(/#plan-task-review$/);
+  await expect(plan.getByRole('article',{name:'Task review'})).toBeFocused();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inspect'})).toBeVisible();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inventory'})).toBeVisible();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('2 independent tasks');

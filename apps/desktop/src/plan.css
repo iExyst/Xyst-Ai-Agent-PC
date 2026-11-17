@@ -7,6 +7,29 @@
 .plan-progress-counts li { display: inline-flex; align-items: baseline; gap: 5px; padding: 5px 9px; color: #c1cddd; background: #192536; border: 1px solid #2c3d53; border-radius: 999px; font-size: .82rem; }
 .plan-progress-counts li strong { color: #eef5fb; font-variant-numeric: tabular-nums; }
 .plan-stages { display: grid; gap: 20px; }
+.plan-dependency-map { display: grid; gap: 10px; margin: 20px 0; padding: 16px; min-width: 0; border: 1px solid #293d39; border-radius: 12px; background: linear-gradient(145deg,#131e1d,#11191e); }
+.plan-dependency-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.plan-dependency-heading h3 { margin: 0; color: #d8ebe0; font-size: .98rem; }
+.plan-dependency-heading p { margin: 4px 0 0; color: #9eafb0; font-size: .82rem; }
+.plan-dependency-heading>span { color: #a8c4b5; font-size: .76rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plan-dependency-viewport { max-width: 100%; overflow: auto; border: 1px solid #263936; border-radius: 10px; background: radial-gradient(ellipse at 50% 0%,#17231f,#10171b 75%); scrollbar-color: #42574d #151e20; }
+.plan-dependency-viewport:focus-visible { outline: 3px solid #9cbaff; outline-offset: 3px; }
+.plan-dependency-canvas { position: relative; min-width: 100%; }
+.plan-dependency-stage-title { position: absolute; top: 12px; margin: 0; color: #90aa9a; font-size: .7rem; font-weight: 750; letter-spacing: .11em; text-align: center; text-transform: uppercase; }
+.plan-dependency-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.plan-dependency-edges path:not(:first-child),.plan-dependency-edges>path { fill: none; stroke: #527c68; stroke-width: 2; opacity: .9; }
+.plan-dependency-edges marker path { fill: #82c69b; stroke: none; }
+.plan-dependency-node { position: absolute; z-index: 1; display: grid; align-content: center; gap: 2px; min-height: 78px; box-sizing: border-box; padding: 9px 12px; overflow: hidden; border: 1px solid #385448; border-radius: 10px; background: linear-gradient(145deg,#192722,#141d1d); color: #e4eee8; text-decoration: none; box-shadow: 0 5px 16px #0004,inset 0 1px #ffffff08; transition: border-color .15s,transform .15s,box-shadow .15s; }
+.plan-dependency-node:hover { transform: translateY(-2px); border-color: #6aa886; color: #f3fff7; box-shadow: 0 8px 20px #0005,inset 0 1px #ffffff10; }
+.plan-dependency-node:focus-visible { z-index: 2; outline: 3px solid #9cbaff; outline-offset: 3px; }
+.plan-dependency-node strong { overflow: hidden; color: #e6f4eb; font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
+.plan-dependency-node span { overflow: hidden; color: #a7b8b0; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.plan-dependency-node small { width: fit-content; margin-top: 2px; padding: 2px 7px; border: 1px solid #395349; border-radius: 999px; color: #add6bd; background: #1a2b23; font-size: .65rem; line-height: 1.25; }
+.plan-dependency-node.is-ready,.plan-dependency-node.is-complete { border-color: #4c8061; }
+.plan-dependency-node.is-running { border-color: #5b8c9b; }
+.plan-dependency-node.is-review { border-color: #7a6b47; }
+.plan-dependency-node.is-blocked,.plan-dependency-node.is-failed { border-color: #8b594f; }
+.plan-dependency-node.is-cancelled { border-color: #555b60; }
 .plan-stage { display: grid; gap: 10px; min-width: 0; padding-left: 14px; border-left: 2px solid #416151; }
 .plan-stage-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .plan-stage-heading h3 { margin: 0; color: #d5e7dd; font-size: .95rem; }
@@ -33,3 +56,4 @@
 .task-review fieldset { border: 1px solid #697b94; margin-top: 16px; min-width: 0; }
 @media (max-width: 480px) { .plan-tasks dl { grid-template-columns: 1fr; gap: 4px; } .plan-tasks dd { margin-bottom: 12px; } }
 @media (max-width: 480px) { .plan-progress { padding: 14px; } }
+@media (max-width: 480px) { .plan-dependency-map { margin: 16px 0; padding: 12px; } .plan-dependency-heading { align-items: flex-start; } }
