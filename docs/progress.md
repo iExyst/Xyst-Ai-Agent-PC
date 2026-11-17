@@ -1,5 +1,9 @@
 # Progress
 
+## Load integration panels when opened (2026-11-17)
+
+Specialist profiles, channels, web search, MCP, and Agent Plugin panels now remain unloaded until their disclosure is opened, then retain their state for the session. The specialist browser check verifies that entering Integrations loads none of these modules, opening profiles loads only that panel, and the existing profile, channel, and MCP workflows pass (3 browser tests). Production typecheck/build, native Windows development build, and `git diff --check` pass. The preceding deferred-module change passed exact-source Windows workflow [44038684154](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44038684154). No live model inference was used.
+
 ## Defer search settings and microphone code until use (2026-11-17)
 
 Web-search settings now load with the Integrations page, and microphone controls load the first time advanced run options open. The initial desktop JavaScript bundle fell from 325.46 KB (96.81 KB gzip) to 320.09 KB (95.05 KB gzip). Production and native development builds pass; objective and voice browser checks pass (3), including a request check that microphone code is absent at startup and loads on demand. Exact-source Windows CI is queued in run [44038684154](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44038684154). No live model inference was used.

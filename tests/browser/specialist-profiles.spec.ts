@@ -15,7 +15,11 @@ test('configure persistent specialist model routes from discovered local models'
   const identitySaves: {role:string;display_name:string}[] = [];
   const roleMemories: Record<string,{id:string;content:string}[]> = Object.fromEntries(roles.map(role => [role, []]));
   const errors: string[] = [];
+  const integrationModuleRequests: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => {
+    if (/SpecialistProfilesPanel|ChannelsPanel|SearchProviderPanel|MCPPanel|AgentPluginsPanel/.test(request.url())) integrationModuleRequests.push(request.url());
+  });
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -75,7 +79,10 @@ test('configure persistent specialist model routes from discovered local models'
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await navigateMainSection(page,'Tools & integrations');
+  expect(integrationModuleRequests).toEqual([]);
   await page.locator('summary').filter({hasText:'Specialist identities and model routes'}).click();
+  await expect.poll(() => integrationModuleRequests.some(url => url.includes('SpecialistProfilesPanel'))).toBe(true);
+  expect(integrationModuleRequests.some(url => url.includes('ChannelsPanel'))).toBe(false);
   const panel = page.getByRole('region',{name:'Specialist profiles'});
   const researcher = panel.getByLabel('Researcher model');
   await expect(researcher).toHaveValue('');
