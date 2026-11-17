@@ -80,6 +80,10 @@ test('configure persistent specialist model routes from discovered local models'
   await page.getByRole('button',{name:'Connect',exact:true}).click();
   await navigateMainSection(page,'Tools & integrations');
   expect(integrationModuleRequests).toEqual([]);
+  await page.locator('summary').filter({hasText:'Web search integration'}).click();
+  await expect.poll(() => integrationModuleRequests.some(url => url.includes('SearchProviderPanel'))).toBe(true);
+  await expect(page.getByRole('heading',{name:'Brave Search'})).toBeVisible();
+  expect(integrationModuleRequests.some(url => url.includes('MCPPanel'))).toBe(false);
   await page.locator('summary').filter({hasText:'Specialist identities and model routes'}).click();
   await expect.poll(() => integrationModuleRequests.some(url => url.includes('SpecialistProfilesPanel'))).toBe(true);
   expect(integrationModuleRequests.some(url => url.includes('ChannelsPanel'))).toBe(false);
