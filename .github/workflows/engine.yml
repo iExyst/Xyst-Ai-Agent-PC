@@ -574,6 +574,18 @@ jobs:
         env:
           XAA_FROZEN_API_EXECUTABLE: build/native-release/xaa-engine.exe
         timeout-minutes: 3
+      - name: Verify dynamic specialist delegation through frozen API
+        run: uv run python scripts/frozen_dynamic_delegation_diagnostic.py
+        env:
+          XAA_FROZEN_API_EXECUTABLE: build/native-release/xaa-engine.exe
+        timeout-minutes: 5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frozen-dynamic-delegation-${{ github.run_id }}
+          path: .acceptance/frozen-dynamic-delegation-*/
+          if-no-files-found: warn
+          include-hidden-files: true
       - name: Verify owner-reviewed workspace write recovery through the frozen worker
         run: uv run python scripts/write_crash_diagnostic.py
         env:

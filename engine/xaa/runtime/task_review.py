@@ -47,10 +47,13 @@ def candidate_evidence(
         payload = event["payload"]
         if event["event_type"] != "task.tool.result" or payload.get("task_id") != task_id:
             continue
+        journal_id = payload.get("journal_id")
+        if not isinstance(journal_id, str):
+            continue
         with store.connection() as connection:
             journal = connection.execute(
                 "SELECT tool_name, result FROM tool_calls WHERE provider_call_id=? AND run_id=? AND state='completed'",
-                (payload["journal_id"], run_id),
+                (journal_id, run_id),
             ).fetchone()
         if journal is None or journal["tool_name"] != "workspace.read_file":
             continue
@@ -58,7 +61,7 @@ def candidate_evidence(
         if result != payload["result"] or result.get("truncated") or not result.get("sha256"):
             continue
         item = {
-            "call_id": payload["journal_id"],
+            "call_id": journal_id,
             "path": result["path"],
             "sha256": result["sha256"],
         }

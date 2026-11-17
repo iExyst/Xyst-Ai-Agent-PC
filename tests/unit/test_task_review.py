@@ -11,7 +11,7 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.executor import WorkspaceExecutor
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
-from xaa.runtime.task_review import TaskReviewDecision, review_candidate
+from xaa.runtime.task_review import TaskReviewDecision, candidate_evidence, review_candidate
 from xaa.runtime.tool_worker import FilesystemWorkerError, FilesystemWorkerTimeout
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
@@ -79,6 +79,25 @@ def setup_candidate(root, *, authorize_plan=False, nested_plan=False):
         )
     store.release_lease(run_id, parent)
     return store, run_id, target
+
+
+def test_candidate_evidence_ignores_internal_task_results_without_file_journal(workspace_tmp_path):
+    store, run_id, _ = setup_candidate(workspace_tmp_path)
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.tool.result",
+            {
+                "task_id": "inspect",
+                "call_id": "internal-delegation",
+                "result": {"status": "delegated", "subtask_ids": ["source-check"]},
+            },
+        )
+
+    candidate = candidate_evidence(store, run_id, "inspect")
+
+    assert [item["call_id"] for item in candidate["evidence"]] == ["source"]
 
 
 @pytest.mark.parametrize("error", [FilesystemWorkerError, FilesystemWorkerTimeout])
