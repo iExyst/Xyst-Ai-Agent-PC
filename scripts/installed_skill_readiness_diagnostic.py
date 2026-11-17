@@ -23,6 +23,10 @@ description: Verify dependency status in the packaged runtime.
 dependencies:
   python: [\"packaging>=26.3,<27\", \"packaging==0.0\", \"requests>=2.0\"]
   python3: [\"xaa-readiness-missing-fixture-20261113==99.0\"]
+  pip-tools: [\"packaging>=26.3,<27\"]
+  pipenv: [\"packaging==0.0\"]
+  pdm: [\"xaa-readiness-missing-fixture-20261113==99.0\"]
+  poetry: [\"packaging>=26.3,<27\"]
   npm: [\"left-pad@>=1.0\", \"https://example.test/private-token\"]
 ---
 # Readiness check
@@ -103,6 +107,21 @@ def main() -> None:
         skills = payload["packages"][0].get("skills", [])
         if len(skills) != 1:
             raise RuntimeError(f"Expected one discovered fixture skill; got {skills!r}.")
+        requirements = skills[0].get("declared_requirements", {})
+        managers = requirements.get("dependency_managers", [])
+        supported_managers = {"pip-tools", "pipenv", "pdm", "poetry"}
+        if not supported_managers.issubset(set(managers)):
+            raise RuntimeError(
+                f"Installed engine did not recognize all Python managers: {managers!r}."
+            )
+        manager_specs = requirements.get("python_dependency_specs", [])
+        for spec in (
+            "packaging>=26.3,<27",
+            "packaging==0.0",
+            "xaa-readiness-missing-fixture-20261113==99.0",
+        ):
+            if spec not in manager_specs:
+                raise RuntimeError(f"Installed engine omitted a manager declaration {spec!r}.")
         readiness = skills[0].get("requirement_readiness", {})
         expected = {
             "available_python_dependency_specs": "packaging>=26.3,<27",
@@ -112,6 +131,20 @@ def main() -> None:
         for field, spec in expected.items():
             if spec not in readiness.get(field, []):
                 raise RuntimeError(f"Expected {spec!r} in {field}: {readiness!r}.")
+        if "packaging>=26.3,<27" not in readiness.get("available_python_dependency_specs", []):
+            raise RuntimeError(
+                f"pip-tools/poetry requirement was not checked in the frozen engine: {readiness!r}."
+            )
+        if "packaging==0.0" not in readiness.get("incompatible_python_dependency_specs", []):
+            raise RuntimeError(
+                f"pipenv requirement was not checked in the frozen engine: {readiness!r}."
+            )
+        if "xaa-readiness-missing-fixture-20261113==99.0" not in readiness.get(
+            "missing_python_dependency_specs", []
+        ):
+            raise RuntimeError(
+                f"pdm requirement was not checked in the frozen engine: {readiness!r}."
+            )
         if readiness.get("dependencies_unresolved") is not True:
             raise RuntimeError(
                 f"Declared missing dependencies were not marked unresolved: {readiness!r}."
@@ -179,6 +212,8 @@ def main() -> None:
             "engine_path": str(engine),
             "engine_sha256": hashlib.sha256(engine.read_bytes()).hexdigest(),
             "endpoint": "/extensions/packages/discover",
+            "supported_python_managers": sorted(supported_managers),
+            "manager_requirement_specs": manager_specs,
             "available_python_dependency_specs": readiness["available_python_dependency_specs"],
             "missing_python_dependency_specs": readiness["missing_python_dependency_specs"],
             "incompatible_python_dependency_specs": readiness[
