@@ -83,6 +83,31 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
   ].join(' · ');
 }
 
+function RequirementSummaryCard({
+  label,
+  detail,
+  value,
+}: {
+  label: string;
+  detail: string;
+  value: string;
+}) {
+  const rows = value.split(' · ').map((entry) => {
+    const separator = entry.indexOf(':');
+    return separator < 0
+      ? { label: '', value: entry }
+      : { label: entry.slice(0, separator), value: entry.slice(separator + 1).trim() };
+  });
+  return <section className="plugin-requirement-card" aria-label={label}>
+    <header><h5>{label}</h5><span>Read only</span></header>
+    <p>{detail}</p>
+    <dl>{rows.map((row, index) => <div key={`${row.label}:${index}`}>
+      {row.label && <dt>{row.label}</dt>}
+      <dd>{row.value}</dd>
+    </div>)}</dl>
+  </section>;
+}
+
 export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImported:()=>void}) {
   const [root,setRoot]=useState('');
   const [managedRoot,setManagedRoot]=useState('');
@@ -184,7 +209,7 @@ export function AgentPluginsPanel({client,onImported}:{client:EngineClient;onImp
       {result.packages.map(item=><article key={item.path}>
         <h3>{item.name}{item.version?` · ${item.version}`:''}</h3>{managedRoot&&result.root===managedRoot&&<button disabled={busy} onClick={()=>void removePackage(item.name)}>Remove {item.name}</button>}{item.description&&<p>{item.description}</p>}
         <p>Package: <code>{item.path}</code></p>
-        <h4>Skills ({item.skills.length})</h4><ul>{item.skills.map(skill=><li key={skill.path}><strong>{skill.name}</strong>: {skill.description} <code>{skill.path}</code><p>Package-declared tools: {skill.allowed_tools?.join(', ')||'none'}</p><p>Untrusted package requirements (not X.A.A. permissions): {declaredRequirementsSummary(skill.declared_requirements)}</p><p>Current-machine declaration check only (does not establish execution readiness or grant permission): {requirementReadinessSummary(skill.requirement_readiness)}</p><button disabled={busy} onClick={()=>void importSkill(item.name,skill.name)}>Import as candidate</button></li>)}</ul>
+        <h4>Skills ({item.skills.length})</h4><ul>{item.skills.map(skill=><li key={skill.path} className="plugin-skill-card"><div className="plugin-skill-heading"><div><strong>{skill.name}</strong><p>{skill.description}</p></div><code>{skill.path}</code></div><p className="plugin-skill-tools">Package-declared tools: {skill.allowed_tools?.join(', ')||'none'}</p><div className="plugin-requirement-grid"><RequirementSummaryCard label="Declared requirements" detail="Package metadata only. These declarations do not grant X.A.A. permissions." value={declaredRequirementsSummary(skill.declared_requirements)}/><RequirementSummaryCard label="Current-machine readiness" detail="A local metadata check only. Command versions and credential validity are not verified." value={requirementReadinessSummary(skill.requirement_readiness)}/></div><div className="plugin-skill-actions"><button disabled={busy} onClick={()=>void importSkill(item.name,skill.name)}>Import as candidate</button></div></li>)}</ul>
         <h4>MCP servers ({item.servers.length})</h4><ul>{item.servers.map(server=><li key={server.name}>{server.name}: {server.transport==='stdio'?`stdio · ${server.command_name} · ${server.argument_count} arguments · environment names: ${server.environment_names.join(', ')||'none'}`:`${server.transport} · ${server.endpoint} · environment names: ${server.environment_names.join(', ')||'none'}`} <button disabled={busy} onClick={()=>void importMCPServer(item.name,server.name)}>Add disconnected server</button></li>)}</ul>
       </article>)}
       {result.diagnostics.length>0&&<><h3>Package diagnostics</h3><ul>{result.diagnostics.map((diagnostic,index)=><li key={`${diagnostic.path}:${index}`}><code>{diagnostic.path}</code>: {diagnostic.message}</li>)}</ul></>}
