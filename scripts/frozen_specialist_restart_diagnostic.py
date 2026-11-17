@@ -27,6 +27,7 @@ from frozen_api_restart_diagnostic import (
 from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE, CredentialStore
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
+from xaa.runtime.workspace_search import SearchOutput
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
 
@@ -39,6 +40,8 @@ class SpecialistFixtureLMStudio(ThreadingHTTPServer):
         super().__init__(("127.0.0.1", 0), SpecialistFixtureHandler)
         self.nonce = nonce
         self.lock = threading.Lock()
+        self.search_proposals = 0
+        self.search_result_requests = 0
         self.read_proposals = 0
         self.read_result_requests = 0
         self.result_request_blocked = threading.Event()
@@ -82,6 +85,15 @@ class SpecialistFixtureHandler(BaseHTTPRequestHandler):
                 tool_names.add(name)
         fixture = cast(SpecialistFixtureLMStudio, self.server)
         last_tool_id = messages[-1].get("tool_call_id") if messages else None
+        last_tool_name = next(
+            (
+                call.get("function", {}).get("name")
+                for item in reversed(messages)
+                for call in item.get("tool_calls", [])
+                if call.get("id") == last_tool_id
+            ),
+            None,
+        )
         echo_result = bool(
             isinstance(last_tool_id, str)
             and any(
@@ -133,7 +145,43 @@ class SpecialistFixtureHandler(BaseHTTPRequestHandler):
                     ],
                 }
                 finish_reason = "tool_calls"
-        elif messages and messages[-1].get("role") == "tool":
+        elif (
+            messages and messages[-1].get("role") == "tool" and last_tool_name == "workspace_search"
+        ):
+            search_result = SearchOutput.model_validate_json(str(messages[-1].get("content", "{}")))
+            if len(search_result.matches) != 1:
+                self._json({"error": "search did not find the expected fixture file"}, 409)
+                return
+            match_path = search_result.matches[0].path
+            if match_path != "fixture.txt":
+                self._json({"error": "search did not find the expected fixture file"}, 409)
+                return
+            with fixture.lock:
+                fixture.search_result_requests += 1
+                fixture.read_proposals += 1
+                read_number = fixture.read_proposals
+            if read_number != 1:
+                self._json({"error": "the specialist repeated its file read proposal"}, 409)
+                return
+            message = {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "frozen-specialist-read-once",
+                        "type": "function",
+                        "function": {
+                            "name": "workspace_read_file",
+                            "arguments": json.dumps({"path": match_path}),
+                        },
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        elif (
+            messages
+            and messages[-1].get("role") == "tool"
+            and last_tool_name == "workspace_read_file"
+        ):
             serialized = json.dumps(
                 [item for item in messages if item.get("role") == "tool"], ensure_ascii=False
             )
@@ -163,22 +211,22 @@ class SpecialistFixtureHandler(BaseHTTPRequestHandler):
                 "content": f"Recovered candidate using the saved file read: {fixture.nonce}",
             }
             finish_reason = "stop"
-        elif "workspace_read_file" in tool_names:
+        elif "workspace_search" in tool_names:
             with fixture.lock:
-                fixture.read_proposals += 1
-                call_number = fixture.read_proposals
+                fixture.search_proposals += 1
+                call_number = fixture.search_proposals
             if call_number != 1:
-                self._json({"error": "the specialist repeated its completed file read"}, 409)
+                self._json({"error": "the specialist repeated its workspace search"}, 409)
                 return
             message: dict[str, Any] = {
                 "role": "assistant",
                 "tool_calls": [
                     {
-                        "id": "frozen-specialist-read-once",
+                        "id": "frozen-specialist-search-once",
                         "type": "function",
                         "function": {
-                            "name": "workspace_read_file",
-                            "arguments": '{"path":"fixture.txt"}',
+                            "name": "workspace_search",
+                            "arguments": '{"query":"fixture.txt","target":"filename"}',
                         },
                     }
                 ],
@@ -223,8 +271,8 @@ def seed_run(database: Path, workspace: Path) -> str:
         [
             TaskDefinition(
                 id="reader",
-                objective="Read fixture.txt and return its exact contents.",
-                acceptance_criteria=("Return the exact file contents.",),
+                objective="Search the workspace, read fixture.txt, and return its exact contents.",
+                acceptance_criteria=("Search for and return the exact file contents.",),
                 role="researcher",
                 max_iterations=4,
                 max_seconds=90,
@@ -237,7 +285,9 @@ def seed_run(database: Path, workspace: Path) -> str:
     return run_id
 
 
-def wait_for_task_result(store: RunStore, run_id: str, deadline: float) -> list[dict[str, Any]]:
+def wait_for_task_result(
+    store: RunStore, run_id: str, nonce: str, deadline: float
+) -> list[dict[str, Any]]:
     while time.monotonic() < deadline:
         events = store.list_events(run_id)
         results = [
@@ -245,6 +295,7 @@ def wait_for_task_result(store: RunStore, run_id: str, deadline: float) -> list[
             for event in events
             if event["event_type"] == "task.tool.result"
             and event["payload"].get("task_id") == "reader"
+            and nonce in json.dumps(event["payload"])
         ]
         if results:
             return results
@@ -301,7 +352,7 @@ def main() -> None:
         dispatch = client.post(f"/runs/{run_id}/plan/dispatch", timeout=5)
         dispatch.raise_for_status()
         store = RunStore(database)
-        read_results = wait_for_task_result(store, run_id, time.monotonic() + 45)
+        read_results = wait_for_task_result(store, run_id, nonce, time.monotonic() + 45)
         if not fixture.result_request_blocked.wait(timeout=20):
             raise TimeoutError("The specialist did not reach the saved-result inference boundary.")
         if len(read_results) != 1 or nonce not in json.dumps(read_results[0]["payload"]):
@@ -364,11 +415,24 @@ def main() -> None:
             raise TimeoutError("The frozen specialist did not recover to a reviewable candidate.")
 
         events = store.list_events(run_id)
-        read_results = [
+        task_results = [
             event
             for event in events
             if event["event_type"] == "task.tool.result"
             and event["payload"].get("task_id") == "reader"
+        ]
+        search_results = [
+            event
+            for event in task_results
+            if isinstance(event["payload"].get("result"), dict)
+            and isinstance(event["payload"]["result"].get("matches"), list)
+        ]
+        read_results = [
+            event
+            for event in task_results
+            if isinstance(event["payload"].get("result"), dict)
+            and event["payload"]["result"].get("path") == "fixture.txt"
+            and isinstance(event["payload"]["result"].get("text"), str)
         ]
         final_candidate = candidate.get("candidate")
         fixture_unchanged = hashlib.sha256(fixture_path.read_bytes()).hexdigest() == fixture_hash
@@ -376,6 +440,7 @@ def main() -> None:
             {
                 "passed": (
                     len(read_results) == 1
+                    and len(search_results) == 1
                     and isinstance(final_candidate, str)
                     and nonce in final_candidate
                     and fixture_unchanged
@@ -388,10 +453,18 @@ def main() -> None:
                 "first_api_exit_code": first.returncode,
                 "restarted_api_pid": second.pid,
                 "saved_specialist_read_results": len(read_results),
+                "saved_specialist_search_results": len(search_results),
+                "search_match_path": (
+                    search_results[0]["payload"]["result"]["matches"][0].get("path")
+                    if search_results and search_results[0]["payload"]["result"].get("matches")
+                    else None
+                ),
                 "fixture_nonce_in_candidate": isinstance(final_candidate, str)
                 and nonce in final_candidate,
                 "fixture_unchanged": fixture_unchanged,
                 "provider_read_proposals": fixture.read_proposals,
+                "provider_search_proposals": fixture.search_proposals,
+                "specialist_search_result_followups": fixture.search_result_requests,
                 "specialist_result_followups": fixture.read_result_requests,
                 "recovered_run_state": run_state,
                 "lease_expiry_accelerated": True,
