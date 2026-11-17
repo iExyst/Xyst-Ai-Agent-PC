@@ -1190,7 +1190,8 @@ def test_plugin_skill_import_qualifies_same_package_by_discovery_root(tmp_path: 
     second_root = tmp_path / "second-root"
     make_package(first_root)
     make_package(second_root)
-    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "roots.sqlite3"))
+    database_path = tmp_path / "roots.sqlite3"
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(database_path))
     headers = {"Authorization": f"Bearer {TOKEN}"}
     with TestClient(app) as client:
         first = client.post(
@@ -1211,11 +1212,29 @@ def test_plugin_skill_import_qualifies_same_package_by_discovery_root(tmp_path: 
                 "skill_name": "summarize",
             },
         )
+        first_id = first.json()["id"]
+        second_id = second.json()["id"]
 
     assert first.status_code == second.status_code == 201
     assert first.json()["name"] != second.json()["name"]
     assert first.json()["name"].endswith("::summarize")
     assert second.json()["name"].endswith("::summarize")
+
+    restarted_app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(database_path))
+    with TestClient(restarted_app) as client:
+        saved_skills = client.get("/skills", headers=headers).json()
+        first_version = client.get(f"/skills/{first_id}/versions/1", headers=headers)
+        second_version = client.get(f"/skills/{second_id}/versions/1", headers=headers)
+
+    saved_names = {item["name"] for item in saved_skills}
+    assert first.json()["name"] in saved_names
+    assert second.json()["name"] in saved_names
+    assert first_version.json()["evaluation_evidence"]["source"]["root_scope_sha256"] == (
+        api_module._plugin_root_scope_sha256(str(first_root))
+    )
+    assert second_version.json()["evaluation_evidence"]["source"]["root_scope_sha256"] == (
+        api_module._plugin_root_scope_sha256(str(second_root))
+    )
 
 
 def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
