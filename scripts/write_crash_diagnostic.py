@@ -255,7 +255,7 @@ def recover(root: Path, run_id: str) -> None:
                     internal=True,
                     # The frozen worker starts a second packaged engine process;
                     # allow for cold extraction/startup on hosted Windows runners.
-                    timeout=30,
+                    timeout=90,
                 )
             )
         store.transition(
@@ -409,7 +409,8 @@ def main() -> None:
         check=False,
         capture_output=True,
         text=True,
-        timeout=45,
+        # The subprocess also waits for a packaged worker to cold-extract and start.
+        timeout=105,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     if recovery_process.returncode != 0:
