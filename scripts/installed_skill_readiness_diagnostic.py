@@ -20,6 +20,19 @@ import httpx
 SKILL_TEXT = """---
 name: readiness-check
 description: Verify dependency status in the packaged runtime.
+required_environment_variables:
+  - name: XAA_READINESS_PRESENT_FIXTURE_20261117
+    prompt: private readiness prompt
+  - name: XAA_READINESS_MISSING_FIXTURE_20261117
+    prompt: private missing prompt
+  - name: XAA_READINESS_OPTIONAL_FIXTURE_20261117
+    optional: true
+setup:
+  collect_secrets:
+    - env_var: XAA_READINESS_SETUP_FIXTURE_20261117
+      prompt: private setup prompt
+prerequisites:
+  env_vars: [XAA_READINESS_LEGACY_FIXTURE_20261117]
 dependencies:
   python: [\"packaging>=26.3,<27\", \"packaging==0.0\", \"requests>=2.0\"]
   python3: [\"xaa-readiness-missing-fixture-20261113==99.0\"]
@@ -63,6 +76,7 @@ def main() -> None:
         XAA_API_PORT=str(port),
         LOCALAPPDATA=str(acceptance / "localappdata"),
         APPDATA=str(acceptance / "appdata"),
+        XAA_READINESS_PRESENT_FIXTURE_20261117="fixture-value-must-not-appear",
     )
     Path(environment["LOCALAPPDATA"]).mkdir()
     Path(environment["APPDATA"]).mkdir()
@@ -122,6 +136,20 @@ def main() -> None:
         ):
             if spec not in manager_specs:
                 raise RuntimeError(f"Installed engine omitted a manager declaration {spec!r}.")
+        expected_environment_names = {
+            "required_environment_names": {
+                "XAA_READINESS_LEGACY_FIXTURE_20261117",
+                "XAA_READINESS_MISSING_FIXTURE_20261117",
+                "XAA_READINESS_PRESENT_FIXTURE_20261117",
+                "XAA_READINESS_SETUP_FIXTURE_20261117",
+            },
+            "optional_environment_names": {"XAA_READINESS_OPTIONAL_FIXTURE_20261117"},
+        }
+        for field, expected_names in expected_environment_names.items():
+            if set(requirements.get(field, [])) != expected_names:
+                raise RuntimeError(
+                    f"Installed engine returned incorrect {field}: {requirements!r}."
+                )
         readiness = skills[0].get("requirement_readiness", {})
         expected = {
             "available_python_dependency_specs": "packaging>=26.3,<27",
@@ -149,6 +177,33 @@ def main() -> None:
             raise RuntimeError(
                 f"Declared missing dependencies were not marked unresolved: {readiness!r}."
             )
+        expected_readiness_names = {
+            "present_environment_names": {"XAA_READINESS_PRESENT_FIXTURE_20261117"},
+            "missing_environment_names": {
+                "XAA_READINESS_LEGACY_FIXTURE_20261117",
+                "XAA_READINESS_MISSING_FIXTURE_20261117",
+                "XAA_READINESS_SETUP_FIXTURE_20261117",
+            },
+            "missing_optional_environment_names": {"XAA_READINESS_OPTIONAL_FIXTURE_20261117"},
+        }
+        for field, expected_names in expected_readiness_names.items():
+            if set(readiness.get(field, [])) != expected_names:
+                raise RuntimeError(f"Installed engine returned incorrect {field}: {readiness!r}.")
+        if readiness.get("credentials_unresolved") is not True:
+            raise RuntimeError(
+                f"Required missing credentials were not marked unresolved: {readiness!r}."
+            )
+        readiness_text = json.dumps({"requirements": requirements, "readiness": readiness})
+        for private_value in (
+            "private readiness prompt",
+            "private missing prompt",
+            "private setup prompt",
+            "fixture-value-must-not-appear",
+        ):
+            if private_value in readiness_text:
+                raise RuntimeError(
+                    "Credential metadata exposed prompt text or an environment value."
+                )
         if readiness.get("unverified_dependency_count", 0) < 1:
             raise RuntimeError(
                 f"Unsupported npm dependency was not marked unverified: {readiness!r}."
@@ -214,6 +269,12 @@ def main() -> None:
             "endpoint": "/extensions/packages/discover",
             "supported_python_managers": sorted(supported_managers),
             "manager_requirement_specs": manager_specs,
+            "required_environment_names": requirements["required_environment_names"],
+            "optional_environment_names": requirements["optional_environment_names"],
+            "present_environment_names": readiness["present_environment_names"],
+            "missing_environment_names": readiness["missing_environment_names"],
+            "missing_optional_environment_names": readiness["missing_optional_environment_names"],
+            "credentials_unresolved": readiness["credentials_unresolved"],
             "available_python_dependency_specs": readiness["available_python_dependency_specs"],
             "missing_python_dependency_specs": readiness["missing_python_dependency_specs"],
             "incompatible_python_dependency_specs": readiness[

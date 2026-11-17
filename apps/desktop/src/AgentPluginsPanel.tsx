@@ -30,7 +30,7 @@ function declaredRequirementsSummary(value: Record<string, unknown> | undefined)
     `Fallback tools: ${names('hermes_fallback_tools') || 'not declared'}`,
     `Prerequisite fields: ${names('prerequisite_fields') || 'none'}`,
     `Command names: ${names('required_command_names') || 'none'}`,
-    `Environment variable names: ${names('required_environment_names') || 'none'}`,
+    `Required environment variable names: ${names('required_environment_names') || 'none'}; optional: ${names('optional_environment_names') || 'none'}`,
     `Dependencies: ${dependencies}`,
     `Package names: ${names('dependency_names') || 'none parsed'} · manager keys: ${names('dependency_managers') || 'not declared'} · unparsed entries: ${typeof value.unparsed_dependency_count === 'number' ? value.unparsed_dependency_count : 'unknown'}`,
     `Packages outside the checked Python managers: ${packageNames('unverified_dependency_packages') || 'none identified'}`,
@@ -64,10 +64,15 @@ function requirementReadinessSummary(value: Record<string, unknown> | undefined)
       : 'declared Python checks passed';
   const fallbackConditions = [names('hermes_fallback_toolsets_unresolved'), names('hermes_fallback_tools_unresolved')]
     .filter(Boolean).join(', ') || 'none';
+  const credentialStatus = value.credentials_unresolved === true
+    ? 'required credential names missing'
+    : value.credentials_unresolved === false
+      ? 'required credential names present'
+      : 'required credential status unknown';
   return [
     `Current machine (${current}): platform ${platform}`,
     `Commands available: ${names('available_command_names') || 'none'}; missing: ${names('missing_command_names') || 'none'}; not checked: ${names('unchecked_command_names') || 'none'}`,
-    `Required environment names present: ${names('present_environment_names') || 'none'}; missing: ${names('missing_environment_names') || 'none'}`,
+    `Required environment names present: ${names('present_environment_names') || 'none'}; missing: ${names('missing_environment_names') || 'none'} (${credentialStatus}); optional missing: ${names('missing_optional_environment_names') || 'none'}`,
     `Python package constraints: ${dependencies}; satisfied: ${names('available_python_dependency_specs') || 'none'}; missing: ${names('missing_python_dependency_specs') || 'none'}; version mismatch: ${names('incompatible_python_dependency_specs') || 'none'}; unchecked: ${names('unchecked_python_dependency_specs') || 'none'}`,
     `Other or unverified dependencies: ${typeof value.unverified_dependency_count === 'number' ? value.unverified_dependency_count : 'unknown'}`,
     `Packages not checked by the Python version audit: ${packageNames('unverified_dependency_packages') || 'none identified'}`,
