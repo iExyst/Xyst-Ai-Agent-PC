@@ -62,6 +62,37 @@ class TaskStore:
             elapsed += max(0.0, (datetime.now(UTC) - started_at).total_seconds())
         return elapsed
 
+    @classmethod
+    def _task_resource_usage(
+        cls, events: list[dict[str, Any]], budgets: dict[str, Any]
+    ) -> dict[str, Any]:
+        attempts = sum(event["event_type"] == "task.inference.started" for event in events)
+        answers = [
+            event
+            for event in events
+            if event["event_type"] in {"task.model.message", "task.model.incomplete"}
+        ]
+        measured = [event for event in answers if event["payload"].get("usage") is not None]
+        measured_tokens = sum(event["payload"]["usage"]["total_tokens"] for event in measured)
+        usage_measured = attempts == len(measured) and len(answers) == len(measured)
+        iteration_cap = budgets["max_iterations"]
+        time_cap = budgets["max_seconds"]
+        elapsed = cls._task_elapsed_seconds(events)
+        token_cap = budgets.get("max_total_tokens")
+        return {
+            "inference_attempts": attempts,
+            "iterations_remaining": max(0, iteration_cap - attempts),
+            "elapsed_seconds": elapsed,
+            "seconds_remaining": max(0.0, time_cap - elapsed),
+            "measured_tokens": measured_tokens,
+            "tokens_remaining": (
+                max(0, token_cap - measured_tokens)
+                if token_cap is not None and usage_measured
+                else None
+            ),
+            "usage_measured": usage_measured,
+        }
+
     def record_read_worker_event(
         self,
         run_id: str,
@@ -603,6 +634,16 @@ class TaskStore:
                 ):
                     record[field] = json.loads(record[field])
                 records.append(record)
+        run_events = self.runs.list_events(run_id)
+        events_by_task: dict[str, list[dict[str, Any]]] = {}
+        for event in run_events:
+            event_task_id = event["payload"].get("task_id")
+            if isinstance(event_task_id, str):
+                events_by_task.setdefault(event_task_id, []).append(event)
+        for record in records:
+            record["resource_usage"] = self._task_resource_usage(
+                events_by_task.get(record["local_id"], []), record["budgets"]
+            )
         statuses = {record["local_id"]: record["status"] for record in records}
         for record in records:
             record["blocked_reason"] = None

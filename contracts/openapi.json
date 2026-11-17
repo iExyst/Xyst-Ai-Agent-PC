@@ -3320,6 +3320,9 @@
             "title": "Permission Scope",
             "type": "array"
           },
+          "resource_usage": {
+            "$ref": "#/components/schemas/TaskResourceUsage"
+          },
           "status": {
             "enum": [
               "queued",
@@ -3359,6 +3362,7 @@
           "workspace",
           "permission_scope",
           "budgets",
+          "resource_usage",
           "status"
         ],
         "title": "PlanTaskRecord",
@@ -7053,6 +7057,61 @@
           "reserved_tokens"
         ],
         "title": "TaskRecoverySummary",
+        "type": "object"
+      },
+      "TaskResourceUsage": {
+        "properties": {
+          "elapsed_seconds": {
+            "minimum": 0.0,
+            "title": "Elapsed Seconds",
+            "type": "number"
+          },
+          "inference_attempts": {
+            "minimum": 0.0,
+            "title": "Inference Attempts",
+            "type": "integer"
+          },
+          "iterations_remaining": {
+            "minimum": 0.0,
+            "title": "Iterations Remaining",
+            "type": "integer"
+          },
+          "measured_tokens": {
+            "minimum": 0.0,
+            "title": "Measured Tokens",
+            "type": "integer"
+          },
+          "seconds_remaining": {
+            "minimum": 0.0,
+            "title": "Seconds Remaining",
+            "type": "number"
+          },
+          "tokens_remaining": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Remaining"
+          },
+          "usage_measured": {
+            "title": "Usage Measured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "inference_attempts",
+          "iterations_remaining",
+          "elapsed_seconds",
+          "seconds_remaining",
+          "measured_tokens",
+          "usage_measured"
+        ],
+        "title": "TaskResourceUsage",
         "type": "object"
       },
       "TaskReviewDecision": {

@@ -3600,6 +3600,7 @@ export interface components {
             objective: string;
             /** Permission Scope */
             permission_scope: string[];
+            resource_usage: components["schemas"]["TaskResourceUsage"];
             /**
              * Status
              * @enum {string}
@@ -4868,6 +4869,23 @@ export interface components {
             task_id: string;
             /** Unresolved Tool Calls */
             unresolved_tool_calls: number;
+        };
+        /** TaskResourceUsage */
+        TaskResourceUsage: {
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+            /** Inference Attempts */
+            inference_attempts: number;
+            /** Iterations Remaining */
+            iterations_remaining: number;
+            /** Measured Tokens */
+            measured_tokens: number;
+            /** Seconds Remaining */
+            seconds_remaining: number;
+            /** Tokens Remaining */
+            tokens_remaining?: number | null;
+            /** Usage Measured */
+            usage_measured: boolean;
         };
         /** TaskReviewDecision */
         TaskReviewDecision: {

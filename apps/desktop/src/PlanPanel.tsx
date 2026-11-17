@@ -72,6 +72,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         <p className="plan-stage-status">{stageSummary}</p>
         <div className="plan-tasks">{tasks.map(task => {
         const taskAnchor = `plan-task-${encodeURIComponent(task.local_id)}`;
+        const usage=task.resource_usage??{inference_attempts:0,iterations_remaining:task.budgets.max_iterations,elapsed_seconds:0,seconds_remaining:task.budgets.max_seconds,measured_tokens:0,tokens_remaining:task.budgets.max_total_tokens,usage_measured:true};
         const dependencies = task.dependencies.map(id => ({id, task:plan.tasks.find(candidate=>candidate.local_id===id)}));
         const dependents = plan.tasks.filter(candidate=>candidate.dependencies.includes(task.local_id));
         const readiness = task.status === 'queued' ? plan.blocked.includes(task.local_id) ? 'Blocked by a dependency' : plan.ready.includes(task.local_id) ? 'Ready to start' : 'Waiting for dependencies' : task.status;
@@ -85,6 +86,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
             <dt>Workspace</dt><dd>{task.workspace ?? 'None'}</dd>
             <dt>Permissions</dt><dd>{task.permission_scope.join(', ') || 'None'}</dd>
             <dt>Budget</dt><dd>{task.budgets.max_iterations} {task.budgets.max_iterations===1?'iteration':'iterations'} · {task.budgets.max_seconds} {task.budgets.max_seconds===1?'second':'seconds'}<br/>Reported token allowance: {task.budgets.max_total_tokens ?? 'Shared run threshold'} · Output tokens per request: {task.budgets.max_output_tokens ?? 'Run setting'}</dd>
+            <dt>Usage</dt><dd>Iterations: {usage.inference_attempts} used · {usage.iterations_remaining} remaining<br/>Wall time: {Math.floor(usage.elapsed_seconds)}s elapsed · {Math.ceil(usage.seconds_remaining)}s remaining<br/>{task.budgets.max_total_tokens==null?'Tokens: shared run threshold':usage.usage_measured?`Tokens: ${usage.measured_tokens.toLocaleString()} used · ${usage.tokens_remaining?.toLocaleString() ?? '0'} remaining`:`Tokens: ${usage.measured_tokens.toLocaleString()} measured · remaining allowance unavailable while usage is unmeasured`}</dd>
           </dl>
           {(task.status==='queued'||task.status==='running')&&<button type="button" disabled={task.status==='queued'&&!canCancelQueued} onClick={()=>{if(window.confirm(`Cancel ${task.local_id}? Any tasks depending on it will be blocked.`))void cancelTask(task.local_id);}}>Cancel {task.local_id}</button>}
           {task.status==='blocked' && <p>{task.blocked_reason==='token_budget_exhausted_or_unmeasured'

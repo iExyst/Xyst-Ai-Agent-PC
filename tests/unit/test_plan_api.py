@@ -88,8 +88,29 @@ def test_plan_api_returns_typed_tasks_without_worker_authority(workspace_tmp_pat
     )["id"]
     token = store.acquire_lease(run_id, "parent")
     tasks = TaskStore(store)
-    tasks.save_plan(run_id, token, [TaskDefinition(id="inspect", objective="Inspect")])
+    tasks.save_plan(
+        run_id,
+        token,
+        [TaskDefinition(id="inspect", objective="Inspect", max_total_tokens=500)],
+    )
     claim = tasks.claim_ready(run_id, token)
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {"task_id": "inspect", "inference_id": "attempt-1"},
+        )
+        store.record_event(
+            connection,
+            run_id,
+            "task.model.message",
+            {
+                "task_id": "inspect",
+                "inference_id": "attempt-1",
+                "usage": {"prompt_tokens": 60, "completion_tokens": 24, "total_tokens": 84},
+            },
+        )
     api_token = "a" * 32
     client = TestClient(create_app(LMStudioProvider(), SecretStr(api_token), store=store))
     path = f"/runs/{run_id}/plan"
@@ -102,9 +123,28 @@ def test_plan_api_returns_typed_tasks_without_worker_authority(workspace_tmp_pat
     assert task["budgets"] == {
         "max_iterations": 4,
         "max_seconds": 120,
-        "max_total_tokens": None,
+        "max_total_tokens": 500,
         "max_output_tokens": None,
     }
+    assert task["resource_usage"]["inference_attempts"] == 1
+    assert task["resource_usage"]["iterations_remaining"] == 3
+    assert task["resource_usage"]["measured_tokens"] == 84
+    assert task["resource_usage"]["tokens_remaining"] == 416
+    assert task["resource_usage"]["usage_measured"] is True
+    assert 0 <= task["resource_usage"]["seconds_remaining"] <= 120
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.inference.started",
+            {"task_id": "inspect", "inference_id": "attempt-2"},
+        )
+    updated = client.get(path, headers={"Authorization": f"Bearer {api_token}"}).json()
+    usage = updated["tasks"][0]["resource_usage"]
+    assert usage["inference_attempts"] == 2
+    assert usage["iterations_remaining"] == 2
+    assert usage["tokens_remaining"] is None
+    assert usage["usage_measured"] is False
     assert claim["token"] not in response.text
     assert token not in response.text
     assert "checkpoint" not in task

@@ -38,8 +38,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
     if (path.endsWith('/plan') && ++planReads === 1) return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if (path.endsWith('/plan')) return route.fulfill({json: {tasks: [
-      {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},status:'queued'},
-      {id:'browser-run:inventory',local_id:'inventory',objective:'Inspect another independent input',acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:["Inventory result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'},
+      {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},resource_usage:{inference_attempts:1,iterations_remaining:1,elapsed_seconds:12,seconds_remaining:48,measured_tokens:500,tokens_remaining:1500,usage_measured:true},status:'queued'},
+      {id:'browser-run:inventory',local_id:'inventory',objective:'Inspect another independent input',acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:["Inventory result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:100},resource_usage:{inference_attempts:1,iterations_remaining:1,elapsed_seconds:10,seconds_remaining:50,measured_tokens:20,tokens_remaining:null,usage_measured:false},status:'queued'},
       {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
     ],ready:['inspect','inventory'],blocked:[]},headers});
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
@@ -231,6 +231,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(inspect).toBeFocused();
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');
   await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Reported token allowance: 2000 · Output tokens per request: 128');
+  await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Iterations: 1 used · 1 remaining');
+  await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('Tokens: 500 used · 1,500 remaining');
+  await expect(plan.getByRole('article',{name:'Task inventory'})).toContainText('Tokens: 20 measured · remaining allowance unavailable while usage is unmeasured');
   await expect(review).toContainText('Waiting for dependencies');
   await expect(review).toContainText('2 iterations · 60 seconds');
   await expect(review).toContainText('Check the evidence independently');

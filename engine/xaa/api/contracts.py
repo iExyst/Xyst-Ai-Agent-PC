@@ -207,6 +207,16 @@ class MemoryRecord(BaseModel):
     source_uri: str | None = None
 
 
+class TaskResourceUsage(BaseModel):
+    inference_attempts: int = Field(ge=0)
+    iterations_remaining: int = Field(ge=0)
+    elapsed_seconds: float = Field(ge=0)
+    seconds_remaining: float = Field(ge=0)
+    measured_tokens: int = Field(ge=0)
+    tokens_remaining: int | None = Field(default=None, ge=0)
+    usage_measured: bool
+
+
 class PlanTaskRecord(BaseModel):
     id: str
     local_id: str
@@ -221,6 +231,7 @@ class PlanTaskRecord(BaseModel):
     workspace: str | None
     permission_scope: list[str]
     budgets: TaskBudgets
+    resource_usage: TaskResourceUsage
     status: TaskStatus
     blocked_reason: (
         Literal[
