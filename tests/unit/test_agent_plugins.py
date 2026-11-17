@@ -444,6 +444,24 @@ def test_requirement_readiness_checks_python_versions_and_leaves_other_managers_
     assert "unsupported_dependency_managers" in result["not_assessed"]
 
 
+def test_uv_requirement_manager_uses_python_dependency_lock_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requirements = agent_plugins._declared_requirements(
+        {"dependencies": {"uv": ["fixture-package>=1.0,<2.0"]}}
+    )
+    assert requirements["dependency_managers"] == ["uv"]
+    assert requirements["python_dependency_specs"] == ["fixture-package>=1.0,<2.0"]
+    assert requirements["unsupported_dependency_count"] == 0
+
+    monkeypatch.setattr(agent_plugins.importlib_metadata, "version", lambda _name: "1.4.2")
+    readiness = agent_plugins._assess_requirement_readiness(requirements)
+    assert readiness["available_python_dependency_specs"] == ["fixture-package>=1.0,<2.0"]
+    assert readiness["unverified_dependency_count"] == 0
+    assert readiness["dependencies_unresolved"] is False
+    assert "unsupported_dependency_managers" not in readiness["not_assessed"]
+
+
 def test_npm_requirements_are_safely_classified_but_remain_unverified() -> None:
     requirements = agent_plugins._declared_requirements(
         {
@@ -1448,13 +1466,16 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         )
 
 
+@pytest.mark.parametrize("manager", ["python", "uv"])
 def test_python_dependency_resolution_api_uses_imported_declarations_and_wsl_target(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manager: str
 ) -> None:
     package = make_package(tmp_path)
     skill_file = package / "skills" / "summarize" / "SKILL.md"
     skill_file.write_text(
-        skill_file.read_text(encoding="utf-8").replace(', "git+https://example.test/repo.git"', ""),
+        skill_file.read_text(encoding="utf-8")
+        .replace("  python: [", f"  {manager}: [")
+        .replace(', "git+https://example.test/repo.git"', ""),
         encoding="utf-8",
     )
     app = create_app(
