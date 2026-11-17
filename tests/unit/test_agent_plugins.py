@@ -1023,7 +1023,7 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
             f"/skills/{created.json()['id']}/versions",
             headers=headers,
             json={
-                "name": "summarize",
+                "name": f"sample-package@{api_module._plugin_root_scope_sha256(str(tmp_path))[:12]}::summarize",
                 "content": "reviewed revision",
                 "description": "Updated bounded file summaries.",
                 "category": "technical-writing",
@@ -1037,6 +1037,10 @@ def test_plugin_skill_import_creates_inactive_candidate_with_provenance(
             f"/skills/{created.json()['id']}/versions/2/export", headers=headers
         )
     assert version.status_code == 200
+    expected_name = (
+        f"sample-package@{api_module._plugin_root_scope_sha256(str(tmp_path))[:12]}::summarize"
+    )
+    assert created.json()["name"] == expected_name
     assert readiness.status_code == 200
     assert readiness.json()["python_version"] == "3.12.0"
     assert readiness.json()["python_environment"]["python_full_version"] == "3.12.0"
@@ -1127,10 +1131,91 @@ def test_hermes_skill_import_api_keeps_candidate_inactive_and_records_source(
         version = client.get(f"/skills/{created.json()['id']}/versions/1", headers=headers).json()
 
     assert created.json()["lifecycle_state"] == "candidate"
+    expected_name = (
+        f"summarize@{api_module._plugin_root_scope_sha256(str(skills_root))[:12]}::summarize"
+    )
+    assert created.json()["name"] == expected_name
     assert version["required_permissions"] == ["workspace.read"]
     assert version["evaluation_evidence"]["provenance"] == "hermes_skill"
     assert version["evaluation_evidence"]["source"]["package_version"] == "0.2.0"
     assert version["evaluation_evidence"]["state"] == "candidate"
+
+
+def test_plugin_skill_import_qualifies_same_skill_name_by_package(tmp_path: Path) -> None:
+    first_package = make_package(tmp_path)
+    second_package = tmp_path / "another"
+    shutil.copytree(first_package, second_package)
+    manifest_path = second_package / "plugin.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["name"] = "another-package"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    app = create_app(
+        FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "qualified.sqlite3")
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        first = client.post(
+            "/extensions/packages/import-skill",
+            headers=headers,
+            json={
+                "root": str(tmp_path),
+                "package_name": "sample-package",
+                "skill_name": "summarize",
+            },
+        )
+        second = client.post(
+            "/extensions/packages/import-skill",
+            headers=headers,
+            json={
+                "root": str(tmp_path),
+                "package_name": "another-package",
+                "skill_name": "summarize",
+            },
+        )
+        library = client.get("/skills", headers=headers)
+        first_version = client.get(f"/skills/{first.json()['id']}/versions/1", headers=headers)
+        second_version = client.get(f"/skills/{second.json()['id']}/versions/1", headers=headers)
+
+    assert first.status_code == second.status_code == 201
+    assert {item["name"] for item in library.json()} >= {
+        f"sample-package@{api_module._plugin_root_scope_sha256(str(tmp_path))[:12]}::summarize",
+        f"another-package@{api_module._plugin_root_scope_sha256(str(tmp_path))[:12]}::summarize",
+    }
+    assert first_version.json()["evaluation_evidence"]["source"]["skill_name"] == "summarize"
+    assert second_version.json()["evaluation_evidence"]["source"]["skill_name"] == "summarize"
+
+
+def test_plugin_skill_import_qualifies_same_package_by_discovery_root(tmp_path: Path) -> None:
+    first_root = tmp_path / "first-root"
+    second_root = tmp_path / "second-root"
+    make_package(first_root)
+    make_package(second_root)
+    app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "roots.sqlite3"))
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        first = client.post(
+            "/extensions/packages/import-skill",
+            headers=headers,
+            json={
+                "root": str(first_root),
+                "package_name": "sample-package",
+                "skill_name": "summarize",
+            },
+        )
+        second = client.post(
+            "/extensions/packages/import-skill",
+            headers=headers,
+            json={
+                "root": str(second_root),
+                "package_name": "sample-package",
+                "skill_name": "summarize",
+            },
+        )
+
+    assert first.status_code == second.status_code == 201
+    assert first.json()["name"] != second.json()["name"]
+    assert first.json()["name"].endswith("::summarize")
+    assert second.json()["name"].endswith("::summarize")
 
 
 def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(

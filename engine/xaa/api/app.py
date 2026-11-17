@@ -8,6 +8,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
 import sqlite3
@@ -505,6 +506,21 @@ class PluginSkillImportRequest(BaseModel):
     root: str = Field(min_length=1, max_length=2048)
     package_name: str = Field(min_length=1, max_length=128)
     skill_name: str = Field(min_length=1, max_length=80)
+
+
+def _plugin_root_scope_sha256(root: str) -> str:
+    canonical_root = os.path.normcase(str(Path(root).resolve(strict=True)))
+    return hashlib.sha256(canonical_root.encode("utf-8")).hexdigest()
+
+
+def _qualified_plugin_skill_name(package_name: str, skill_name: str, root_scope: str) -> str:
+    """Keep imported skills distinct across packages and discovered roots."""
+    qualified = f"{package_name}@{root_scope[:12]}::{skill_name}"
+    if len(qualified) <= 80:
+        return qualified
+    digest = hashlib.sha256(qualified.encode("utf-8")).hexdigest()[:10]
+    prefix = qualified[: 80 - len(digest) - 1].rstrip(" :")
+    return f"{prefix}-{digest}"
 
 
 class PluginMCPImportRequest(BaseModel):
@@ -1066,6 +1082,7 @@ def create_app(
     ) -> dict[str, Any]:
         try:
             imported = read_plugin_skill(payload.root, payload.package_name, payload.skill_name)
+            root_scope_sha256 = _plugin_root_scope_sha256(payload.root)
             mapped_tools = list(
                 dict.fromkeys(tool for tool in imported.allowed_tools if tool in TRIAL_TOOLS)
             )
@@ -1075,7 +1092,9 @@ def create_app(
                 sorted({permission for tool in mapped_tools for permission in TRIAL_TOOLS[tool]}),
             )
             draft = SkillDraft(
-                name=imported.skill_name,
+                name=_qualified_plugin_skill_name(
+                    imported.package_name, imported.skill_name, root_scope_sha256
+                ),
                 content=imported.content,
                 description=imported.description,
                 category=imported.category or "",
@@ -1087,6 +1106,7 @@ def create_app(
                 draft,
                 {
                     "package_name": imported.package_name,
+                    "root_scope_sha256": root_scope_sha256,
                     "package_version": imported.package_version,
                     "skill_name": imported.skill_name,
                     "description": imported.description,

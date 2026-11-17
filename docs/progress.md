@@ -1,5 +1,9 @@
 # Progress
 
+## Keep imported plugin skills distinct (2026-11-17)
+
+Imported Agent Plugin and Hermes skills now use a deterministic package, discovery-root fingerprint, and skill name in the shared procedure library; overlong names receive a stable hash suffix, while source provenance and package export retain upstream identities. Same-named skills from different packages and the same package discovered from different roots import independently. Focused plugin tests and the MCP browser flow cover both behaviors; live LLM inference was not used.
+
 ## Add and remove linked procedure resources in the desktop app (2026-11-17)
 
 The Skills screen can now add or stage removal of a linked text, image or PDF resource, then save the change as a new procedure version. The API distinguishes an unchanged resource list from an explicit empty replacement; prior versions keep their files. Binary uploads now require matching file signatures in addition to the size and digest bounds. Desktop build, generated API checks, 22 Skills tests, 69 related procedure/task tests, and both Skills browser tests pass. Exact-source Windows run [44022780891](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44022780891) and exact-revision installer run [44022847798](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44022847798) passed. No live LLM inference was used.
