@@ -436,6 +436,60 @@ async def test_fixture_edit_runs_project_validation_before_final_review(
     assert saved_review["validation_snapshot_sha256"] == evidence[0]["snapshot_sha256"]
 
 
+def test_workspace_change_pages_cover_more_than_two_hundred_specialist_files(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "many-workspace-changes.sqlite3")
+    run_id = store.create_run(
+        objective="Review a large integrated change",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model="fixture",
+    )["id"]
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "task.reviewed",
+            {
+                "task_id": "large-repair",
+                "state": "completed",
+                "integrated_changes": [
+                    {
+                        "path": f"src/file-{index:03}.py",
+                        "current_sha256": None,
+                        "proposed_sha256": "b" * 64,
+                        "choice": "proposed",
+                    }
+                    for index in range(205)
+                ],
+            },
+        )
+    token = "workspace-change-page-test-token-long-enough"
+    with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:
+        headers = {"Authorization": f"Bearer {token}"}
+        first = client.get(f"/runs/{run_id}/workspace-changes", headers=headers)
+        second = client.get(f"/runs/{run_id}/workspace-changes?offset=100", headers=headers)
+        third = client.get(f"/runs/{run_id}/workspace-changes?offset=200", headers=headers)
+    assert first.status_code == second.status_code == third.status_code == 200
+    assert first.json()["total"] == second.json()["total"] == third.json()["total"] == 205
+    assert len(first.json()["items"]) == len(second.json()["items"]) == 100
+    assert [
+        first.json()["next_offset"],
+        second.json()["next_offset"],
+        third.json()["next_offset"],
+    ] == [
+        100,
+        200,
+        None,
+    ]
+    paths = [
+        item["path"]
+        for page in (first.json(), second.json(), third.json())
+        for item in page["items"]
+    ]
+    assert paths == [f"src/file-{index:03}.py" for index in range(205)]
+
+
 async def test_coordinator_executes_journaled_read_and_stops_for_verification(workspace_tmp_path):
     (workspace_tmp_path / "input.txt").write_text("fixture evidence", encoding="utf-8")
     store = RunStore(workspace_tmp_path / "runs.sqlite3")

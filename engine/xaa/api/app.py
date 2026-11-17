@@ -4113,7 +4113,7 @@ def create_app(
     ) -> dict[str, Any]:
         if run_store.get_run(run_id) is None:
             raise HTTPException(status_code=404, detail="Run not found.")
-        return run_store.workspace_changes(run_id)
+        return run_store.workspace_changes(run_id, limit=limit, offset=offset)
 
     @app.get("/runs/{run_id}/events", response_model=list[RunEvent])
     async def get_run_events(
