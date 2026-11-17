@@ -110,7 +110,10 @@ class ScheduleStore:
         quiet_hours = validate_quiet_hours(quiet_hours)
         if local_instant(start_at, timezone) is None:
             raise ValueError("This local time does not exist because of a daylight-saving change.")
-        if idempotency_key is not None and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key) is None:
+        if (
+            idempotency_key is not None
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key) is None
+        ):
             raise ValueError("Idempotency key must contain 1–128 safe characters.")
         request_payload = {
             "objective": objective,
@@ -128,9 +131,12 @@ class ScheduleStore:
             "failure_notification_destination": failure_notification_destination,
             "quiet_hours": quiet_hours,
         }
-        request_digest = idempotency_payload_digest or hashlib.sha256(
-            json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        request_digest = (
+            idempotency_payload_digest
+            or hashlib.sha256(
+                json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+        )
         if idempotency_key is not None:
             with self.runs.connection() as connection:
                 existing = connection.execute(
@@ -139,7 +145,9 @@ class ScheduleStore:
                 ).fetchone()
             if existing is not None:
                 if existing["payload_digest"] != request_digest:
-                    raise ValueError("Idempotency key was already used for a different schedule payload.")
+                    raise ValueError(
+                        "Idempotency key was already used for a different schedule payload."
+                    )
                 result = self.get(existing["schedule_id"])
                 if result is None:
                     raise RuntimeError("Idempotent schedule request points to a missing schedule.")

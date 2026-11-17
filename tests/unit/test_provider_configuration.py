@@ -157,11 +157,12 @@ def test_provider_configuration_put_allows_browser_preflight(workspace_tmp_path)
             headers={
                 "Origin": "http://tauri.localhost",
                 "Access-Control-Request-Method": "PUT",
-                "Access-Control-Request-Headers": "authorization,content-type",
+                "Access-Control-Request-Headers": "authorization,content-type,idempotency-key",
             },
         )
     assert response.status_code == 200
     assert "PUT" in response.headers["access-control-allow-methods"]
+    assert "idempotency-key" in response.headers["access-control-allow-headers"].lower()
 
 
 def test_lm_studio_credential_is_saved_and_never_returned(workspace_tmp_path):

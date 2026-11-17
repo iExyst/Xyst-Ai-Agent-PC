@@ -549,19 +549,18 @@ def test_schedule_api_auth_model_selection_workspace_and_pause(
         assert created.status_code == 201, created.text
         record = created.json()
         idempotent_headers = {**HEADERS, "Idempotency-Key": "schedule-retry-1"}
-        first_idempotent = client.post(
-            "/schedules", headers=idempotent_headers, json=payload
-        )
-        retried_idempotent = client.post(
-            "/schedules", headers=idempotent_headers, json=payload
-        )
+        first_idempotent = client.post("/schedules", headers=idempotent_headers, json=payload)
+        retried_idempotent = client.post("/schedules", headers=idempotent_headers, json=payload)
         assert first_idempotent.status_code == retried_idempotent.status_code == 201
         assert first_idempotent.json()["id"] == retried_idempotent.json()["id"]
-        assert client.post(
-            "/schedules",
-            headers=idempotent_headers,
-            json={**payload, "objective": "Changed payload"},
-        ).status_code == 422
+        assert (
+            client.post(
+                "/schedules",
+                headers=idempotent_headers,
+                json={**payload, "objective": "Changed payload"},
+            ).status_code
+            == 422
+        )
         assert record["recurrence"]["frequency"] == "weekly"
         assert record["recurrence"]["workspace"] == str(workspace_tmp_path.resolve())
         assert record["mode"] == "observe"

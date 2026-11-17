@@ -1564,7 +1564,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=list(trusted_origins),
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Last-Event-ID"],
     )
 
     @app.get("/skills", response_model=list[SkillSummary])
