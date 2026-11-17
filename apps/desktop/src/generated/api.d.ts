@@ -4379,6 +4379,11 @@ export interface components {
             description: string;
             /** Name */
             name: string;
+            /**
+             * Replace Assets
+             * @default false
+             */
+            replace_assets: boolean;
             /** Required Permissions */
             required_permissions: ("workspace.read" | "workspace.write")[];
             /** Required Tools */
@@ -4528,6 +4533,11 @@ export interface components {
             expected_version: number;
             /** Name */
             name: string;
+            /**
+             * Replace Assets
+             * @default false
+             */
+            replace_assets: boolean;
             /** Required Permissions */
             required_permissions: ("workspace.read" | "workspace.write")[];
             /** Required Tools */

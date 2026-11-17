@@ -5614,6 +5614,11 @@
             "title": "Name",
             "type": "string"
           },
+          "replace_assets": {
+            "default": false,
+            "title": "Replace Assets",
+            "type": "boolean"
+          },
           "required_permissions": {
             "items": {
               "enum": [
@@ -6073,6 +6078,11 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "replace_assets": {
+            "default": false,
+            "title": "Replace Assets",
+            "type": "boolean"
           },
           "required_permissions": {
             "items": {

@@ -1,5 +1,9 @@
 # Progress
 
+## Add and remove linked procedure resources in the desktop app (2026-11-17)
+
+The Skills screen can now add or stage removal of a linked text, image or PDF resource, then save the change as a new procedure version. The API distinguishes an unchanged resource list from an explicit empty replacement; prior versions keep their files. Binary uploads now require matching file signatures in addition to the size and digest bounds. Desktop build, generated API checks, 22 Skills tests, 69 related procedure/task tests, and both Skills browser tests pass. No live LLM inference was used.
+
 ## Inspect linked procedure resources in the desktop app (2026-11-17)
 
 The Skills screen now lists versioned resources, shows UTF-8 resources as literal text, previews PNG/JPEG/GIF/WebP images, and offers downloads for all files; PDFs are download-only. The resource content remains untrusted and is never executed by the viewer. Desktop typecheck and production build pass, as do both `tests/browser/skills.spec.ts` Playwright cases, including image preview and PDF download behavior. No live LLM inference was used.

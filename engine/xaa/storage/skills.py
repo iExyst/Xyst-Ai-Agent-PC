@@ -190,8 +190,20 @@ class SkillAsset(BaseModel):
                 raw.decode("utf-8-sig")
             except UnicodeDecodeError as exc:
                 raise ValueError("Text procedure resources must contain UTF-8 text.") from exc
-        elif self.media_type not in SUPPORTED_PROCEDURE_BINARY_MEDIA_TYPES:
-            raise ValueError("Procedure resource media type is not supported.")
+        else:
+            signatures = {
+                "application/pdf": b"%PDF-" in raw[:1024],
+                "image/gif": raw.startswith((b"GIF87a", b"GIF89a")),
+                "image/jpeg": raw.startswith(b"\xff\xd8\xff"),
+                "image/png": raw.startswith(b"\x89PNG\r\n\x1a\n"),
+                "image/webp": len(raw) >= 12 and raw.startswith(b"RIFF") and raw[8:12] == b"WEBP",
+            }
+            if self.media_type not in SUPPORTED_PROCEDURE_BINARY_MEDIA_TYPES or not signatures.get(
+                self.media_type, False
+            ):
+                raise ValueError(
+                    "Procedure resource media type or file signature is not supported."
+                )
         return self
 
 
@@ -204,6 +216,7 @@ class SkillDraft(BaseModel):
     required_tools: list[SkillTool] = Field(max_length=32)
     required_permissions: list[Literal["workspace.read", "workspace.write"]] = Field(max_length=2)
     assets: list[SkillAsset] = Field(default_factory=list[SkillAsset], max_length=32)
+    replace_assets: bool = False
 
     @model_validator(mode="after")
     def valid_manifest(self) -> "SkillDraft":
@@ -2006,7 +2019,7 @@ class SkillStore:
             latest = int(latest_row["version"])
             if latest != draft.expected_version:
                 raise SkillConflict("Procedure changed; reload its latest candidate version.")
-            if not draft.assets:
+            if not draft.assets and not draft.replace_assets:
                 prior_assets = connection.execute(
                     "SELECT relative_path,media_type,sha256,content FROM skill_version_assets "
                     "WHERE skill_id=? AND version=? ORDER BY relative_path",

@@ -175,7 +175,7 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
       if(request.method()==='POST'){
         const body=request.postDataJSON();
         if(summary)expect(body.expected_version).toBe(versions.length);
-        versions.push({skill_id:'procedure-1',version:versions.length+1,content:body.content,description:body.description,category:body.category,required_tools:body.required_tools,required_permissions:body.required_permissions,evaluation_evidence:{state:'candidate',provenance:'user',evaluations:[]},created_at:'2026-11-04T00:00:00Z'});
+        versions.push({skill_id:'procedure-1',version:versions.length+1,content:body.content,description:body.description,category:body.category,required_tools:body.required_tools,required_permissions:body.required_permissions,assets:body.assets??[],replace_assets:body.replace_assets,evaluation_evidence:{state:'candidate',provenance:'user',evaluations:[]},created_at:'2026-11-04T00:00:00Z'});
         summary={id:'procedure-1',name:body.name,lifecycle_state:'candidate',pinned:false,active_version:null,lifecycle_revision:0,latest_version:versions.length,created_at:'2026-11-04T00:00:00Z',updated_at:'2026-11-04T00:00:00Z'};
         return route.fulfill({status:201,json:summary,headers});
       }
@@ -192,11 +192,16 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await panel.getByLabel('Procedure description',{exact:true}).fill('Read-only project inspection');
   await panel.getByLabel('Procedure category',{exact:true}).fill('engineering');
   await panel.getByLabel('Procedure text',{exact:true}).fill('Read files and preserve evidence.');
+  const resources=panel.getByRole('region',{name:'Procedure linked resources'});
+  await resources.getByLabel('Add linked resource').setInputFiles({name:'guide.txt',mimeType:'text/plain',buffer:Buffer.from('Keep this reference versioned.')});
+  await expect(resources).toContainText('resources/guide.txt');
   await panel.getByLabel('Tool dependencies (one name@version per line)',{exact:true}).fill('workspace.read_file@1');
   await panel.getByLabel('Requires reading workspace files',{exact:true}).check();
   await panel.getByRole('button',{name:'Save procedure candidate',exact:true}).click();
   expect(versions[0].description).toBe('Read-only project inspection');
   expect(versions[0].category).toBe('engineering');
+  expect(versions[0].assets).toHaveLength(1);
+  expect(versions[0].assets[0].path).toBe('resources/guide.txt');
   await expect(panel.getByRole('button',{name:'Inspect Inspect safely',exact:true})).toBeVisible();
   await expect(panel.getByText('Draft reusable procedures here.',{exact:false})).toContainText('evaluation trial');
   await panel.getByRole('button',{name:'Pin procedure',exact:true}).click();
@@ -206,10 +211,15 @@ test('create, revise, inspect, export and delete an unverified procedure',async(
   await expect(panel.getByRole('button',{name:'Delete procedure and all versions',exact:true})).toBeEnabled();
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeEnabled();
   await panel.getByRole('textbox',{name:'Procedure text',exact:true}).fill('Revised procedure.');
+  await resources.getByRole('button',{name:'Remove resources/guide.txt'}).click();
+  await expect(resources).toContainText('No linked resources yet.');
   await panel.getByRole('button',{name:'Save new procedure version',exact:true}).click();
+  expect(versions[1].replace_assets).toBe(true);
+  expect(versions[1].assets).toEqual([]);
   await expect(panel.getByLabel('Procedure version',{exact:true})).toHaveValue('2');
   await panel.getByLabel('Procedure version',{exact:true}).selectOption('1');
   await expect(panel.getByLabel('Procedure text',{exact:true})).toHaveValue('Read files and preserve evidence.');
+  await expect(resources).toContainText('resources/guide.txt');
   await expect(panel.getByRole('button',{name:'Save new procedure version',exact:true})).toBeDisabled();
   await panel.getByRole('button',{name:'Select version for trial run',exact:true}).click();
   await expect(panel.getByRole('button',{name:'Select version for trial run',exact:true})).toBeEnabled();

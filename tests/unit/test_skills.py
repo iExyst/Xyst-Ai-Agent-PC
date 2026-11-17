@@ -291,3 +291,97 @@ def test_user_procedure_export_creates_importable_agent_plugin_package(workspace
     assert imported.description == "Review files"
     assert imported.category == "engineering"
     assert base64.b64decode(imported.assets[0]["content_base64"]) == diagram
+
+
+def test_owner_revision_can_add_and_remove_linked_resources(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "resource-revision.sqlite3")
+    store = SkillStore(runs)
+    created = store.create(draft())
+    identity = created["id"]
+    text = b"A linked reference."
+    asset = SkillAsset(
+        path="references/guide.txt",
+        content_base64=base64.b64encode(text).decode("ascii"),
+        media_type="text/plain",
+        sha256=hashlib.sha256(text).hexdigest(),
+    )
+
+    store.revise(
+        identity,
+        SkillRevision.model_validate(
+            {**draft().model_dump(), "assets": [asset], "expected_version": 1}
+        ),
+    )
+    assert [item["path"] for item in store.version(identity, 2)["assets"]] == [
+        "references/guide.txt"
+    ]
+
+    store.revise(
+        identity,
+        SkillRevision(**draft().model_dump(), expected_version=2),
+    )
+    assert [item["path"] for item in store.version(identity, 3)["assets"]] == [
+        "references/guide.txt"
+    ]
+
+    store.revise(
+        identity,
+        SkillRevision(
+            **{
+                **draft().model_dump(),
+                "assets": [],
+                "replace_assets": True,
+                "expected_version": 3,
+            }
+        ),
+    )
+    assert store.version(identity, 4)["assets"] == []
+    assert [item["path"] for item in store.version(identity, 2)["assets"]] == [
+        "references/guide.txt"
+    ]
+
+
+def test_binary_procedure_resources_require_matching_signatures():
+    content = b"not really a PNG"
+    with pytest.raises(ValidationError, match="file signature"):
+        SkillAsset(
+            path="images/fake.png",
+            content_base64=base64.b64encode(content).decode("ascii"),
+            media_type="image/png",
+            sha256=hashlib.sha256(content).hexdigest(),
+        )
+
+
+def test_skill_api_can_explicitly_remove_all_linked_resources(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "resource-api.sqlite3")
+    headers = {"Authorization": "Bearer " + "x" * 32}
+    content = b"Retained until a new version removes it."
+    asset = {
+        "path": "references/guide.txt",
+        "content_base64": base64.b64encode(content).decode("ascii"),
+        "media_type": "text/plain",
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+    with TestClient(create_app(LMStudioProvider(), SecretStr("x" * 32), store=runs)) as client:
+        created = client.post(
+            "/skills", headers=headers, json={**draft().model_dump(mode="json"), "assets": [asset]}
+        )
+        assert created.status_code == 201
+        identity = created.json()["id"]
+
+        revised = client.post(
+            f"/skills/{identity}/versions",
+            headers=headers,
+            json={
+                **draft().model_dump(mode="json"),
+                "assets": [],
+                "replace_assets": True,
+                "expected_version": 1,
+            },
+        )
+        assert revised.status_code == 201
+        previous = client.get(f"/skills/{identity}/versions/1", headers=headers)
+        current = client.get(f"/skills/{identity}/versions/2", headers=headers)
+
+    assert [item["path"] for item in previous.json()["assets"]] == ["references/guide.txt"]
+    assert current.json()["assets"] == []
