@@ -270,6 +270,11 @@ test('configure an MCP server, discover tools and explicitly grant write access'
   await expect(declaredRequirements).toContainText('browser');
   await expect(credentialReadiness).toContainText('Unresolved fallback conditions');
   await expect(credentialReadiness).toContainText('web.search');
+  await page.setViewportSize({width:390,height:844});
+  const requirementColumns=await skillItem.locator('.plugin-requirement-grid').evaluate(element=>getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  expect(requirementColumns).toBe(1);
+  await expect.poll(()=>skillItem.evaluate(element=>element.scrollWidth<=element.clientWidth)).toBe(true);
+  await page.setViewportSize({width:1280,height:900});
   await plugins.getByRole('listitem').filter({hasText:'local-helper'}).getByRole('button',{name:'Add disconnected server'}).click();
   await expect(plugins.getByRole('status')).toContainText('disconnected MCP server');
   const mcpPanel=page.getByRole('region',{name:'MCP integrations'});
