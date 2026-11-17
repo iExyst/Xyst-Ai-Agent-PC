@@ -1,15 +1,18 @@
 import asyncio
+import json
 import sys
 
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.tool_worker import (
     FilesystemWorkerError,
     FilesystemWorkerTimeout,
     execute_filesystem,
 )
 from xaa.storage.runs import RunStore
+from xaa.storage.tasks import TaskStore
 
 
 def owned_run(root):
@@ -124,6 +127,60 @@ async def test_real_worker_list_search_and_internal_reads(workspace_tmp_path):
     assert [message["tool_call_id"] for message in replay if message["role"] == "tool"] == [
         "search"
     ]
+
+
+async def test_read_only_specialist_search_uses_task_scoped_worker(workspace_tmp_path):
+    store, run_id, parent = owned_run(workspace_tmp_path)
+    (workspace_tmp_path / "finding.py").write_text(
+        "def target(): return 'specialist-search-marker'\n", encoding="utf-8"
+    )
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="reader",
+                objective="Find the target function using workspace search.",
+                permissions=["workspace.read"],
+                max_iterations=2,
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run_id, parent)
+    assert claim is not None and claim["task"]["local_id"] == "reader"
+
+    result = await execute_filesystem(
+        store,
+        run_id,
+        parent,
+        "specialist-search-call",
+        "task_search",
+        {"query": "specialist-search-marker"},
+        idempotency_key="specialist-search-call",
+        internal=True,
+        task_id="reader",
+        task_token=claim["token"],
+    )
+
+    assert [match["path"] for match in result["matches"]] == ["finding.py"]
+    assert result["trust"] == "untrusted_workspace_content"
+    assert not store.unresolved_tool_calls(run_id)
+    assert store.conversation_messages(run_id) == []
+    with store.connection() as connection:
+        row = connection.execute(
+            "SELECT task_id,tool_name,state FROM tool_calls WHERE provider_call_id=?",
+            ("specialist-search-call",),
+        ).fetchone()
+        event = connection.execute(
+            "SELECT payload FROM run_events WHERE event_type='tool.intended' "
+            "AND json_extract(payload,'$.call_id')=?",
+            ("specialist-search-call",),
+        ).fetchone()
+    assert row["task_id"] == f"{run_id}:reader"
+    assert row["tool_name"] == "workspace.search"
+    assert row["state"] == "completed"
+    assert json.loads(event["payload"])["internal"] is True
 
 
 @pytest.mark.parametrize("cancel", [False, True], ids=["timeout", "cancel"])
