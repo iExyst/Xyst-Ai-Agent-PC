@@ -30,7 +30,7 @@ The active run’s resource panel now shows remaining wall-clock time, token all
 
 ## Show specialist deliverables during owner review (2026-11-17)
 
-The candidate API now returns each task's planned `expected_outputs`, and the desktop review panel shows them beside the candidate before acceptance. The generated OpenAPI contract and desktop types are current. The focused task-review API suite passes (8 tests), the candidate-review browser flow passes, and desktop TypeScript, Ruff, and Pyright checks pass. The parity evidence is local and fixture-backed pending exact-commit hosted verification; no live model inference was used.
+The candidate API now returns each task's planned `expected_outputs`, and the desktop review panel shows them beside the candidate before acceptance. The generated OpenAPI contract and desktop types are current. The focused task-review API suite passes (8 tests), the candidate-review browser flow passes, and desktop TypeScript, Ruff, and Pyright checks pass. Exact-source Windows workflow [44055988127](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44055988127) passed for commit `33362fe1`: all 1,441 Python tests passed, 20 were skipped, and browser UI and recovery acceptances passed. Installer validation was skipped because the source and application contract changed without changing packaged components. No live model inference was used.
 
 ## Gate specialist dispatch on model selection (2026-11-17)
 
