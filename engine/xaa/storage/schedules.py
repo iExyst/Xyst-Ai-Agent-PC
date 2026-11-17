@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -100,6 +101,8 @@ class ScheduleStore:
         delivery_destination: str | None = None,
         failure_notification_destination: str | None = None,
         quiet_hours: str | None = None,
+        idempotency_key: str | None = None,
+        idempotency_payload_digest: str | None = None,
     ) -> dict[str, Any]:
         ZoneInfo(timezone)
         if mode == "authorized_automation" and not workspace:
@@ -107,6 +110,40 @@ class ScheduleStore:
         quiet_hours = validate_quiet_hours(quiet_hours)
         if local_instant(start_at, timezone) is None:
             raise ValueError("This local time does not exist because of a daylight-saving change.")
+        if idempotency_key is not None and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key) is None:
+            raise ValueError("Idempotency key must contain 1–128 safe characters.")
+        request_payload = {
+            "objective": objective,
+            "acceptance_criteria": acceptance_criteria,
+            "workspace": workspace,
+            "mode": mode,
+            "model": model,
+            "start_at": start_at.isoformat(timespec="minutes"),
+            "frequency": frequency,
+            "timezone": timezone,
+            "missed_run_policy": missed_run_policy,
+            "max_iterations": max_iterations,
+            "max_seconds": max_seconds,
+            "delivery_destination": delivery_destination,
+            "failure_notification_destination": failure_notification_destination,
+            "quiet_hours": quiet_hours,
+        }
+        request_digest = idempotency_payload_digest or hashlib.sha256(
+            json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if idempotency_key is not None:
+            with self.runs.connection() as connection:
+                existing = connection.execute(
+                    "SELECT payload_digest,schedule_id FROM idempotent_schedule_requests WHERE request_id=?",
+                    (idempotency_key,),
+                ).fetchone()
+            if existing is not None:
+                if existing["payload_digest"] != request_digest:
+                    raise ValueError("Idempotency key was already used for a different schedule payload.")
+                result = self.get(existing["schedule_id"])
+                if result is None:
+                    raise RuntimeError("Idempotent schedule request points to a missing schedule.")
+                return result
         identity = str(uuid.uuid4())
         now = utc_now()
         recurrence = {
@@ -119,24 +156,79 @@ class ScheduleStore:
             "max_seconds": max_seconds,
         }
         with self.runs.connection() as connection:
-            connection.execute(
-                "INSERT INTO schedules (id,objective,recurrence,mode,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,failure_notification_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,'skip',?,?,?,1,?,?)",
-                (
-                    identity,
-                    objective,
-                    json.dumps(recurrence),
-                    mode,
-                    timezone,
-                    missed_run_policy,
-                    quiet_hours,
-                    delivery_destination,
-                    failure_notification_destination,
-                    now,
-                    now,
-                ),
-            )
+            if idempotency_key is not None:
+                connection.execute("BEGIN IMMEDIATE")
+                existing = connection.execute(
+                    "SELECT payload_digest,schedule_id FROM idempotent_schedule_requests WHERE request_id=?",
+                    (idempotency_key,),
+                ).fetchone()
+                if existing is not None:
+                    if existing["payload_digest"] != request_digest:
+                        raise ValueError(
+                            "Idempotency key was already used for a different schedule payload."
+                        )
+                    identity = existing["schedule_id"]
+                else:
+                    connection.execute(
+                        "INSERT INTO schedules (id,objective,recurrence,mode,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,failure_notification_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,'skip',?,?,?,1,?,?)",
+                        (
+                            identity,
+                            objective,
+                            json.dumps(recurrence),
+                            mode,
+                            timezone,
+                            missed_run_policy,
+                            quiet_hours,
+                            delivery_destination,
+                            failure_notification_destination,
+                            now,
+                            now,
+                        ),
+                    )
+                    connection.execute(
+                        "INSERT INTO idempotent_schedule_requests(request_id,payload_digest,schedule_id) VALUES (?,?,?)",
+                        (idempotency_key, request_digest, identity),
+                    )
+            else:
+                connection.execute(
+                    "INSERT INTO schedules (id,objective,recurrence,mode,timezone,missed_run_policy,overlap_policy,quiet_hours,delivery_destination,failure_notification_destination,enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,'skip',?,?,?,1,?,?)",
+                    (
+                        identity,
+                        objective,
+                        json.dumps(recurrence),
+                        mode,
+                        timezone,
+                        missed_run_policy,
+                        quiet_hours,
+                        delivery_destination,
+                        failure_notification_destination,
+                        now,
+                        now,
+                    ),
+                )
         result = self.get(identity)
         assert result is not None
+        return result
+
+    def get_idempotent_request(
+        self, idempotency_key: str, payload_digest: str
+    ) -> dict[str, Any] | None:
+        if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key) is None:
+            raise ValueError("Idempotency key must contain 1–128 safe characters.")
+        if re.fullmatch(r"[0-9a-f]{64}", payload_digest) is None:
+            raise ValueError("Idempotency payload digest must be a SHA-256 hex value.")
+        with self.runs.connection() as connection:
+            existing = connection.execute(
+                "SELECT payload_digest,schedule_id FROM idempotent_schedule_requests WHERE request_id=?",
+                (idempotency_key,),
+            ).fetchone()
+        if existing is None:
+            return None
+        if existing["payload_digest"] != payload_digest:
+            raise ValueError("Idempotency key was already used for a different schedule payload.")
+        result = self.get(existing["schedule_id"])
+        if result is None:
+            raise RuntimeError("Idempotent schedule request points to a missing schedule.")
         return result
 
     def get(self, schedule_id: str) -> dict[str, Any] | None:

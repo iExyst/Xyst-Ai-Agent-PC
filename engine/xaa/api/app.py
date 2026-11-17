@@ -3481,8 +3481,24 @@ def create_app(
 
     @app.post("/schedules", status_code=status.HTTP_201_CREATED, response_model=ScheduleRecord)
     def create_schedule(
-        payload: CreateScheduleRequest, _: None = Depends(authenticate)
+        payload: CreateScheduleRequest,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        _: None = Depends(authenticate),
     ) -> dict[str, Any]:
+        idempotency_payload_digest = hashlib.sha256(
+            json.dumps(
+                payload.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        if idempotency_key is not None:
+            try:
+                existing = schedule_store.get_idempotent_request(
+                    idempotency_key, idempotency_payload_digest
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            if existing is not None:
+                return existing
         try:
             start_at = parse_local_time(payload.start_at)
             ZoneInfo(payload.timezone)
@@ -3560,6 +3576,8 @@ def create_app(
                 delivery_destination=delivery_destination,
                 failure_notification_destination=failure_notification_destination,
                 quiet_hours=validate_quiet_hours(payload.quiet_hours),
+                idempotency_key=idempotency_key,
+                idempotency_payload_digest=idempotency_payload_digest,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

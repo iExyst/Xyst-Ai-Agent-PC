@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import type {EngineClient,Schedule} from './api/client.ts';
 import {InlineConfirmation} from './InlineConfirmation.tsx';
 
@@ -49,6 +49,7 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
   const [editingRecipients,setEditingRecipients]=useState<{scheduleId:string;resultUser:string;failureUser:string}>();
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
+  const pendingCreate=useRef<{payload:string;key:string}|undefined>(undefined);
 
   async function refresh() {
     setError('');
@@ -75,7 +76,11 @@ export function AutomationsPanel({client,model,workspace}:{client:EngineClient;m
       if(Boolean(quietStart)!==Boolean(quietEnd))throw new Error('Set both quiet-hours times or leave both empty.');
       if(quietStart&&quietStart===quietEnd)throw new Error('Quiet hours must have different start and end times.');
       const quietHours=quietStart&&quietEnd?`${quietStart}-${quietEnd}`:undefined;
-      const schedule=await client.createSchedule({objective,acceptance_criteria:[],workspace:workspace||null,mode:authorizedWorkspaceWrites?'authorized_automation':'observe',model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(quietHours?{quiet_hours:quietHours}:{}),...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{}),...(telegramFailureUser?{telegram_failure_user_id:telegramFailureUser}:{})});
+      const input:Parameters<EngineClient['createSchedule']>[0]={objective,acceptance_criteria:[],workspace:workspace||null,mode:authorizedWorkspaceWrites?'authorized_automation':'observe',model,start_at:startAt,frequency,timezone,missed_run_policy:missedRunPolicy,max_iterations:8,max_seconds:900,...(quietHours?{quiet_hours:quietHours}:{}),...(telegramDeliveryUser?{telegram_user_id:telegramDeliveryUser}:{}),...(telegramFailureUser?{telegram_failure_user_id:telegramFailureUser}:{})};
+      const requestPayload=JSON.stringify(input);
+      if(pendingCreate.current?.payload!==requestPayload)pendingCreate.current={payload:requestPayload,key:crypto.randomUUID()};
+      const schedule=await client.createSchedule(input,pendingCreate.current.key);
+      pendingCreate.current=undefined;
       setItems(current=>[schedule,...current]);setObjective('');setAuthorizedWorkspaceWrites(false);
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not create the schedule.');}
     finally {setBusy(false);}

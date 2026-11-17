@@ -290,8 +290,8 @@ export class EngineClient {
 
   schedules(): Promise<Schedule[]> { return this.#request('/schedules'); }
 
-  createSchedule(input: components['schemas']['CreateScheduleRequest']): Promise<Schedule> {
-    return this.#request('/schedules', {method:'POST',body:JSON.stringify(input)});
+  createSchedule(input: components['schemas']['CreateScheduleRequest'], idempotencyKey?: string): Promise<Schedule> {
+    return this.#request('/schedules', {method:'POST',body:JSON.stringify(input), ...(idempotencyKey?{headers:{'Idempotency-Key':idempotencyKey}}:{})});
   }
 
   setScheduleEnabled(id: string, enabled: boolean): Promise<Schedule> {

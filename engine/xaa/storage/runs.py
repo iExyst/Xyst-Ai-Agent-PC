@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 37
+DATABASE_SCHEMA_VERSION = 38
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -553,6 +553,11 @@ class RunStore:
                     enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS idempotent_schedule_requests (
+                    request_id TEXT PRIMARY KEY,
+                    payload_digest TEXT NOT NULL,
+                    schedule_id TEXT NOT NULL UNIQUE REFERENCES schedules(id) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS schedule_executions (
                     id TEXT PRIMARY KEY,
