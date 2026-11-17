@@ -227,6 +227,46 @@ def _bounded_names(value: Any, *, env: bool = False) -> list[str]:
     return sorted(result)[:64]
 
 
+def _bounded_environment_names(*sources: Any) -> tuple[list[str], list[str]]:
+    """Extract credential names from Agent Skills declarations without retaining values."""
+    required: set[str] = set()
+    optional: set[str] = set()
+    for source in sources:
+        if isinstance(source, str):
+            items: list[Any] = [source]
+        elif isinstance(source, (list, tuple)):
+            items = list(cast(Iterable[Any], source))[:64]
+        elif isinstance(source, dict):
+            source_mapping = cast(dict[str, Any], source)
+            items = (
+                [source_mapping]
+                if "name" in source_mapping or "env_var" in source_mapping
+                else list(cast(dict[Any, Any], source))[:64]
+            )
+        else:
+            continue
+        for item in items:
+            if isinstance(item, str):
+                name = item.strip()
+                is_optional = False
+            elif isinstance(item, dict):
+                item_mapping = cast(dict[str, Any], item)
+                name_value = item_mapping.get("name") or item_mapping.get("env_var")
+                if not isinstance(name_value, str):
+                    continue
+                name = name_value.strip()
+                is_optional = item_mapping.get("optional") is True
+            else:
+                continue
+            if not _ENV.fullmatch(name):
+                continue
+            (optional if is_optional else required).add(name)
+    optional.difference_update(required)
+    required_names = sorted(required)[:64]
+    optional_names = sorted(optional)[: max(0, 64 - len(required_names))]
+    return required_names, optional_names
+
+
 def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
     raw_prerequisites = values.get("prerequisites")
     prerequisites = (
@@ -237,6 +277,14 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
     metadata = cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
     raw_hermes = metadata.get("hermes")
     hermes = cast(dict[str, Any], raw_hermes) if isinstance(raw_hermes, dict) else {}
+    raw_setup = values.get("setup")
+    setup = cast(dict[str, Any], raw_setup) if isinstance(raw_setup, dict) else {}
+    legacy_environment = prerequisites.get("env_vars")
+    required_environment_names, optional_environment_names = _bounded_environment_names(
+        values.get("required_environment_variables"),
+        setup.get("collect_secrets"),
+        legacy_environment,
+    )
     dependency_names: set[str] = set()
     dependency_managers: set[str] = set()
     unparsed_dependency_count = 0
@@ -325,7 +373,6 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         for command in _bounded_names(values.get("required_commands"))
         if command not in commands
     )
-    environment_names = _bounded_names(values.get("required_environment_variables"), env=True)
     return {
         "platforms": _bounded_names(values.get("platforms")),
         "hermes_toolsets": toolsets,
@@ -333,7 +380,8 @@ def _declared_requirements(values: dict[str, Any]) -> dict[str, Any]:
         "hermes_fallback_toolsets": fallback_toolsets,
         "hermes_fallback_tools": fallback_tools,
         "required_command_names": commands,
-        "required_environment_names": environment_names,
+        "required_environment_names": required_environment_names,
+        "optional_environment_names": optional_environment_names,
         "prerequisite_fields": sorted(str(key) for key in prerequisites)[:64],
         "dependencies_declared": dependencies is not None,
         "dependency_count": min(dependency_count, 128),
@@ -402,8 +450,13 @@ def _assess_requirement_readiness(
     available_command_set = set(available_commands)
     missing_commands = sorted(name for name in commands if checked_commands.get(name) is False)
     environment_names = cast(list[str], requirements.get("required_environment_names", []))
+    optional_environment_names = cast(list[str], requirements.get("optional_environment_names", []))
     present_environment = sorted(name for name in environment_names if os.environ.get(name))
     present_environment_set = set(present_environment)
+    missing_environment = sorted(set(environment_names) - present_environment_set)
+    present_optional_environment = sorted(
+        name for name in optional_environment_names if os.environ.get(name)
+    )
     dependencies_declared = requirements.get("dependencies_declared") is True
     specs = cast(list[str], requirements.get("python_dependency_specs", []))
     checked_versions = dependency_cache if dependency_cache is not None else {}
@@ -496,7 +549,12 @@ def _assess_requirement_readiness(
         "missing_command_names": sorted(set(missing_commands) - available_command_set),
         "unchecked_command_names": sorted(set(unchecked_commands)),
         "present_environment_names": present_environment,
-        "missing_environment_names": sorted(set(environment_names) - present_environment_set),
+        "missing_environment_names": missing_environment,
+        "present_optional_environment_names": present_optional_environment,
+        "missing_optional_environment_names": sorted(
+            set(optional_environment_names) - set(present_optional_environment)
+        ),
+        "credentials_unresolved": bool(missing_environment),
         "dependencies_unresolved": dependencies_unresolved,
         "dependency_count_unresolved": unresolved_dependency_count,
         "available_python_dependency_specs": available_specs,

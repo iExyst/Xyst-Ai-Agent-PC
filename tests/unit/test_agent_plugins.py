@@ -384,6 +384,7 @@ def test_requirement_readiness_checks_names_without_exposing_values(
             "platforms": ["windows"],
             "required_command_names": ["git", "not-installed"],
             "required_environment_names": ["XAA_FIXTURE_TOKEN", "MISSING_FIXTURE_TOKEN"],
+            "optional_environment_names": ["OPTIONAL_FIXTURE_TOKEN"],
             "dependencies_declared": True,
             "dependency_count": 2,
             "hermes_toolsets": ["terminal"],
@@ -398,6 +399,8 @@ def test_requirement_readiness_checks_names_without_exposing_values(
     assert result["missing_command_names"] == ["not-installed"]
     assert result["present_environment_names"] == ["XAA_FIXTURE_TOKEN"]
     assert result["missing_environment_names"] == ["MISSING_FIXTURE_TOKEN"]
+    assert result["missing_optional_environment_names"] == ["OPTIONAL_FIXTURE_TOKEN"]
+    assert result["credentials_unresolved"] is True
     assert result["dependencies_unresolved"] is True
     assert result["dependency_count_unresolved"] == 2
     assert result["hermes_toolsets_unresolved"] == ["terminal"]
@@ -407,6 +410,50 @@ def test_requirement_readiness_checks_names_without_exposing_values(
     assert "hermes_tools" in result["not_assessed"]
     assert "hermes_fallback_conditions" in result["not_assessed"]
     assert "must-not-appear" not in json.dumps(result)
+
+
+def test_missing_optional_credentials_do_not_make_readiness_unresolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PRESENT_FIXTURE_TOKEN", "present-but-secret")
+    monkeypatch.delenv("OPTIONAL_FIXTURE_TOKEN", raising=False)
+
+    result = agent_plugins._assess_requirement_readiness(
+        {
+            "required_environment_names": ["PRESENT_FIXTURE_TOKEN"],
+            "optional_environment_names": ["OPTIONAL_FIXTURE_TOKEN"],
+        }
+    )
+
+    assert result["missing_environment_names"] == []
+    assert result["missing_optional_environment_names"] == ["OPTIONAL_FIXTURE_TOKEN"]
+    assert result["credentials_unresolved"] is False
+    assert "present-but-secret" not in json.dumps(result)
+
+
+def test_declared_environment_requirements_extract_names_without_exposing_metadata() -> None:
+    requirements = agent_plugins._declared_requirements(
+        {
+            "required_environment_variables": [
+                {"name": "API_TOKEN", "prompt": "private setup prompt"},
+                {"name": "OPTIONAL_TOKEN", "optional": True, "help": "private help"},
+            ],
+            "setup": {
+                "collect_secrets": [{"env_var": "SETUP_TOKEN", "url": "https://secret.test"}]
+            },
+            "prerequisites": {"env_vars": ["LEGACY_TOKEN", "API_TOKEN"]},
+        }
+    )
+
+    assert requirements["required_environment_names"] == [
+        "API_TOKEN",
+        "LEGACY_TOKEN",
+        "SETUP_TOKEN",
+    ]
+    assert requirements["optional_environment_names"] == ["OPTIONAL_TOKEN"]
+    serialized = json.dumps(requirements)
+    for private_value in ("private setup prompt", "private help", "https://secret.test"):
+        assert private_value not in serialized
 
 
 def test_requirement_readiness_checks_python_versions_and_leaves_other_managers_unverified(
