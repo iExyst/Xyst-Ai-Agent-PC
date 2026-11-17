@@ -444,13 +444,14 @@ def test_requirement_readiness_checks_python_versions_and_leaves_other_managers_
     assert "unsupported_dependency_managers" in result["not_assessed"]
 
 
-def test_uv_requirement_manager_uses_python_dependency_lock_contract(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("manager", ["pip-tools", "pipenv", "pdm", "poetry", "uv"])
+def test_python_requirement_managers_use_locked_dependency_contract(
+    monkeypatch: pytest.MonkeyPatch, manager: str
 ) -> None:
     requirements = agent_plugins._declared_requirements(
-        {"dependencies": {"uv": ["fixture-package>=1.0,<2.0"]}}
+        {"dependencies": {manager: ["fixture-package>=1.0,<2.0"]}}
     )
-    assert requirements["dependency_managers"] == ["uv"]
+    assert requirements["dependency_managers"] == [manager]
     assert requirements["python_dependency_specs"] == ["fixture-package>=1.0,<2.0"]
     assert requirements["unsupported_dependency_count"] == 0
 
@@ -1466,7 +1467,7 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         )
 
 
-@pytest.mark.parametrize("manager", ["python", "uv"])
+@pytest.mark.parametrize("manager", ["python", "pip-tools", "pipenv", "pdm", "poetry", "uv"])
 def test_python_dependency_resolution_api_uses_imported_declarations_and_wsl_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manager: str
 ) -> None:

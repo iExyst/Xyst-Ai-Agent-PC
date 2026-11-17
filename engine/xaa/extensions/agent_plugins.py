@@ -49,7 +49,19 @@ MAX_PLUGIN_FINGERPRINT_FILE_BYTES = 2 * 1024 * 1024
 MAX_PLUGIN_FINGERPRINT_TOTAL_BYTES = 16 * 1024 * 1024
 MAX_READINESS_COMMAND_CHECKS = 256
 MAX_READINESS_DEPENDENCY_CHECKS = 128
-_PYTHON_DEPENDENCY_MANAGERS = {"python", "python3", "pip", "pip3", "uv"}
+# These labels identify explicit PEP 508 requirement lists only. X.A.A. resolves
+# them through its locked Python environment and never invokes a package manager.
+_PYTHON_DEPENDENCY_MANAGERS = {
+    "python",
+    "python3",
+    "pip",
+    "pip3",
+    "pip-tools",
+    "pipenv",
+    "pdm",
+    "poetry",
+    "uv",
+}
 _NPM_PACKAGE_SPEC = re.compile(
     r"^(?P<name>(?:@[A-Za-z0-9][A-Za-z0-9._-]{0,127}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,127})"
     r"(?:@(?P<range>[A-Za-z0-9.*+^~<>=| -]{1,128}))?$"
