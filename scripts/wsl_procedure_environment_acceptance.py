@@ -85,6 +85,16 @@ def _seed_interrupted_install(distribution: str, digest: str) -> None:
         "sudo",
         "install",
         "-d",
+        "-m",
+        "0700",
+        "--",
+        str(target.parent),
+    )
+    _wsl(
+        distribution,
+        "sudo",
+        "install",
+        "-d",
         "--",
         str(target / "environment/venv"),
     )
