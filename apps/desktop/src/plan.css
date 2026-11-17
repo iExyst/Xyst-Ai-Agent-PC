@@ -49,6 +49,17 @@
 .plan-tasks article { background: #101824; border: 1px solid #4a5d76; border-radius: 8px; padding: 20px; overflow-wrap: anywhere; scroll-margin-block: 18px; }
 .plan-tasks article:focus, .plan-tasks article:target { outline: 2px solid #79e0c1; outline-offset: 3px; }
 .plan-tasks h3 { margin-top: 0; }
+.plan-task-status,.plan-task-output-preview { display:grid; grid-template-columns:minmax(100px,120px) minmax(0,1fr); align-items:start; gap:8px 16px; margin:9px 0; font-size:.82rem; }
+.plan-task-status strong,.plan-task-output-preview strong { color:#aebbd0; }
+.plan-task-status span { width:fit-content; max-width:100%; padding:3px 9px; border:1px solid #385448; border-radius:999px; background:#17251f; color:#b5dfc6; line-height:1.3; }
+.plan-task-output-preview span { display:-webkit-box; overflow:hidden; color:#d1ded7; line-height:1.45; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.plan-task-details { margin-top:14px; border-top:1px solid #2b3949; }
+.plan-task-details>summary { width:fit-content; max-width:100%; margin-top:12px; padding:6px 9px; border:1px solid #34465a; border-radius:7px; background:#151f2a; color:#bdcada; cursor:pointer; font-size:.78rem; font-weight:650; }
+.plan-task-details>summary:hover { border-color:#58718c; color:#eef5fb; }
+.plan-task-details>dl { margin-top:14px; }
+.plan-task-details h4 { margin:16px 0 6px; }
+.plan-task-details ul { margin-top:6px; }
+.plan-task-details[open] { padding-bottom:4px; }
 .plan-tasks dl { display: grid; grid-template-columns: minmax(90px, 120px) minmax(0, 1fr); gap: 8px 16px; }
 .plan-tasks dt { color: #aebbd0; }
 .plan-tasks dd { margin: 0; }
@@ -56,6 +67,6 @@
 .task-review pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
 .task-review input[type=checkbox] { width: auto; display: inline-block; margin: 0 10px 0 0; }
 .task-review fieldset { border: 1px solid #697b94; margin-top: 16px; min-width: 0; }
-@media (max-width: 480px) { .plan-tasks dl { grid-template-columns: 1fr; gap: 4px; } .plan-tasks dd { margin-bottom: 12px; } }
+@media (max-width: 480px) { .plan-tasks dl { grid-template-columns: 1fr; gap: 4px; } .plan-tasks dd { margin-bottom: 12px; } .plan-task-status,.plan-task-output-preview { grid-template-columns:1fr; gap:4px; } }
 @media (max-width: 480px) { .plan-progress { padding: 14px; } }
 @media (max-width: 480px) { .plan-dependency-map { margin: 16px 0; padding: 12px; } .plan-dependency-heading { align-items: flex-start; } }

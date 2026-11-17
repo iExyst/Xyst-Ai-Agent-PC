@@ -79,15 +79,8 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         return <article id={taskAnchor} tabIndex={-1} key={task.id} aria-label={`Task ${task.local_id}`}>
           <h3>{task.local_id} <small>{task.assigned_role}</small></h3>
           <p>{task.objective}</p>
-          <dl><dt>Status</dt><dd>{task.status==='queued'?`queued · ${readiness}`:task.status==='verifying'?'Awaiting review':task.status}</dd>
-            <dt>Depends on</dt><dd>{dependencies.length ? dependencies.map(({id,task:dependency},index)=><span key={id}>{index>0?', ':''}{dependency?<a href={`#plan-task-${encodeURIComponent(dependency.local_id)}`}>{dependency.local_id}</a>:id}</span>) : 'None'}</dd>
-            <dt>Unlocks</dt><dd>{dependents.length ? dependents.map((dependent,index)=><span key={dependent.id}>{index>0?', ':''}<a href={`#plan-task-${encodeURIComponent(dependent.local_id)}`}>{dependent.local_id}</a></span>) : 'None'}</dd>
-            <dt>Model</dt><dd>{task.model_route ?? 'Unassigned'}</dd>
-            <dt>Workspace</dt><dd>{task.workspace ?? 'None'}</dd>
-            <dt>Permissions</dt><dd>{task.permission_scope.join(', ') || 'None'}</dd>
-            <dt>Budget</dt><dd>{task.budgets.max_iterations} {task.budgets.max_iterations===1?'iteration':'iterations'} · {task.budgets.max_seconds} {task.budgets.max_seconds===1?'second':'seconds'}<br/>Reported token allowance: {task.budgets.max_total_tokens ?? 'Shared run threshold'} · Output tokens per request: {task.budgets.max_output_tokens ?? 'Run setting'}</dd>
-            <dt>Usage</dt><dd>Iterations: {usage.inference_attempts} used · {usage.iterations_remaining} remaining<br/>Wall time: {Math.floor(usage.elapsed_seconds)}s elapsed · {Math.ceil(usage.seconds_remaining)}s remaining<br/>{task.budgets.max_total_tokens==null?'Tokens: shared run threshold':usage.usage_measured?`Tokens: ${usage.measured_tokens.toLocaleString()} used · ${usage.tokens_remaining?.toLocaleString() ?? '0'} remaining`:`Tokens: ${usage.measured_tokens.toLocaleString()} measured · remaining allowance unavailable while usage is unmeasured`}</dd>
-          </dl>
+          <p className="plan-task-status"><strong>Status</strong><span>{task.status==='queued'?`queued · ${readiness}`:task.status==='verifying'?'Awaiting review':task.status}</span></p>
+          <p className="plan-task-output-preview"><strong>Expected output</strong><span>{task.expected_outputs.length?task.expected_outputs.join(' · '):'None recorded.'}</span></p>
           {(task.status==='queued'||task.status==='running')&&<button type="button" disabled={task.status==='queued'&&!canCancelQueued} onClick={()=>{if(window.confirm(`Cancel ${task.local_id}? Any tasks depending on it will be blocked.`))void cancelTask(task.local_id);}}>Cancel {task.local_id}</button>}
           {task.status==='blocked' && <p>{task.blocked_reason==='token_budget_exhausted_or_unmeasured'
             ? 'The reported token allowance was reached, or usage could not be measured. Start a new objective to change its allowance.'
@@ -98,12 +91,22 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
             : task.blocked_reason==='worker_lost_reconciliation_required' ? 'The specialist worker stopped while this task may have been in flight. Its lease was fenced; inspect the task activity and reconcile its journal before continuing.'
             : task.blocked_reason==='review_evidence_missing' ? 'The reviewer reached its request limit without inspecting every required source, changed artifact, and saved test output. This result cannot be accepted as independent review.'
             : 'Task execution is blocked. Inspect the activity before starting a new objective.'}</p>}
+          <details className="plan-task-details"><summary>Task details · {task.acceptance_criteria.length} {task.acceptance_criteria.length===1?'criterion':'criteria'} · {task.input_artifacts.length} input {task.input_artifacts.length===1?'artifact':'artifacts'}</summary>
+          <dl><dt>Depends on</dt><dd>{dependencies.length ? dependencies.map(({id,task:dependency},index)=><span key={id}>{index>0?', ':''}{dependency?<a href={`#plan-task-${encodeURIComponent(dependency.local_id)}`}>{dependency.local_id}</a>:id}</span>) : 'None'}</dd>
+            <dt>Unlocks</dt><dd>{dependents.length ? dependents.map((dependent,index)=><span key={dependent.id}>{index>0?', ':''}<a href={`#plan-task-${encodeURIComponent(dependent.local_id)}`}>{dependent.local_id}</a></span>) : 'None'}</dd>
+            <dt>Model</dt><dd>{task.model_route ?? 'Unassigned'}</dd>
+            <dt>Workspace</dt><dd>{task.workspace ?? 'None'}</dd>
+            <dt>Permissions</dt><dd>{task.permission_scope.join(', ') || 'None'}</dd>
+            <dt>Budget</dt><dd>{task.budgets.max_iterations} {task.budgets.max_iterations===1?'iteration':'iterations'} · {task.budgets.max_seconds} {task.budgets.max_seconds===1?'second':'seconds'}<br/>Reported token allowance: {task.budgets.max_total_tokens ?? 'Shared run threshold'} · Output tokens per request: {task.budgets.max_output_tokens ?? 'Run setting'}</dd>
+            <dt>Usage</dt><dd>Iterations: {usage.inference_attempts} used · {usage.iterations_remaining} remaining<br/>Wall time: {Math.floor(usage.elapsed_seconds)}s elapsed · {Math.ceil(usage.seconds_remaining)}s remaining<br/>{task.budgets.max_total_tokens==null?'Tokens: shared run threshold':usage.usage_measured?`Tokens: ${usage.measured_tokens.toLocaleString()} used · ${usage.tokens_remaining?.toLocaleString() ?? '0'} remaining`:`Tokens: ${usage.measured_tokens.toLocaleString()} measured · remaining allowance unavailable while usage is unmeasured`}</dd>
+          </dl>
           <h4>Acceptance criteria</h4>
           {task.acceptance_criteria.length ? <ul>{task.acceptance_criteria.map((criterion, index) => <li key={index}>{criterion}</li>)}</ul> : <p>No criteria recorded.</p>}
           <h4>Assigned input artifacts</h4>
           {task.input_artifacts.length ? <ul>{task.input_artifacts.map(id => <li key={id}>{id}</li>)}</ul> : <p>None</p>}
           <h4>Expected outputs</h4>
           {task.expected_outputs.length ? <ul>{task.expected_outputs.map((output, index) => <li key={index}>{output}</li>)}</ul> : <p>None recorded.</p>}
+          </details>
           {partials[task.local_id]&&<><p role="status" className="sr-only">An unverified {task.assigned_role} specialist draft is available and may still change.</p><article aria-live="off"><h4>Partial specialist draft · unverified</h4><p style={{whiteSpace:'pre-wrap'}}>{partials[task.local_id]}</p></article></>}
           {task.status==='verifying'&&<TaskReviewPanel client={client} runId={runId} taskId={task.local_id} onReviewed={onReviewed}/>}
           {task.status==='blocked'&&task.blocked_reason==='worker_lost_reconciliation_required'&&<TaskRecoveryPanel client={client} runId={runId} taskId={task.local_id} onUpdated={onReviewed}/>}

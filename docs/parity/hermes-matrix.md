@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Compact specialist task cards in the dark desktop (2026-11-17)
+
+The Active run view keeps each specialist's objective, status, and expected output visible and places secondary metadata and evidence lists in a keyboard-accessible disclosure. Cancel, review, recovery, and blocked-state actions remain visible without opening it. The production build and focused objective browser flow pass, including disclosure state and dependency-link navigation. This is a desktop presentation refinement for X.A.A.; it does not change execution behavior or establish additional Hermes parity. No live model inference was used. See [`progress.md`](../progress.md#keep-specialist-plans-compact-in-the-dark-desktop-2026-11-17).
+
 ## Windows AppContainer project repair and final validation (2026-11-17)
 
 The current source engine passes the deterministic diagnose/edit/restricted-check/final-validation workflow on the actual Windows AppContainer backend. The final validation matches the edited project snapshot; command changes are discarded, network access is denied, cleanup is confirmed, and no calls remain unresolved ([report](../../.acceptance/workspace-vertical-slice-7e8ae64da76a4fa2bc4a887f1f4798d0/report.json)). This adds current Windows backend evidence for one synthetic project, not broad project compatibility or frozen installed-desktop coverage. No model inference was requested. Backend and project-work parity remain partial.

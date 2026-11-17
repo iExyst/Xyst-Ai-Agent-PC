@@ -1,5 +1,9 @@
 # Progress
 
+## Keep specialist plans compact in the dark desktop (2026-11-17)
+
+Task cards in the Active run view now keep their objective, current status, and expected output visible while placing dependency links, workspace, permissions, budgets, usage, acceptance criteria, and input/output artifact lists behind a keyboard-accessible details disclosure. Cancel and recovery/review actions remain immediately visible. The production desktop build and the focused objective browser flow pass; the browser check verifies that details start collapsed, expected output stays visible, the disclosure exposes the saved task data, and dependency links still navigate correctly. Live model inference was not used. This improves plan readability for larger runs but does not change task execution or close broader Phase 4/6 acceptance.
+
 ## Reverify the complete Windows AppContainer workspace slice (2026-11-17)
 
 The current source engine completed the deterministic coordinator workflow on the real `windows-appcontainer-v1` backend: it read the defective `answer.py`, edited it to return 42, ran the restricted project check successfully, and then ran separate fresh final-project validation against the same current snapshot. Both commands exited 0, completed cleanup, discarded sandbox changes, and left no unresolved calls. The acceptance report confirms network denial and `model_inference_requested: false` ([report](../.acceptance/workspace-vertical-slice-7e8ae64da76a4fa2bc4a887f1f4798d0/report.json)). This is current source-engine evidence for one synthetic project on Windows AppContainer; it does not verify the frozen installed desktop flow or broad project compatibility. Live LM Studio testing remains deferred.
