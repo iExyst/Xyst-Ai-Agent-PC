@@ -8968,7 +8968,9 @@ export interface operations {
     create_schedule_schedules_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
