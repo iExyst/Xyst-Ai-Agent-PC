@@ -2,7 +2,7 @@
 
 ## Verify final-review page bounds (2026-11-16)
 
-Added a regression that rejects a requested page size of 201 while preserving the existing three-page check across 205 changed files. The focused test passes locally, and exact-source Windows run [43986840447](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43986840447) passed the full Python suite, final-review and desktop browser acceptances, static checks, and process-recovery diagnostics. The installer job was skipped because no packaging inputs changed. This verifies the changed-file paging bounds; the broader live-model and release gates remain open.
+Added a regression that rejects a requested page size of 201 while preserving the existing three-page check across 205 changed files. The focused test passes locally, and exact-source Windows run [43986840447](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43986840447) passed the full Python suite, final-review and desktop browser acceptances, static checks, and process-recovery diagnostics. Exact-revision installer run [43989217563](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43989217563) passed 51 executed Windows steps, including the native desktop review flow and clean install, 0.1.0 upgrade, boot, and uninstall. The installed desktop and engine match manifest hashes `70d73346…` and `7a0022a9…`; the unsigned installer SHA-256 is `3bfce178…`. Reports and package are preserved in [`.acceptance/hosted-installer-43989217563/`](../.acceptance/hosted-installer-43989217563/). Both workflows used deterministic fixtures without live model inference. This verifies changed-file paging bounds; the broader live-model and release gates remain open.
 
 ## Tolerate slower browser page text extraction (2026-11-16)
 

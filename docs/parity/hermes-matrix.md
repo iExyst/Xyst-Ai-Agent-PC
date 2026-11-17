@@ -2,7 +2,7 @@
 
 ## Final-review changed-file paging bounds (2026-11-16)
 
-The final-review UI loads changed files in bounded pages and validates page responses before rendering. A regression covers all 205 changed files across three pages and rejects `limit=201`; the exact-source Windows workflow [43986840447](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43986840447) passes. This verifies the review evidence display path; it does not close the broader coding, review, or live-model parity requirements.
+The final-review UI loads changed files in bounded pages and validates page responses before rendering. A regression covers all 205 changed files across three pages and rejects `limit=201`; exact-source workflow [43986840447](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43986840447) and exact-revision clean installer workflow [43989217563](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43989217563) pass. The installed desktop and engine hashes match the package manifest; acceptance reports are retained in [`.acceptance/hosted-installer-43989217563/`](../../.acceptance/hosted-installer-43989217563/). This verifies the review evidence display path; broader coding, review, and live-model parity requirements remain open.
 
 ## Packaged browser read and final-review file disclosure (2026-11-16)
 
