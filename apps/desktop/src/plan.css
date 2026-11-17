@@ -12,7 +12,7 @@
 .plan-dependency-heading h3 { margin: 0; color: #d8ebe0; font-size: .98rem; }
 .plan-dependency-heading p { margin: 4px 0 0; color: #9eafb0; font-size: .82rem; }
 .plan-dependency-heading>span { color: #a8c4b5; font-size: .76rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.plan-dependency-viewport { max-width: 100%; overflow: auto; border: 1px solid #263936; border-radius: 10px; background: radial-gradient(ellipse at 50% 0%,#17231f,#10171b 75%); scrollbar-color: #42574d #151e20; }
+.plan-dependency-viewport { max-width: 100%; max-height: min(560px,65vh); overflow: auto; border: 1px solid #263936; border-radius: 10px; background: radial-gradient(ellipse at 50% 0%,#17231f,#10171b 75%); scrollbar-color: #42574d #151e20; }
 .plan-dependency-viewport:focus-visible { outline: 3px solid #9cbaff; outline-offset: 3px; }
 .plan-dependency-canvas { position: relative; min-width: 100%; }
 .plan-dependency-stage-title { position: absolute; top: 12px; margin: 0; color: #90aa9a; font-size: .7rem; font-weight: 750; letter-spacing: .11em; text-align: center; text-transform: uppercase; }

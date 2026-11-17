@@ -42,8 +42,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path.endsWith('/plan')) return route.fulfill({json: {tasks: [
       {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},resource_usage:{inference_attempts:1,iterations_remaining:1,elapsed_seconds:12,seconds_remaining:48,measured_tokens:500,tokens_remaining:1500,usage_measured:true},status:'queued'},
       {id:'browser-run:inventory',local_id:'inventory',objective:'Inspect another independent input',acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:["Inventory result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:100},resource_usage:{inference_attempts:1,iterations_remaining:1,elapsed_seconds:10,seconds_remaining:50,measured_tokens:20,tokens_remaining:null,usage_measured:false},status:'queued'},
+      ...Array.from({length:6},(_,index)=>({id:`browser-run:extra-${index+1}`,local_id:`extra-${index+1}`,objective:`Inspect independent input ${index+1}`,acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:['Concise findings'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'})),
       {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
-    ],ready:['inspect','inventory'],blocked:[]},headers});
+    ],ready:['inspect','inventory',...Array.from({length:6},(_,index)=>`extra-${index+1}`)],blocked:[]},headers});
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
       { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain', sha256:'a'.repeat(64) },
       { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png', sha256:'b'.repeat(64) },
@@ -201,32 +202,34 @@ test('connect, submit an objective and render its saved events', async ({ page }
   const plan = page.getByRole('region', {name:'Task plan'});
   await expect(page.getByRole('region',{name:'Active run'}).getByRole('list')).toContainText('Exact prompt counter failed; safe SDK error details saved (generic.tokenizeFailed)');
   await expect(plan.getByRole('heading', {name:'Plan and specialists'})).toBeVisible();
-  await expect(plan.getByRole('region',{name:'Specialist progress'})).toContainText('0 of 3 tasks complete');
-  await expect(plan.getByRole('status')).toContainText('0 awaiting review; 3 waiting; 0 need attention');
+  await expect(plan.getByRole('region',{name:'Specialist progress'})).toContainText('0 of 9 tasks complete');
+  await expect(plan.getByRole('status')).toContainText('0 awaiting review; 9 waiting; 0 need attention');
   await expect(plan.getByRole('status')).toHaveAttribute('aria-atomic','true');
-  await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('3 waiting');
+  await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('9 waiting');
   await expect(plan.getByRole('list',{name:'Task status counts'})).toContainText('0 awaiting review');
-  await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','3');
+  await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','9');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('value','0');
   const dependencyMap=plan.getByRole('region',{name:'Task dependency map'});
   await expect(dependencyMap.getByRole('heading',{name:'Dependency map'})).toBeVisible();
-  await expect(dependencyMap).toContainText('3 tasks · 2 stages');
+  await expect(dependencyMap).toContainText('9 tasks · 2 stages');
   await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toBeVisible();
   await expect(dependencyMap.getByRole('link',{name:'Open task inventory, stage 1, Ready'})).toBeVisible();
   await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toContainText('Inspect <script>window.planExecuted=true</script>');
   await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toContainText('1 expected output');
   await dependencyMap.screenshot({path:'test-results/plan-dependency-map.png'});
   await expect(dependencyMap.locator('.plan-dependency-edges > path')).toHaveCount(1);
+  const graphViewport=dependencyMap.getByLabel('Scrollable task dependency map');
+  await expect.poll(()=>graphViewport.evaluate(element=>element.scrollHeight>element.clientHeight)).toBe(true);
   const graphReview=dependencyMap.getByRole('link',{name:'Open task review, stage 2, Waiting'});
   await graphReview.click();
   await expect(page).toHaveURL(/#plan-task-review$/);
   await expect(plan.getByRole('article',{name:'Task review'})).toBeFocused();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inspect'})).toBeVisible();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inventory'})).toBeVisible();
-  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('2 independent tasks');
-  await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('max','2');
+  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('8 independent tasks');
+  await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('max','8');
   await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('value','0');
-  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('2 waiting');
+  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('8 waiting');
   await expect(plan.getByRole('group',{name:'Dependency stage 2'}).getByRole('article',{name:'Task review'})).toBeVisible();
   await expect(plan.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
   const inspect = plan.getByRole('article',{name:'Task inspect'});
