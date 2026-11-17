@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Visual specialist dependency graph (2026-11-17)
+
+Saved plans now show stage columns, prerequisite-to-dependent arrows, status chips, and keyboard-accessible links to full task details. The graph is hidden when dependency ordering is invalid; the saved task list remains available with an explicit order warning. Browser acceptance verifies the graph against a three-task dependency fixture. Exact-source workflow [43992096803](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43992096803) and exact-revision packaged Windows workflow [43992763102](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43992763102) passed. This closes one plan visualization gap; real-model planning, orchestration reliability, and broader Hermes parity remain open. See [`progress.md`](../progress.md#add-a-visual-dependency-graph-to-specialist-plans-2026-11-17).
+
 ## Final-review changed-file paging bounds (2026-11-16)
 
 The final-review UI loads changed files in bounded pages and validates page responses before rendering. A regression covers all 205 changed files across three pages and rejects `limit=201`; exact-source workflow [43986840447](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43986840447) and exact-revision clean installer workflow [43989217563](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/43989217563) pass. The installed desktop and engine hashes match the package manifest; acceptance reports are retained in [`.acceptance/hosted-installer-43989217563/`](../../.acceptance/hosted-installer-43989217563/). This verifies the review evidence display path; broader coding, review, and live-model parity requirements remain open.
