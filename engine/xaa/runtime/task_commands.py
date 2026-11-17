@@ -91,7 +91,7 @@ def read_dependency_command_output(
     offset: int,
     limit: int,
 ) -> dict[str, Any]:
-    """Read a bounded byte range from validation output of a reviewed dependency."""
+    """Read a bounded byte range from validation output of a reviewed task target."""
     if offset < 0 or not 1 <= limit <= 16384:
         raise ValueError("Reviewer output reads require a valid offset and a 16 KiB maximum.")
     with store.connection() as connection:
@@ -99,17 +99,18 @@ def read_dependency_command_output(
         store.require_task_read_scope(connection, scope.run_id, scope.task_id, scope.task_token)
         relation = connection.execute(
             "SELECT reviewer.assigned_role,dependency.status FROM tasks AS reviewer "
-            "JOIN task_dependencies AS edge ON edge.task_id=reviewer.id "
-            "JOIN tasks AS dependency ON dependency.id=edge.depends_on_task_id "
-            "WHERE reviewer.id=? AND reviewer.run_id=? AND dependency.id=?",
+            "JOIN tasks AS dependency ON dependency.id=? AND dependency.run_id=reviewer.run_id "
+            "WHERE reviewer.id=? AND reviewer.run_id=? AND ("
+            "EXISTS (SELECT 1 FROM task_dependencies AS edge WHERE edge.task_id=reviewer.id "
+            "AND edge.depends_on_task_id=dependency.id) OR dependency.parent_task_id=reviewer.id)",
             (
+                f"{scope.run_id}:{dependency_id}",
                 f"{scope.run_id}:{scope.task_id}",
                 scope.run_id,
-                f"{scope.run_id}:{dependency_id}",
             ),
         ).fetchone()
         if relation is None or relation["assigned_role"] != "reviewer":
-            raise PermissionError("Only a reviewer may inspect a declared dependency artifact.")
+            raise PermissionError("Only a reviewer may inspect a declared review-target artifact.")
         if relation["status"] != "completed":
             raise PermissionError("Validation output is available only after task review.")
     evidence = command_evidence(store, scope.run_id, dependency_id)

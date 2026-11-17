@@ -432,7 +432,7 @@ class TaskWorkspaces:
         offset: int = 0,
         limit: int = 16_384,
     ) -> dict[str, Any]:
-        """Read one completed dependency's changed private file for its assigned reviewer."""
+        """Read one completed review target's changed private file for its assigned reviewer."""
         if offset < 0 or offset > 4_194_304 or not 1 <= limit <= 16_384:
             raise ValueError("Reviewer file reads require a valid offset and a 16 KiB page limit.")
         checked = checked_path(path).as_posix()
@@ -441,13 +441,16 @@ class TaskWorkspaces:
             self.store.require_task_read_scope(connection, run_id, reviewer_id, reviewer_token)
             relation = connection.execute(
                 "SELECT reviewer.assigned_role,dependency.status FROM tasks AS reviewer "
-                "JOIN task_dependencies AS edge ON edge.task_id=reviewer.id "
-                "JOIN tasks AS dependency ON dependency.id=edge.depends_on_task_id "
-                "WHERE reviewer.id=? AND reviewer.run_id=? AND dependency.id=?",
-                (f"{run_id}:{reviewer_id}", run_id, f"{run_id}:{dependency_id}"),
+                "JOIN tasks AS dependency ON dependency.id=? AND dependency.run_id=reviewer.run_id "
+                "WHERE reviewer.id=? AND reviewer.run_id=? AND ("
+                "EXISTS (SELECT 1 FROM task_dependencies AS edge WHERE edge.task_id=reviewer.id "
+                "AND edge.depends_on_task_id=dependency.id) OR dependency.parent_task_id=reviewer.id)",
+                (f"{run_id}:{dependency_id}", f"{run_id}:{reviewer_id}", run_id),
             ).fetchone()
             if relation is None or relation["assigned_role"] != "reviewer":
-                raise PermissionError("Only a reviewer may inspect a declared dependency artifact.")
+                raise PermissionError(
+                    "Only a reviewer may inspect a declared review-target artifact."
+                )
             if relation["status"] != "completed":
                 raise PermissionError("Dependency artifacts are available only after task review.")
             base, files = self.view(connection, run_id, dependency_id)

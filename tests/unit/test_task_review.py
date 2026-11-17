@@ -17,7 +17,7 @@ from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
 
 
-def setup_candidate(root, *, authorize_plan=False):
+def setup_candidate(root, *, authorize_plan=False, nested_plan=False):
     target = root / "evidence.txt"
     target.write_bytes(b"actual evidence")
     store = RunStore(root / "review.sqlite3")
@@ -40,8 +40,14 @@ def setup_candidate(root, *, authorize_plan=False):
                 objective="Inspect file",
                 expected_outputs=["A concise evidence report"],
                 acceptance_criteria=["Reports actual evidence"],
+                parent_id="review" if nested_plan else None,
             ),
-            TaskDefinition(id="review", objective="Review", dependencies=["inspect"]),
+            TaskDefinition(
+                id="review",
+                objective="Aggregate reviewed child results" if nested_plan else "Review",
+                role="executor",
+                dependencies=[] if nested_plan else ["inspect"],
+            ),
         ],
     )
     claim = tasks.claim_ready(run_id, parent)
@@ -241,8 +247,13 @@ def test_user_can_reject_candidate_without_claiming_verification(workspace_tmp_p
         assert response.json()["blocked"] == ["review"]
 
 
-def test_accepted_prerequisite_enables_supervised_dependent_dispatch(workspace_tmp_path):
-    store, run_id, _ = setup_candidate(workspace_tmp_path, authorize_plan=True)
+@pytest.mark.parametrize("nested_plan", [False, True])
+def test_accepted_prerequisite_enables_supervised_dependent_dispatch(
+    workspace_tmp_path, nested_plan
+):
+    store, run_id, _ = setup_candidate(
+        workspace_tmp_path, authorize_plan=True, nested_plan=nested_plan
+    )
 
     class DependentReader(LMStudioProvider):
         def __init__(self):
@@ -255,11 +266,23 @@ def test_accepted_prerequisite_enables_supervised_dependent_dispatch(workspace_t
         async def chat(self, *, model, messages, tools=None):
             if messages[-1]["role"] == "user":
                 assignment = json.loads(messages[-1]["content"])
-                assert assignment["prerequisites_untrusted"][0]["task_id"] == "inspect"
-                assert (
-                    assignment["prerequisites_untrusted"][0]["file_evidence"][0]["path"]
-                    == "evidence.txt"
-                )
+                if nested_plan:
+                    assert assignment["subtask_result_task_ids"] == ["inspect"]
+                    assert assignment["subtask_results_omitted"] == []
+                    assert assignment["subtask_results_untrusted"][0]["task_id"] == "inspect"
+                    assert (
+                        assignment["subtask_results_untrusted"][0]["candidate_untrusted"]
+                        == "The file says actual evidence."
+                    )
+                    assert assignment["subtask_results_untrusted"][0]["completion"] == (
+                        "completed_after_owner_review"
+                    )
+                else:
+                    assert assignment["prerequisites_untrusted"][0]["task_id"] == "inspect"
+                    assert (
+                        assignment["prerequisites_untrusted"][0]["file_evidence"][0]["path"]
+                        == "evidence.txt"
+                    )
                 message = {
                     "role": "assistant",
                     "tool_calls": [

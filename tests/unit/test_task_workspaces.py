@@ -317,8 +317,9 @@ async def test_specialist_snapshot_worker_rejects_source_workspace_junction(work
             junction.unlink()
 
 
-async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outputs(
-    workspace_tmp_path,
+@pytest.mark.parametrize("relationship", ["dependency", "subtask"])
+async def test_reviewer_can_read_only_completed_review_target_changes_and_test_outputs(
+    workspace_tmp_path, relationship
 ):
     from test_command_controller import FixtureTransport
     from test_command_controller import setup as setup_command
@@ -338,14 +339,15 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
                 id="implementation",
                 objective="Edit and validate the private project",
                 permissions=["workspace.read", "workspace.write", "workspace.command"],
+                parent_id="review" if relationship == "subtask" else None,
                 max_iterations=3,
             ),
             TaskDefinition(
                 id="review",
                 objective="Independently inspect the implementation and test output",
                 role="reviewer",
-                dependencies=["implementation"],
-                permissions=["workspace.read"],
+                dependencies=["implementation"] if relationship == "dependency" else [],
+                permissions=["workspace.read", "workspace.write", "workspace.command"],
                 max_iterations=16,
             ),
         ],
@@ -555,9 +557,9 @@ async def test_reviewer_can_read_only_completed_dependency_changes_and_test_outp
                 for message in messages
                 if message["role"] == "user"
                 and isinstance(message["content"], str)
-                and '"dependency_task_ids"' in message["content"]
+                and '"review_target_task_ids"' in message["content"]
             )
-            assert json.loads(task_prompt)["dependency_task_ids"] == ["implementation"]
+            assert json.loads(task_prompt)["review_target_task_ids"] == ["implementation"]
             names = {item["function"]["name"] for item in tools or []}
             assert {
                 "review_dependency_manifest",

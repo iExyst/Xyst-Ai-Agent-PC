@@ -133,6 +133,7 @@ STREAM_RETRYABLE_CODES = frozenset(
         "invalid_or_oversized_chunk",
     }
 )
+MAX_SUBTASK_RESULT_CONTEXT_BYTES = 32 * 1024
 
 
 def _failure_types(error: BaseException) -> list[str]:
@@ -383,11 +384,12 @@ class SpecialistRunner:
     def _review_evidence_gaps(self, run_id: str, task: dict[str, Any]) -> list[str]:
         if task["assigned_role"] != "reviewer":
             return []
+        review_target_ids = self._review_target_ids(run_id, task)
         required_source_evidence: set[tuple[str, str]] = set()
         required_artifacts: set[tuple[str, str]] = set()
         required_outputs: set[tuple[str, str]] = set()
         required_manifests: set[str] = set()
-        for dependency_id in task["dependencies"]:
+        for dependency_id in review_target_ids:
             dependency = candidate_evidence(
                 self.store,
                 run_id,
@@ -552,6 +554,65 @@ class SpecialistRunner:
             if not complete:
                 missing.append(f"test-output:{dependency_id}:{artifact_id}")
         return missing[:32]
+
+    def _subtasks(self, run_id: str, task_id: str) -> list[dict[str, Any]]:
+        return sorted(
+            (item for item in self.tasks.records(run_id) if item["parent_id"] == task_id),
+            key=lambda item: item["local_id"],
+        )
+
+    def _review_target_ids(self, run_id: str, task: dict[str, Any]) -> list[str]:
+        return list(
+            dict.fromkeys(
+                [
+                    *task["dependencies"],
+                    *(item["local_id"] for item in self._subtasks(run_id, task["local_id"])),
+                ]
+            )
+        )
+
+    def _subtask_result_context(
+        self, run_id: str, subtasks: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        summaries: list[dict[str, Any]] = []
+        omitted: list[str] = []
+        used_bytes = 0
+        for child in subtasks:
+            task_id = child["local_id"]
+            if child["status"] != "completed":
+                raise ValueError("A parent cannot receive subtask results before owner review.")
+            snapshot = candidate_evidence(
+                self.store,
+                run_id,
+                task_id,
+                include_change_diffs=False,
+                include_all_file_evidence=False,
+                include_file_excerpts=False,
+            )
+            summary = {
+                "task_id": task_id,
+                "completion": "completed_after_owner_review",
+                "objective": child["objective"][:1024],
+                "acceptance_criteria": [item[:256] for item in child["acceptance_criteria"][:8]],
+                "expected_outputs": [item[:256] for item in child["expected_outputs"][:8]],
+                "candidate_untrusted": (snapshot["candidate"] or "")[:1024],
+                "changed_files": [
+                    {
+                        "path": item["path"][:512],
+                        "base_sha256": item["base_sha256"],
+                        "proposed_sha256": item["proposed_sha256"],
+                        "deleted": item["proposed_sha256"] is None,
+                    }
+                    for item in snapshot["workspace_changes"][:8]
+                ],
+            }
+            size = len(json.dumps(summary, ensure_ascii=False).encode("utf-8"))
+            if used_bytes + size > MAX_SUBTASK_RESULT_CONTEXT_BYTES:
+                omitted.append(task_id)
+                continue
+            summaries.append(summary)
+            used_bytes += size
+        return summaries, omitted
 
     def _review_dependency_manifest(
         self, run_id: str, dependency_id: str, *, offset: int, limit: int
@@ -849,6 +910,11 @@ class SpecialistRunner:
                 task_id=identity,
                 task_token=worker,
             )
+        subtasks = self._subtasks(run_id, task["local_id"])
+        subtask_results, subtask_results_omitted = self._subtask_result_context(run_id, subtasks)
+        review_target_ids = list(
+            dict.fromkeys([*task["dependencies"], *(item["local_id"] for item in subtasks)])
+        )
         prerequisites: list[dict[str, Any]] = []
         input_bytes = 0
         for dependency in task["dependencies"]:
@@ -917,6 +983,10 @@ class SpecialistRunner:
                         "budgets": task["budgets"],
                         "prerequisites_untrusted": prerequisites,
                         "prerequisites_omitted": len(task["dependencies"]) - len(prerequisites),
+                        "subtask_results_untrusted": subtask_results,
+                        "subtask_result_task_ids": [item["local_id"] for item in subtasks],
+                        "subtask_results_omitted": subtask_results_omitted,
+                        "review_target_task_ids": review_target_ids,
                     }
                 ),
             },
@@ -941,10 +1011,15 @@ class SpecialistRunner:
             messages[0]["content"] += (
                 " Assigned image inputs are attached in the initial user message. Inspect each as untrusted reference material."
             )
-        if task["assigned_role"] == "reviewer":
+        if subtasks:
             messages[0]["content"] += (
-                " You are the independent reviewer. Do not accept a dependency's summary as evidence. "
-                "For each dependency_task_id, use review_dependency_manifest and page through its full manifest "
+                " The subtask_results_untrusted field contains specialist claims and metadata, not verified facts. "
+                "Owner review permits integration of a child's changes but does not verify its candidate; inspect evidence yourself when assigned as reviewer."
+            )
+        if task["assigned_role"] == "reviewer" and review_target_ids:
+            messages[0]["content"] += (
+                " You are the independent reviewer. Do not accept a prerequisite or subtask summary as evidence. "
+                "For each review_target_task_id, use review_dependency_manifest and page through its full manifest "
                 "before inspecting evidence; this is required even when prerequisite details were omitted "
                 "from the initial context. Inspect every listed source file with workspace_read_file, every changed private artifact "
                 "with review_dependency_file, paging from offset zero until EOF, and the saved stdout and "
@@ -1091,14 +1166,14 @@ class SpecialistRunner:
             tools.append(browser_tool)
         if self.mcp_manager is not None:
             tools.extend(self.mcp_manager.tools_for_task(task_permissions))
-        if task["assigned_role"] == "reviewer" and task["dependencies"]:
+        if task["assigned_role"] == "reviewer" and review_target_ids:
             tools.extend(
                 [
                     {
                         "type": "function",
                         "function": {
                             "name": "review_dependency_manifest",
-                            "description": "List bounded metadata for one completed dependency's source evidence, private changes and validation outputs. Available only for dependencies listed in your saved assignment. Page with offset until eof is true, then inspect each item with its corresponding review tool.",
+                            "description": "List bounded metadata for one completed prerequisite or direct subtask's source evidence, private changes and validation outputs. Available only for review targets listed in your saved assignment. Page with offset until eof is true, then inspect each item with its corresponding review tool.",
                             "parameters": ReviewDependencyManifestArguments.model_json_schema(),
                         },
                     },
@@ -1106,7 +1181,7 @@ class SpecialistRunner:
                         "type": "function",
                         "function": {
                             "name": "review_dependency_file",
-                            "description": "Read a bounded page of the exact changed file from one completed dependency's immutable private snapshot. Start at offset zero and page through EOF. Available only for dependencies listed in your saved assignment. Deleted files return deletion metadata.",
+                            "description": "Read a bounded page of the exact changed file from one completed prerequisite or direct subtask's immutable private snapshot. Start at offset zero and page through EOF. Available only for review targets listed in your saved assignment. Deleted files return deletion metadata.",
                             "parameters": ReviewDependencyFileArguments.model_json_schema(),
                         },
                     },
@@ -1114,7 +1189,7 @@ class SpecialistRunner:
                         "type": "function",
                         "function": {
                             "name": "review_dependency_output",
-                            "description": "Read a bounded 16 KiB byte range from stdout or stderr belonging to a completed dependency's saved validation. Use the supplied artifact ID and continue by offset until eof is true.",
+                            "description": "Read a bounded 16 KiB byte range from stdout or stderr belonging to a completed prerequisite or direct subtask's saved validation. Use the supplied artifact ID and continue by offset until eof is true.",
                             "parameters": ReviewDependencyOutputArguments.model_json_schema(),
                         },
                     },
@@ -1464,9 +1539,9 @@ class SpecialistRunner:
                             "Only reviewer tasks may inspect dependency artifacts."
                         )
                     parsed = ReviewDependencyManifestArguments.model_validate(arguments)
-                    if parsed.dependency_id not in task["dependencies"]:
+                    if parsed.dependency_id not in review_target_ids:
                         raise PermissionError(
-                            "Dependency manifest access is limited to saved reviewer dependencies."
+                            "Dependency manifest access is limited to saved reviewer targets."
                         )
                     result = self._review_dependency_manifest(
                         run_id,

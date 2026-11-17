@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Carry reviewed child results into parent specialist work (2026-11-17)
+
+When nested subtasks complete through owner review, the parent receives bounded summaries of their objectives, criteria, expected outputs, candidates, and changed-file digests as explicitly untrusted context. Reviewer parents must inspect child manifests, source evidence, private changes, and validation output before completing. Reviewer file/output access accepts only saved explicit dependencies or direct children that are completed. Focused local suites pass (32); exact hosted verification is pending. This is X.A.A. orchestration behavior, not a Hermes parity claim. Dynamic replanning and the full Phase 4 gate remain open. See [`progress.md`](../progress.md#pass-reviewed-subtask-results-to-parent-specialists-2026-11-17).
+
 ## Nested specialist review gates in the native desktop (2026-11-17)
 
 The current Tauri desktop and bundled engine pass a model-free native acceptance with seven subtasks feeding one review-gated parent. It verifies the parent stays waiting for owner-reviewed subtasks, all seven graph edges render, and both parent and child links are visible ([report](../../.acceptance/native-plan-progress-98548beb-9128-4f30-8de7-abd00394de12/report.json)). This strengthens packaged X.A.A. orchestration evidence but does not claim Hermes parity; exact hosted source verification is pending. Dynamic replanning and broader Phase 4 acceptance remain open. See [`progress.md`](../progress.md#verify-nested-task-gates-in-the-native-desktop-2026-11-17).
