@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 
 test('inspect evidence and explicitly accept a specialist candidate',async({page})=>{
-  const run={id:'review-run',objective:'Inspect evidence',state:'verifying',acceptance_criteria:[],revision:3};
+  const run={id:'review-run',objective:'Inspect evidence',state:'verifying',acceptance_criteria:[],revision:3,model:'fixture/model'};
   const task={id:'review-run:inspect',local_id:'inspect',objective:'Inspect evidence',acceptance_criteria:['Reports actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'verifying'};
   let reviewed=false;
   let dispatched=false;

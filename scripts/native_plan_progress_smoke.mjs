@@ -49,7 +49,11 @@ try{
   const usageResponse=await fetch(`${connection.base_url}/runs/${run.id}/usage`,{headers:{Authorization:`Bearer ${connection.token}`}});
   if(!usageResponse.ok||(await usageResponse.json()).inference_attempts!==1)throw new Error('Native resource API did not report the saved inference attempt.');
   const plan=page.getByRole('region',{name:'Task plan'});
-  await expect(plan.getByRole('article',{name:'Task inspect'})).toContainText('1 iteration · 1 second');
+  await expect(plan.getByRole('button',{name:'Run ready specialists',exact:true})).toBeDisabled();
+  await expect(plan).toContainText('Choose a model before running ready specialists.');
+  const inspectTask=plan.getByRole('article',{name:'Task inspect'});
+  await expect(inspectTask.getByRole('button',{name:'Cancel inspect',exact:true})).toBeEnabled();
+  await expect(inspectTask).toContainText('1 iteration · 1 second');
   const stageOne=plan.getByRole('group',{name:'Dependency stage 1'});
   const stageTwo=plan.getByRole('group',{name:'Dependency stage 2'});
   await expect(stageOne.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('max','2');
@@ -58,7 +62,7 @@ try{
   await expect(stageTwo.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
   await expect(stageTwo).toContainText('1 waiting');
   await page.screenshot({path:path.join(root,'plan-progress.png'),fullPage:true});
-  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',singular_task_budget_label_verified:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
+  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',singular_task_budget_label_verified:true,dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   passed=true;
   await page.evaluate(async()=>{

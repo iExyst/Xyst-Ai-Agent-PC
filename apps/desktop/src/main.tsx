@@ -620,7 +620,7 @@ function App() {
       {run && client && <div id="active-run" className="anchor-target"><ActiveRunPanel run={run} answer={answer} partial={partial} activity={activity} busy={busy} client={client} onControl={action=>void control(action)}/></div>}
       {run && <RunResources client={client} run={run} refresh={usageRefresh}/>}
       {artifacts.length > 0 && <ArtifactPanel artifacts={artifacts} client={client} onError={setError}/>}
-      {run && plan && <PlanPanel key={run.id} plan={plan} client={client} runId={run.id} partials={specialistPartials} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'} />}
+      {run && plan && <PlanPanel key={run.id} plan={plan} client={client} runId={run.id} partials={specialistPartials} onReviewed={setPlan} onDispatch={()=>void dispatchPlan()} canDispatch={!busy&&run.state==='verifying'&&Boolean(run.model)} canCancelQueued={!busy&&run.state==='verifying'} hasSelectedModel={Boolean(run.model)} />}
       {run?.state==='verifying'&&<RunReviewPanel key={`${run.id}:${run.revision}`} client={client} run={run} canAccept={plan!==undefined&&plan.tasks.every(task=>task.status==='completed')} onReviewed={next=>{setRun(next);setHistoryRefresh(value=>value+1);}}/>}
       </div>
     </>}</main></div></div>;
