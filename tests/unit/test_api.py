@@ -928,6 +928,53 @@ def test_api_requires_authentication(workspace_tmp_path) -> None:
     )
 
 
+def test_model_lifecycle_endpoints_require_auth_and_target_one_instance(workspace_tmp_path):
+    class LifecycleProvider(FakeProvider):
+        def __init__(self):
+            super().__init__()
+            self.loaded: tuple[str, int | None] | None = None
+            self.unloaded: str | None = None
+
+        async def load_model(self, model: str, *, context_length: int | None = None) -> str:
+            self.loaded = (model, context_length)
+            return "fixture:instance-1"
+
+        async def unload_model(self, instance_id: str) -> None:
+            self.unloaded = instance_id
+
+    provider = LifecycleProvider()
+    store = RunStore(workspace_tmp_path / "model-lifecycle.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(create_app(provider, SecretStr(TOKEN), store=store)) as client:
+        assert client.post("/models/load", json={"model": "fixture/model"}).status_code == 401
+        assert (
+            client.post("/models/unload", json={"instance_id": "fixture:instance-1"}).status_code
+            == 401
+        )
+        loaded = client.post(
+            "/models/load",
+            headers=headers,
+            json={"model": "fixture/model", "context_length": 8192},
+        )
+        assert loaded.status_code == 200
+        assert loaded.json() == {"instance_id": "fixture:instance-1", "status": "loaded"}
+        assert provider.loaded == ("fixture/model", 8192)
+        invalid_context = client.post(
+            "/models/load",
+            headers=headers,
+            json={"model": "fixture/model", "context_length": 1},
+        )
+        assert invalid_context.status_code == 422
+        unloaded = client.post(
+            "/models/unload",
+            headers=headers,
+            json={"instance_id": "fixture:instance-1"},
+        )
+    assert unloaded.status_code == 200
+    assert unloaded.json() == {"instance_id": "fixture:instance-1", "status": "unloaded"}
+    assert provider.unloaded == "fixture:instance-1"
+
+
 def test_authenticated_backup_endpoint_returns_verified_artifact_bundle(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "backup.sqlite3")
     headers = {"Authorization": f"Bearer {TOKEN}"}

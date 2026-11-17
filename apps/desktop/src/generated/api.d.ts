@@ -3439,8 +3439,17 @@ export interface components {
             id: string;
             /** Loaded */
             loaded?: boolean | null;
+            /** Loaded Instances */
+            loaded_instances?: components["schemas"]["ModelInstanceInfo"][];
             /** Size Bytes */
             size_bytes?: number | null;
+        };
+        /** ModelInstanceInfo */
+        ModelInstanceInfo: {
+            /** Context Length */
+            context_length?: number | null;
+            /** Id */
+            id: string;
         };
         /** ModelRequest */
         ModelRequest: {

@@ -22,10 +22,12 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [credential,setCredential]=useState('');
   const [credentialConfigured,setCredentialConfigured]=useState(false);
   const [modelDetails,setModelDetails]=useState<ModelInfo[]>([]);
+  const [contextLength,setContextLength]=useState('');
   const [compatibleEndpoint,setCompatibleEndpoint]=useState('');
   const [compatibleCredential,setCompatibleCredential]=useState('');
   const [compatibleCredentialConfigured,setCompatibleCredentialConfigured]=useState(false);
   const selectedDetails=modelDetails.find(item=>item.id===model);
+  const loadedInstances=selectedDetails?.loaded_instances??[];
 
   useEffect(()=>{
     let live=true;
@@ -154,6 +156,47 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     } finally {setBusy(false);}
   }
 
+  async function refreshModelDetails() {
+    const available=await client.models();
+    setModelDetails(available);
+    onModelsChanged(available.map(item=>item.id));
+  }
+
+  async function loadSelectedModel() {
+    if(!model||model.startsWith('openai-compatible::'))return;
+    const requested=contextLength.trim()?Number(contextLength):undefined;
+    if(requested!==undefined&&(!Number.isInteger(requested)||requested<512||requested>10_000_000)){
+      setError('Context length must be a whole number from 512 to 10,000,000 tokens.');return;
+    }
+    if(requested!==undefined&&selectedDetails?.context_length&&requested>selectedDetails.context_length){
+      setError(`Context length exceeds the discovered model maximum of ${selectedDetails.context_length.toLocaleString()} tokens.`);return;
+    }
+    setBusy(true);setError('');setDiagnostic('unknown');
+    setStatus(`Loading ${model} in LM Studio…`);
+    try {
+      const loaded=await client.loadModel(model,requested);
+      onDiagnosticPassed(false);
+      await refreshModelDetails();
+      setContextLength('');
+      setStatus(`Loaded model instance ${loaded.instance_id}.`);
+    } catch(failure) {
+      setError(failure instanceof Error?failure.message:'Could not load the selected model.');
+    } finally {setBusy(false);}
+  }
+
+  async function unloadModelInstance(instanceId:string) {
+    setBusy(true);setError('');setDiagnostic('unknown');
+    setStatus(`Unloading model instance ${instanceId}…`);
+    try {
+      await client.unloadModel(instanceId);
+      onDiagnosticPassed(false);
+      await refreshModelDetails();
+      setStatus(`Unloaded model instance ${instanceId}.`);
+    } catch(failure) {
+      setError(failure instanceof Error?failure.message:'Could not unload the model instance.');
+    } finally {setBusy(false);}
+  }
+
   return <section aria-labelledby="provider-setup-title">
     <h2 id="provider-setup-title">LM Studio setup</h2>
     <p role="status">{status}</p>
@@ -182,6 +225,26 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
         </ul>
         <p>“Not reported” means this provider supplied no positive capability flag. It does not prove the feature is unsupported. Tool use still requires the harmless diagnostic below before workspace tools are enabled.</p>
       </section>
+      {model.startsWith('openai-compatible::')
+        ? <p>Load and unload this model through its configured provider service.</p>
+        : selectedDetails.loaded===null||selectedDetails.loaded===undefined
+          ? <p>LM Studio did not report native model lifecycle support. Load or unload models in LM Studio.</p>
+          : <section className="model-instance-controls" aria-label="LM Studio model lifecycle">
+            <h3>Model lifecycle</h3>
+            <p>Load uses model files already installed in LM Studio. X.A.A. does not download models. Leave context length blank to use the server default. Unloading an instance may prevent the next turn of an active run using that model.</p>
+            <label htmlFor="model-context-length">Context length for new instance (optional)</label>
+            <input id="model-context-length" type="number" min={512} max={10_000_000} step={512} value={contextLength} disabled={busy} onChange={event=>setContextLength(event.target.value)}/>
+            {selectedDetails.context_length&&<p className="model-context-limit">Discovered model maximum: {selectedDetails.context_length.toLocaleString()} tokens.</p>}
+            <button type="button" disabled={busy} onClick={()=>void loadSelectedModel()}>{selectedDetails.loaded?'Load another instance':'Load model'}</button>
+            {loadedInstances.length>0
+              ? <ul className="model-instance-list" aria-label="Loaded model instances">{loadedInstances.map(instance=><li key={instance.id}>
+                <span><strong>{instance.id}</strong>{instance.context_length?` · ${instance.context_length.toLocaleString()} token context`:' · context length unavailable'}</span>
+                <button type="button" className="secondary-button" disabled={busy} onClick={()=>void unloadModelInstance(instance.id)}>Unload this instance</button>
+              </li>)}</ul>
+              : selectedDetails.loaded
+                ? <p>LM Studio reports a loaded model but did not provide an instance ID, so X.A.A. cannot safely unload it.</p>
+                : <p>No model instances are currently loaded.</p>}
+          </section>}
     </>}
     <button type="button" disabled={busy||!model} onClick={()=>void runDiagnostic()}>Run harmless tool-use diagnostic</button>
     {diagnostic==='passed'&&<p role="status">The selected model completed a validated harmless tool round trip.</p>}

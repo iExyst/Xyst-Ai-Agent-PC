@@ -604,7 +604,10 @@ async def test_discovery_preserves_loaded_instance_context_boundaries(reverse_in
         base_url=provider.base_url, transport=httpx.MockTransport(handle)
     )
     try:
-        await provider.models()
+        models = await provider.models()
+        assert {
+            instance.id: instance.context_length for instance in models[0].loaded_instances
+        } == {"fixture": 4096, "fixture:2": 16384}
         messages = [{"role": "user", "content": "x" * 4500}]
         with pytest.raises(ContextLimitError):
             provider._check_context("fixture", messages, None, max_output_tokens=512)
@@ -692,6 +695,9 @@ async def test_discovery_merges_duplicate_native_catalog_rows(loaded_first):
         assert model.size_bytes == 100
         assert model.capabilities.vision is True
         assert model.capabilities.trained_for_tool_use is True
+        assert [(instance.id, instance.context_length) for instance in model.loaded_instances] == [
+            ("fixture:loaded", 16384)
+        ]
         assert provider.context_limit_for("fixture") == 16384
         assert provider.context_limit_for("fixture:loaded") == 16384
     finally:

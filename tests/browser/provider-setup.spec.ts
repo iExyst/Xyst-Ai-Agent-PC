@@ -9,6 +9,9 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   let compatibleSelectedModel:string|null=null;
   let compatibleCredentialConfigured=false;
   let diagnostics=0;
+  let loadedInstances:{id:string;context_length:number}[]=[];
+  const modelLoads:{model:string;context_length?:number}[]=[];
+  const modelUnloads:string[]=[];
   let releaseInitialConfig!:()=>void;
   let holdInitialConfig=true;
   const initialConfigGate=new Promise<void>(resolve=>{releaseInitialConfig=resolve;});
@@ -18,7 +21,15 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
-    if(path==='/models')return route.fulfill({json:[{id:'fixture/model',context_length:8192,size_bytes:2500000000,loaded:false,capabilities:{vision:false,trained_for_tool_use:true}},...(compatibleEndpoint?[{id:'openai-compatible::remote-model',capabilities:{vision:false,trained_for_tool_use:false}}]:[])],headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model',context_length:32768,size_bytes:2500000000,loaded:loadedInstances.length>0,loaded_instances:loadedInstances,capabilities:{vision:false,trained_for_tool_use:true}},...(compatibleEndpoint?[{id:'openai-compatible::remote-model',capabilities:{vision:false,trained_for_tool_use:false}}]:[])],headers});
+    if(path==='/models/load'&&req.method()==='POST'){
+      const data=req.postDataJSON();modelLoads.push(data);loadedInstances=[{id:'fixture-instance-1',context_length:data.context_length??4096}];
+      return route.fulfill({json:{instance_id:'fixture-instance-1',status:'loaded'},headers});
+    }
+    if(path==='/models/unload'&&req.method()==='POST'){
+      const id=req.postDataJSON().instance_id;modelUnloads.push(id);loadedInstances=loadedInstances.filter(instance=>instance.id!==id);
+      return route.fulfill({json:{instance_id:id,status:'unloaded'},headers});
+    }
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'},{id:'openai-compatible',status:compatibleEndpoint?'connected':'not_configured'}],headers});
     if(path==='/providers/lm-studio/config'&&req.method()==='GET'){
       if(holdInitialConfig){holdInitialConfig=false;await initialConfigGate;}
@@ -92,6 +103,21 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await expect(localCapabilities).toContainText('Tool-use training');
   await expect(localCapabilities).toContainText('Reported');
   await expect(localCapabilities).toContainText('Tool use still requires the harmless diagnostic below before workspace tools are enabled.');
+  await expect(page.getByLabel('LM Studio model lifecycle')).toBeVisible();
+  await page.getByLabel('Context length for new instance (optional)').fill('65536');
+  await page.getByRole('button',{name:'Load model',exact:true}).click();
+  await expect(page.getByRole('alert')).toContainText('exceeds the discovered model maximum');
+  expect(modelLoads).toEqual([]);
+  await page.getByLabel('Context length for new instance (optional)').fill('8192');
+  await page.getByRole('button',{name:'Load model',exact:true}).click();
+  await expect.poll(()=>modelLoads).toEqual([{model:'fixture/model',context_length:8192}]);
+  await expect(page.getByRole('status').filter({hasText:'Loaded model instance fixture-instance-1.'})).toBeVisible();
+  const loadedInstancesList=page.getByRole('list',{name:'Loaded model instances'});
+  await expect(loadedInstancesList).toContainText('fixture-instance-1');
+  await expect(loadedInstancesList).toContainText('8,192 token context');
+  await loadedInstancesList.getByRole('button',{name:'Unload this instance'}).click();
+  await expect.poll(()=>modelUnloads).toEqual(['fixture-instance-1']);
+  await expect(page.getByText('No model instances are currently loaded.')).toBeVisible();
   await page.getByRole('button',{name:'Run harmless tool-use diagnostic'}).click();
   await expect(page.getByText('The selected model completed a validated harmless tool round trip.')).toBeVisible();
   await page.getByLabel('Provider server address').fill('https://api.example.test');

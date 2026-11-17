@@ -2826,6 +2826,13 @@
             ],
             "title": "Loaded"
           },
+          "loaded_instances": {
+            "items": {
+              "$ref": "#/components/schemas/ModelInstanceInfo"
+            },
+            "title": "Loaded Instances",
+            "type": "array"
+          },
           "size_bytes": {
             "anyOf": [
               {
@@ -2843,6 +2850,34 @@
           "id"
         ],
         "title": "ModelInfo",
+        "type": "object"
+      },
+      "ModelInstanceInfo": {
+        "properties": {
+          "context_length": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Length"
+          },
+          "id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ModelInstanceInfo",
         "type": "object"
       },
       "ModelRequest": {

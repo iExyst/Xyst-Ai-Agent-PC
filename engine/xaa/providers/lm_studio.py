@@ -73,6 +73,17 @@ class ModelCapabilities(BaseModel):
     trained_for_tool_use: bool = False
 
 
+class ModelInstanceInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(min_length=1, max_length=256)
+    context_length: int | None = Field(default=None, ge=1, le=10_000_000)
+
+
+def _empty_model_instances() -> list[ModelInstanceInfo]:
+    return []
+
+
 class ModelInfo(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -81,6 +92,7 @@ class ModelInfo(BaseModel):
     size_bytes: int | None = Field(default=None, ge=0)
     loaded: bool | None = None
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
+    loaded_instances: list[ModelInstanceInfo] = Field(default_factory=_empty_model_instances)
 
 
 class LMStudioProvider:
@@ -442,25 +454,45 @@ class LMStudioProvider:
                     )
                     model.loaded = bool(instances) if instances is not None else None
                     limits: list[int] = []
+                    public_instances: dict[str, ModelInstanceInfo] = {}
                     for raw_instance in instances or []:
                         if not isinstance(raw_instance, dict):
                             continue
                         instance = cast(dict[str, Any], raw_instance)
+                        instance_id: object = instance.get("id")
                         raw_config: object = instance.get("config")
                         config = (
                             cast(dict[str, Any], raw_config) if isinstance(raw_config, dict) else {}
                         )
                         limit: object = config.get("context_length")
-                        if type(limit) is int and limit > 0:
+                        if type(limit) is int and 0 < limit <= 10_000_000:
                             limits.append(limit)
-                            instance_id: object = instance.get("id")
-                            if isinstance(instance_id, str):
-                                # Preserve the exact loaded instance's limit even when
-                                # its ID is also the base model ID. Conflicting IDs
-                                # are conservatively bounded by the smaller value.
-                                instance_limits[instance_id] = min(
-                                    limit, instance_limits.get(instance_id, limit)
-                                )
+                        if not isinstance(instance_id, str) or not instance_id.strip():
+                            continue
+                        if len(instance_id) > 256:
+                            continue
+                        instance_context = (
+                            limit if type(limit) is int and 0 < limit <= 10_000_000 else None
+                        )
+                        existing = public_instances.get(instance_id)
+                        if existing is not None:
+                            known_limits = [
+                                value
+                                for value in (existing.context_length, instance_context)
+                                if value is not None
+                            ]
+                            instance_context = min(known_limits) if known_limits else None
+                        public_instances[instance_id] = ModelInstanceInfo(
+                            id=instance_id, context_length=instance_context
+                        )
+                        if instance_context is not None:
+                            # Preserve the exact loaded instance's limit even when
+                            # its ID is also the base model ID. Conflicting IDs
+                            # are conservatively bounded by the smaller value.
+                            instance_limits[instance_id] = min(
+                                instance_context, instance_limits.get(instance_id, instance_context)
+                            )
+                    model.loaded_instances = list(public_instances.values())
                     if limits:
                         # A base alias without an exact instance ID may route to
                         # any loaded instance, so use the smallest known context.
