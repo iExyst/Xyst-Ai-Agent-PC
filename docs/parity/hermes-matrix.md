@@ -507,7 +507,7 @@ Specialist plan proposals now expose provider-visible bounds of 16 acceptance cr
 
 Pinned upstream behavior for the programmatic-interface and training source is summarized in the [programmatic-interface source audit](programmatic-interface-source-audit.md).
 
-Specialist workspace discovery now includes the existing bounded `workspace_search` contract for tasks with `workspace.read`. Non-isolated specialists search through their task-scoped worker; isolated specialists search their captured snapshot and private overlays and journal matches as internal, untrusted results. The 52-test focused specialist/workspace/worker set plus Ruff and Pyright pass locally. The overall tool row remains partial; hosted and packaged acceptance are pending.
+Specialist workspace discovery now includes the existing bounded `workspace_search` contract for tasks with `workspace.read`. Non-isolated specialists search through their task-scoped worker; isolated specialists search their captured snapshot and private overlays and journal matches as internal, untrusted results. The 52-test focused specialist/workspace/worker set plus Ruff and Pyright pass locally. Exact-source Windows run [44072137948](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44072137948) passed with 1,442 Python tests (20 skipped) and desktop/static checks. Manual bundled-installer acceptance is in progress in [44074292701](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44074292701). The overall tool row remains partial.
 
 ## Windows release package acceptance
 
