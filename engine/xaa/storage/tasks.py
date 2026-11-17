@@ -640,6 +640,8 @@ class TaskStore:
             ).fetchone()
             if row is None:
                 raise KeyError(task_id)
+            if row["status"] == "cancelled":
+                return
             if row["status"] != "queued":
                 raise ValueError("Only a queued specialist task can be cancelled before it starts.")
             connection.execute(

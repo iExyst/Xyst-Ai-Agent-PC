@@ -148,14 +148,20 @@ def test_owner_can_cancel_only_a_queued_task_and_dependents_become_blocked(works
     assert records["dependent"]["status"] == "queued"
     assert body["ready"] == ["independent"]
     assert body["blocked"] == ["dependent"]
-    assert any(
-        event["event_type"] == "task.cancelled"
-        and event["payload"]
-        == {
-            "task_id": "cancel-me",
-            "reason": "owner_cancelled_before_start",
-        }
-        for event in store.list_events(run_id)
+    repeated = client.post(path, headers=headers)
+    assert repeated.status_code == 200
+    assert repeated.json() == body
+    assert (
+        sum(
+            event["event_type"] == "task.cancelled"
+            and event["payload"]
+            == {
+                "task_id": "cancel-me",
+                "reason": "owner_cancelled_before_start",
+            }
+            for event in store.list_events(run_id)
+        )
+        == 1
     )
 
     claim = tasks.claim_ready(run_id, parent)
