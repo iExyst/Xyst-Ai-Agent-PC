@@ -84,7 +84,7 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
             <dt>Model</dt><dd>{task.model_route ?? 'Unassigned'}</dd>
             <dt>Workspace</dt><dd>{task.workspace ?? 'None'}</dd>
             <dt>Permissions</dt><dd>{task.permission_scope.join(', ') || 'None'}</dd>
-            <dt>Budget</dt><dd>{task.budgets.max_iterations} iterations · {task.budgets.max_seconds} seconds<br/>Reported token allowance: {task.budgets.max_total_tokens ?? 'Shared run threshold'} · Output tokens per request: {task.budgets.max_output_tokens ?? 'Run setting'}</dd>
+            <dt>Budget</dt><dd>{task.budgets.max_iterations} {task.budgets.max_iterations===1?'iteration':'iterations'} · {task.budgets.max_seconds} {task.budgets.max_seconds===1?'second':'seconds'}<br/>Reported token allowance: {task.budgets.max_total_tokens ?? 'Shared run threshold'} · Output tokens per request: {task.budgets.max_output_tokens ?? 'Run setting'}</dd>
           </dl>
           {(task.status==='queued'||task.status==='running')&&<button type="button" disabled={task.status==='queued'&&!canDispatch} onClick={()=>{if(window.confirm(`Cancel ${task.local_id}? Any tasks depending on it will be blocked.`))void cancelTask(task.local_id);}}>Cancel {task.local_id}</button>}
           {task.status==='blocked' && <p>{task.blocked_reason==='token_budget_exhausted_or_unmeasured'

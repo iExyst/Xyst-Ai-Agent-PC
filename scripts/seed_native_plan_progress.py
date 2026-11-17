@@ -34,7 +34,7 @@ def main() -> None:
                     role="researcher",
                     permissions=("workspace.read",),
                     max_iterations=1,
-                    max_seconds=10,
+                    max_seconds=1,
                 ),
                 TaskDefinition(
                     id="inventory",

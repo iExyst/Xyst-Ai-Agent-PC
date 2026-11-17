@@ -60,7 +60,7 @@ export function RunResources({client, run, refresh}: {client: EngineClient; run:
         : 'Loading usage…';
   return <section aria-label="Run resources"><h2>Run resources</h2><p>Model: {run.model ?? 'Not selected'}</p>
     {run.procedure_trial&&<p>{run.procedure_trial.purpose==='active_use'?'Active procedure':'Procedure trial'}: {run.procedure_trial.name} &middot; version {run.procedure_trial.version}. This run does not activate or independently evaluate the procedure.</p>}
-    {run.limits && <><p>{run.limits.max_iterations} iterations · {run.limits.max_seconds} seconds</p>
+    {run.limits && <><p>{run.limits.max_iterations} {run.limits.max_iterations===1?'iteration':'iterations'} · {run.limits.max_seconds} {run.limits.max_seconds===1?'second':'seconds'}</p>
       <p>Inference iterations remaining: {iterationAllowanceRemaining}</p>
       <p>Wall-clock allowance remaining: {timeRemainingLabel}</p>
       <p>Reported token threshold: {run.limits.max_total_tokens ?? 'Not set'} · Output tokens per request: {run.limits.max_output_tokens ?? 'Server default'}</p>
