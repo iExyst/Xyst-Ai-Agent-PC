@@ -33,6 +33,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     }
     if(path.endsWith('/usage')&&usageUnavailable)return route.fulfill({status:503,headers});
     if(path.endsWith('/usage'))return route.fulfill({json:{prompt_tokens:40,completion_tokens:10,total_tokens:50,unmeasured_calls:1,outstanding_reserved_tokens:300,outstanding_reservations:1},headers});
+    if(path.endsWith('/workspace-changes'))return route.fulfill({json:{items:[],total:0,offset:0,limit:100,next_offset:null},headers});
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
     if (path.endsWith('/plan') && ++planReads === 1) return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
