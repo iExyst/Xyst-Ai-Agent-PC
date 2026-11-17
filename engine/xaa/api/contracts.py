@@ -220,6 +220,7 @@ class TaskResourceUsage(BaseModel):
 class PlanTaskRecord(BaseModel):
     id: str
     local_id: str
+    parent_id: str | None = None
     objective: str
     acceptance_criteria: list[str]
     input_artifacts: list[str]

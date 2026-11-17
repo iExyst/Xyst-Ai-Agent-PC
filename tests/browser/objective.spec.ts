@@ -41,10 +41,11 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path.endsWith('/plan') && ++planReads === 1) return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
     if (path.endsWith('/plan')) return route.fulfill({json: {tasks: [
       {id:'browser-run:inspect',local_id:'inspect',objective:'Inspect <script>window.planExecuted=true</script>',acceptance_criteria:['Read actual file evidence'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:2000,max_output_tokens:128},resource_usage:{inference_attempts:1,iterations_remaining:1,elapsed_seconds:12,seconds_remaining:48,measured_tokens:500,tokens_remaining:1500,usage_measured:true},status:'queued'},
-      {id:'browser-run:inventory',local_id:'inventory',objective:'Inspect another independent input',acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:["Inventory result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:100},resource_usage:{inference_attempts:1,iterations_remaining:1,elapsed_seconds:10,seconds_remaining:50,measured_tokens:20,tokens_remaining:null,usage_measured:false},status:'queued'},
-      ...Array.from({length:6},(_,index)=>({id:`browser-run:extra-${index+1}`,local_id:`extra-${index+1}`,objective:`Inspect independent input ${index+1}`,acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:['Concise findings'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'})),
-      {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
-    ],ready:['inspect','inventory',...Array.from({length:6},(_,index)=>`extra-${index+1}`)],blocked:[]},headers});
+      {id:'browser-run:inventory',local_id:'inventory',parent_id:'aggregate',objective:'Inspect another independent input',acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:["Inventory result"],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60,max_total_tokens:100},resource_usage:{inference_attempts:1,iterations_remaining:1,elapsed_seconds:10,seconds_remaining:50,measured_tokens:20,tokens_remaining:null,usage_measured:false},status:'queued'},
+      ...Array.from({length:5},(_,index)=>({id:`browser-run:extra-${index+1}`,local_id:`extra-${index+1}`,objective:`Inspect independent input ${index+1}`,acceptance_criteria:['Record independent evidence'],input_artifacts:[],expected_outputs:['Concise findings'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'})),
+      {id:'browser-run:review',local_id:'review',objective:'Review inspection evidence',acceptance_criteria:['Check the evidence independently'],input_artifacts:[],expected_outputs:["Candidate result"],dependencies:['inspect'],assigned_role:'reviewer',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'},
+      {id:'browser-run:aggregate',local_id:'aggregate',objective:'Aggregate reviewed inventory findings',acceptance_criteria:['Use the reviewed inventory result'],input_artifacts:[],expected_outputs:['Combined findings'],dependencies:[],assigned_role:'planner',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'queued'}
+    ],ready:['inspect','inventory',...Array.from({length:5},(_,index)=>`extra-${index+1}`)],blocked:[]},headers});
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
       { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain', sha256:'a'.repeat(64) },
       { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png', sha256:'b'.repeat(64) },
@@ -76,7 +77,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
     if (path.endsWith('/events/stream')) {
       const artifact = { sequence: 1, event_type: 'artifact.created', payload: { artifact_id: 'artifact-1' }, created_at: '2026-11-03T00:00:00Z' };
       const event = { sequence: 2, event_type: 'run.state_changed', payload: { to: 'verifying' }, created_at: '2026-11-03T00:00:00Z' };
-      const planSaved = {sequence:3,event_type:'plan.saved',payload:{task_ids:['inspect','review']},created_at:'2026-11-03T00:00:00Z'};
+      const planSaved = {sequence:3,event_type:'plan.saved',payload:{task_ids:['inspect','inventory','review','aggregate'],parent_ids:{inspect:null,inventory:'aggregate',review:null,aggregate:null}},created_at:'2026-11-03T00:00:00Z'};
       const countFailure = {sequence:4,event_type:'context.admission_failed',payload:{reason:'prompt_count_unavailable',counter_error_type:'LMStudioServerError',counter_error_stage:'tokenization',counter_error_code:'generic.tokenizeFailed'},created_at:'2026-11-03T00:00:00Z'};
       return route.fulfill({ headers, contentType: 'text/event-stream', body: `id: 1\nevent: run_event\ndata: ${JSON.stringify(artifact)}\n\nid: 2\nevent: run_event\ndata: ${JSON.stringify(event)}\n\nid: 3\nevent: run_event\ndata: ${JSON.stringify(planSaved)}\n\nid: 4\nevent: run_event\ndata: ${JSON.stringify(countFailure)}\n\nevent: done\ndata: {}\n\n` });
     }
@@ -210,14 +211,15 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('max','9');
   await expect(plan.getByLabel('Completed specialist tasks')).toHaveAttribute('value','0');
   const dependencyMap=plan.getByRole('region',{name:'Task dependency map'});
-  await expect(dependencyMap.getByRole('heading',{name:'Dependency map'})).toBeVisible();
+  await expect(dependencyMap.getByRole('heading',{name:'Task map'})).toBeVisible();
   await expect(dependencyMap).toContainText('9 tasks · 2 stages');
   await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toBeVisible();
   await expect(dependencyMap.getByRole('link',{name:'Open task inventory, stage 1, Ready'})).toBeVisible();
   await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toContainText('Inspect <script>window.planExecuted=true</script>');
   await expect(dependencyMap.getByRole('link',{name:'Open task inspect, stage 1, Ready'})).toContainText('1 expected output');
   await dependencyMap.screenshot({path:'test-results/plan-dependency-map.png'});
-  await expect(dependencyMap.locator('.plan-dependency-edges > path')).toHaveCount(1);
+  await expect(dependencyMap.locator('.plan-dependency-edges > path')).toHaveCount(2);
+  await expect(dependencyMap.getByRole('link',{name:'Open task aggregate, stage 2, Waiting'})).toBeVisible();
   const graphViewport=dependencyMap.getByLabel('Scrollable task dependency map');
   await expect.poll(()=>graphViewport.evaluate(element=>element.scrollHeight>element.clientHeight)).toBe(true);
   const graphReview=dependencyMap.getByRole('link',{name:'Open task review, stage 2, Waiting'});
@@ -226,12 +228,12 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(plan.getByRole('article',{name:'Task review'})).toBeFocused();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inspect'})).toBeVisible();
   await expect(plan.getByRole('group',{name:'Dependency stage 1'}).getByRole('article',{name:'Task inventory'})).toBeVisible();
-  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('8 independent tasks');
-  await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('max','8');
+  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('7 independent tasks');
+  await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('max','7');
   await expect(plan.getByRole('progressbar',{name:'Stage 1 completion'})).toHaveAttribute('value','0');
-  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('8 waiting');
+  await expect(plan.getByRole('group',{name:'Dependency stage 1'})).toContainText('7 waiting');
   await expect(plan.getByRole('group',{name:'Dependency stage 2'}).getByRole('article',{name:'Task review'})).toBeVisible();
-  await expect(plan.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
+  await expect(plan.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','2');
   const inspect = plan.getByRole('article',{name:'Task inspect'});
   const review = plan.getByRole('article',{name:'Task review'});
   await expect(inspect.locator('.plan-task-output-preview')).toContainText('Candidate result');
@@ -239,9 +241,13 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(review.locator('details.plan-task-details')).not.toHaveAttribute('open','');
   await inspect.locator('details.plan-task-details > summary').click();
   await review.locator('details.plan-task-details > summary').click();
-  await expect(review.locator('dd').nth(0).getByRole('link',{name:'inspect'})).toHaveAttribute('href','#plan-task-inspect');
-  await expect(inspect.locator('dd').nth(1).getByRole('link',{name:'review'})).toHaveAttribute('href','#plan-task-review');
-  await review.locator('dd').nth(0).getByRole('link',{name:'inspect'}).click();
+  await expect(review.locator('dd').nth(1).getByRole('link',{name:'inspect'})).toHaveAttribute('href','#plan-task-inspect');
+  await expect(inspect.locator('dd').nth(2).getByRole('link',{name:'review'})).toHaveAttribute('href','#plan-task-review');
+  await expect(plan.getByRole('article',{name:'Task aggregate'})).toContainText('Waiting for reviewed subtasks');
+  const aggregate=plan.getByRole('article',{name:'Task aggregate'});
+  await aggregate.locator('details.plan-task-details > summary').click();
+  await expect(aggregate.locator('dd').nth(0).getByRole('link',{name:'inventory'})).toHaveAttribute('href','#plan-task-inventory');
+  await review.locator('dd').nth(1).getByRole('link',{name:'inspect'}).click();
   await expect(page).toHaveURL(/#plan-task-inspect$/);
   await expect(inspect).toBeFocused();
   await expect(plan.getByRole('article', {name:'Task inspect'})).toContainText('Ready to start');
@@ -251,8 +257,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   const inventory=plan.getByRole('article',{name:'Task inventory'});
   await expect(inventory.locator('details.plan-task-details')).not.toHaveAttribute('open','');
   await inventory.locator('details.plan-task-details > summary').click();
+  await expect(inventory.locator('dd').nth(0).getByRole('link',{name:'aggregate'})).toHaveAttribute('href','#plan-task-aggregate');
   await expect(inventory).toContainText('Tokens: 20 measured · remaining allowance unavailable while usage is unmeasured');
-  await expect(review).toContainText('Waiting for dependencies');
+  await expect(review).toContainText('Waiting for prerequisites');
   await expect(review).toContainText('2 iterations · 60 seconds');
   await expect(review).toContainText('Check the evidence independently');
   expect(await page.evaluate(() => 'planExecuted' in window)).toBe(false);

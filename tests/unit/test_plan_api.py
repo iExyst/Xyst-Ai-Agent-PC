@@ -151,6 +151,88 @@ def test_plan_api_returns_typed_tasks_without_worker_authority(workspace_tmp_pat
     assert "result" not in task
 
 
+def test_nested_plan_persists_parent_links_inherits_limits_and_gates_parent_dispatch(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "nested-plan.sqlite3")
+    run_id = store.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+        max_seconds=100,
+        max_total_tokens=1000,
+        max_output_tokens=80,
+    )["id"]
+    token = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        token,
+        [
+            TaskDefinition(
+                id="aggregate",
+                objective="Combine reviewed findings",
+                max_iterations=2,
+                max_seconds=20,
+                max_total_tokens=300,
+                max_output_tokens=64,
+            ),
+            TaskDefinition(
+                id="inspect",
+                objective="Inspect source",
+                parent_id="aggregate",
+                max_iterations=2,
+                max_seconds=10,
+            ),
+            TaskDefinition(
+                id="review",
+                objective="Review source",
+                parent_id="aggregate",
+                max_iterations=2,
+                max_seconds=10,
+            ),
+        ],
+    )
+
+    records = {task["local_id"]: task for task in tasks.records(run_id)}
+    assert records["inspect"]["parent_id"] == "aggregate"
+    assert records["inspect"]["budgets"]["max_total_tokens"] == 300
+    assert records["inspect"]["budgets"]["max_output_tokens"] == 64
+    api_token = "b" * 32
+    client = TestClient(create_app(LMStudioProvider(), SecretStr(api_token), store=store))
+    response = client.get(f"/runs/{run_id}/plan", headers={"Authorization": f"Bearer {api_token}"})
+    assert response.status_code == 200
+    api_records = {task["local_id"]: task for task in response.json()["tasks"]}
+    assert api_records["aggregate"]["parent_id"] is None
+    assert api_records["inspect"]["parent_id"] == "aggregate"
+    assert tasks.readiness(run_id) == (["inspect", "review"], [])
+    saved_event = next(
+        event for event in store.list_events(run_id) if event["event_type"] == "plan.saved"
+    )
+    assert saved_event["payload"]["parent_ids"] == {
+        "aggregate": None,
+        "inspect": "aggregate",
+        "review": "aggregate",
+    }
+    assert tasks.claim_ready(run_id, token)["task"]["local_id"] == "inspect"
+
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE tasks SET status='completed' WHERE id=?",
+            (f"{run_id}:inspect",),
+        )
+    assert tasks.readiness(run_id) == (["review"], [])
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE tasks SET status='completed' WHERE id=?",
+            (f"{run_id}:review",),
+        )
+    assert tasks.readiness(run_id) == (["aggregate"], [])
+
+
 def test_owner_can_cancel_only_a_queued_task_and_dependents_become_blocked(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "cancel-queued-api.sqlite3")
     run_id = store.create_run(
@@ -209,6 +291,54 @@ def test_owner_can_cancel_only_a_queued_task_and_dependents_become_blocked(works
     running = client.post(f"/runs/{run_id}/tasks/independent/cancel-queued", headers=headers)
     assert running.status_code == 409
     assert "worker is no longer active" in running.json()["detail"]
+
+
+def test_cancelling_queued_parent_cancels_all_queued_descendants(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "cancel-nested-plan.sqlite3")
+    run_id = store.create_run(
+        objective="Plan",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+    )["id"]
+    token = store.acquire_lease(run_id, "parent")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        token,
+        [
+            TaskDefinition(id="aggregate", objective="Aggregate", max_iterations=3, max_seconds=50),
+            TaskDefinition(
+                id="group",
+                objective="Subgroup",
+                parent_id="aggregate",
+                max_iterations=2,
+                max_seconds=30,
+            ),
+            TaskDefinition(
+                id="leaf",
+                objective="Leaf work",
+                parent_id="group",
+                max_iterations=1,
+                max_seconds=10,
+            ),
+        ],
+    )
+
+    tasks.cancel_queued(run_id, "aggregate")
+    records = {task["local_id"]: task for task in tasks.records(run_id)}
+    assert {task_id: task["status"] for task_id, task in records.items()} == {
+        "aggregate": "cancelled",
+        "group": "cancelled",
+        "leaf": "cancelled",
+    }
+    cancelled = [
+        event["payload"]
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.cancelled"
+    ]
+    assert len(cancelled) == 3
 
 
 def test_plan_exposes_safe_block_reasons_without_private_outcome(workspace_tmp_path):

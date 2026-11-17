@@ -44,7 +44,7 @@ export function PlanDependencyGraph({ plan, stages }: { plan: Plan; stages: Stag
 
   return <section className="plan-dependency-map" aria-label="Task dependency map">
     <div className="plan-dependency-heading">
-      <div><h3>Dependency map</h3><p>Follow the arrows from prerequisites to the tasks they unlock.</p></div>
+      <div><h3>Task map</h3><p>Arrows show prerequisite and subtask work that must finish before a parent can start.</p></div>
       <span>{plan.tasks.length} tasks · {stages.length} stages</span>
     </div>
     <div className="plan-dependency-viewport" tabIndex={0} aria-label="Scrollable task dependency map">
@@ -58,9 +58,12 @@ export function PlanDependencyGraph({ plan, stages }: { plan: Plan; stages: Stag
           <defs><marker id="plan-dependency-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
             <path d="M0,0 L0,6 L7,3 z" />
           </marker></defs>
-          {plan.tasks.flatMap(task => task.dependencies.map(dependency => {
-            const from = positions.get(dependency);
-            const to = positions.get(task.local_id);
+          {plan.tasks.flatMap(task => [
+            ...task.dependencies.map(dependency => ({fromId:dependency,toId:task.local_id})),
+            ...plan.tasks.filter(child=>child.parent_id===task.local_id).map(child=>({fromId:child.local_id,toId:task.local_id})),
+          ].map(({fromId,toId}) => {
+            const from = positions.get(fromId);
+            const to = positions.get(toId);
             if (!from || !to) return null;
             const x1 = from.x + NODE_WIDTH;
             const y1 = from.y + NODE_HEIGHT / 2;
@@ -68,7 +71,7 @@ export function PlanDependencyGraph({ plan, stages }: { plan: Plan; stages: Stag
             const y2 = to.y + NODE_HEIGHT / 2;
             const curve = Math.max(24, (x2 - x1) / 2);
             return <path
-              key={`${dependency}:${task.local_id}`}
+              key={`${fromId}:${toId}`}
               d={`M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`}
               markerEnd="url(#plan-dependency-arrow)"
             />;

@@ -24,6 +24,7 @@ class TaskDefinition(BaseModel):
         default=(), max_length=MAX_TASK_ACCEPTANCE_CRITERIA
     )
     dependencies: tuple[str, ...] = Field(default=(), max_length=MAX_TASKS - 1)
+    parent_id: str | None = Field(default=None, min_length=1, max_length=128)
     input_artifacts: tuple[str, ...] = Field(default=(), max_length=8)
     expected_outputs: tuple[str, ...] = Field(default=(), max_length=16)
     role: Literal["planner", "researcher", "developer", "reviewer", "tester", "executor"] = (
@@ -97,12 +98,31 @@ class TaskGraph:
             or sum(task.max_seconds for task in tasks) > seconds_budget
         ):
             raise ValueError("Task reservations exceed the shared parent budget.")
-        if (
-            token_budget is not None
-            and sum(task.max_total_tokens or 0 for task in tasks) > token_budget
-        ):
-            raise ValueError("Declared task token allowances exceed the remaining shared budget.")
         for task in tasks:
+            if task.parent_id is not None and task.parent_id not in self.tasks:
+                raise ValueError("Task parent refers to an unknown task.")
+            if task.parent_id == task.id:
+                raise ValueError("Task cannot be its own parent.")
+            parent = self.tasks.get(task.parent_id) if task.parent_id is not None else None
+            if parent is not None:
+                if not set(task.permissions).issubset(parent.permissions):
+                    raise PermissionError("Child task cannot broaden its parent's permissions.")
+                if task.max_iterations > parent.max_iterations:
+                    raise ValueError("Child iteration allowance cannot exceed its parent task.")
+                if task.max_seconds > parent.max_seconds:
+                    raise ValueError("Child time allowance cannot exceed its parent task.")
+                if (
+                    task.max_total_tokens is not None
+                    and parent.max_total_tokens is not None
+                    and task.max_total_tokens > parent.max_total_tokens
+                ):
+                    raise ValueError("Child token allowance cannot exceed its parent task.")
+                if (
+                    task.max_output_tokens is not None
+                    and parent.max_output_tokens is not None
+                    and task.max_output_tokens > parent.max_output_tokens
+                ):
+                    raise ValueError("Child output cap cannot exceed its parent task.")
             if "workspace.command" in task.permissions and not {
                 "workspace.read",
                 "workspace.write",
@@ -130,7 +150,9 @@ class TaskGraph:
             if identity in visited:
                 return
             active.add(identity)
-            for dependency in self.tasks[identity].dependencies:
+            task = self.tasks[identity]
+            children = [item.id for item in tasks if item.parent_id == identity]
+            for dependency in (*task.dependencies, *children):
                 visit(dependency)
             active.remove(identity)
             visited.add(identity)
@@ -149,6 +171,65 @@ class TaskGraph:
                     f"Task dependency depth exceeds the limit of {MAX_TASK_DEPENDENCY_DEPTH}."
                 )
             depths[identity] = depth
+
+        effective_token_budgets: dict[str, int | None] = {}
+        effective_output_budgets: dict[str, int | None] = {}
+        pending_tasks = list(tasks)
+        while pending_tasks:
+            roots_or_children = [
+                task
+                for task in pending_tasks
+                if task.parent_id is None or task.parent_id in effective_token_budgets
+            ]
+            if not roots_or_children:
+                raise ValueError("Task hierarchy contains an unresolved parent.")
+            for task in roots_or_children:
+                parent_id = task.parent_id
+                depth = 1
+                current = parent_id
+                while current is not None:
+                    depth += 1
+                    current = self.tasks[current].parent_id
+                if depth > MAX_TASK_DEPENDENCY_DEPTH:
+                    raise ValueError(
+                        f"Task delegation depth exceeds the limit of {MAX_TASK_DEPENDENCY_DEPTH}."
+                    )
+                parent_token_budget = (
+                    effective_token_budgets[parent_id] if parent_id is not None else None
+                )
+                parent_output_budget = (
+                    effective_output_budgets[parent_id] if parent_id is not None else None
+                )
+                if (
+                    task.max_total_tokens is not None
+                    and parent_token_budget is not None
+                    and task.max_total_tokens > parent_token_budget
+                ):
+                    raise ValueError(
+                        "Child token allowance cannot exceed its inherited parent cap."
+                    )
+                if (
+                    task.max_output_tokens is not None
+                    and parent_output_budget is not None
+                    and task.max_output_tokens > parent_output_budget
+                ):
+                    raise ValueError("Child output cap cannot exceed its inherited parent cap.")
+                effective_token_budgets[task.id] = (
+                    task.max_total_tokens
+                    if task.max_total_tokens is not None
+                    else parent_token_budget
+                )
+                effective_output_budgets[task.id] = (
+                    task.max_output_tokens
+                    if task.max_output_tokens is not None
+                    else parent_output_budget
+                )
+                pending_tasks.remove(task)
+        if (
+            token_budget is not None
+            and sum(effective_token_budgets[task.id] or 0 for task in tasks) > token_budget
+        ):
+            raise ValueError("Declared task token allowances exceed the remaining shared budget.")
 
     @property
     def tasks(self) -> Mapping[str, TaskDefinition]:
@@ -169,7 +250,14 @@ class TaskGraph:
                 task.id
                 for task in self.tasks.values()
                 if statuses[task.id] == "queued"
-                and any(dependency in blocked for dependency in task.dependencies)
+                and (
+                    any(dependency in blocked for dependency in task.dependencies)
+                    or any(
+                        child.id in blocked
+                        for child in self.tasks.values()
+                        if child.parent_id == task.id
+                    )
+                )
             )
             changed = len(blocked) != previous
         ready = [
@@ -178,6 +266,11 @@ class TaskGraph:
             if statuses[task.id] == "queued"
             and task.id not in blocked
             and all(statuses[dependency] == "completed" for dependency in task.dependencies)
+            and all(
+                statuses[child.id] == "completed"
+                for child in self.tasks.values()
+                if child.parent_id == task.id
+            )
         ]
         newly_blocked = [
             identity

@@ -3598,6 +3598,8 @@ export interface components {
             model_route: string | null;
             /** Objective */
             objective: string;
+            /** Parent Id */
+            parent_id?: string | null;
             /** Permission Scope */
             permission_scope: string[];
             resource_usage: components["schemas"]["TaskResourceUsage"];

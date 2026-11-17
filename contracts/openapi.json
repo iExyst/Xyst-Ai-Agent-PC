@@ -3313,6 +3313,17 @@
             "title": "Objective",
             "type": "string"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
           "permission_scope": {
             "items": {
               "type": "string"

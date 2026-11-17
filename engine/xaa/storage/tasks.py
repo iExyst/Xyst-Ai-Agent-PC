@@ -550,42 +550,76 @@ class TaskStore:
                 str(role): str(row["system_instructions"])
                 for role, row in specialist_profiles.items()
             }
-            for task in graph.tasks.values():
-                connection.execute(
-                    "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
-                    (
-                        f"{run_id}:{task.id}",
-                        run_id,
-                        task.objective,
-                        json.dumps(task.acceptance_criteria),
-                        json.dumps(task.input_artifacts),
-                        json.dumps(task.expected_outputs),
-                        task.role,
-                        specialist_profiles.get(task.role, {}).get("display_name") or task.role,
-                        specialist_profiles.get(task.role, {}).get("model_route") or run["model"],
-                        profile_instructions.get(task.role, ""),
-                        run["workspace"],
-                        json.dumps(task.permissions),
-                        json.dumps(
-                            {
-                                "max_iterations": task.max_iterations,
-                                "max_seconds": task.max_seconds,
-                                **(
-                                    {"max_total_tokens": task.max_total_tokens}
-                                    if task.max_total_tokens is not None
-                                    else {}
-                                ),
-                                **(
-                                    {"max_output_tokens": task.max_output_tokens}
-                                    if task.max_output_tokens is not None
-                                    else {}
-                                ),
-                            }
+            remaining = list(graph.tasks.values())
+            saved: set[str] = set()
+            effective_budgets: dict[str, dict[str, int | None]] = {}
+            while remaining:
+                saveable = [
+                    task for task in remaining if task.parent_id is None or task.parent_id in saved
+                ]
+                if not saveable:
+                    raise ValueError("Task hierarchy contains an unresolved parent.")
+                for task in saveable:
+                    inherited = (
+                        effective_budgets[task.parent_id] if task.parent_id is not None else {}
+                    )
+                    effective_budgets[task.id] = {
+                        "max_total_tokens": task.max_total_tokens
+                        if task.max_total_tokens is not None
+                        else inherited.get("max_total_tokens"),
+                        "max_output_tokens": task.max_output_tokens
+                        if task.max_output_tokens is not None
+                        else inherited.get("max_output_tokens"),
+                    }
+                    connection.execute(
+                        "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
+                        (
+                            f"{run_id}:{task.id}",
+                            run_id,
+                            f"{run_id}:{task.parent_id}" if task.parent_id is not None else None,
+                            task.objective,
+                            json.dumps(task.acceptance_criteria),
+                            json.dumps(task.input_artifacts),
+                            json.dumps(task.expected_outputs),
+                            task.role,
+                            specialist_profiles.get(task.role, {}).get("display_name") or task.role,
+                            specialist_profiles.get(task.role, {}).get("model_route")
+                            or run["model"],
+                            profile_instructions.get(task.role, ""),
+                            run["workspace"],
+                            json.dumps(task.permissions),
+                            json.dumps(
+                                {
+                                    "max_iterations": task.max_iterations,
+                                    "max_seconds": task.max_seconds,
+                                    **(
+                                        {
+                                            "max_total_tokens": effective_budgets[task.id][
+                                                "max_total_tokens"
+                                            ]
+                                        }
+                                        if effective_budgets[task.id]["max_total_tokens"]
+                                        is not None
+                                        else {}
+                                    ),
+                                    **(
+                                        {
+                                            "max_output_tokens": effective_budgets[task.id][
+                                                "max_output_tokens"
+                                            ]
+                                        }
+                                        if effective_budgets[task.id]["max_output_tokens"]
+                                        is not None
+                                        else {}
+                                    ),
+                                }
+                            ),
+                            now,
+                            now,
                         ),
-                        now,
-                        now,
-                    ),
-                )
+                    )
+                    saved.add(task.id)
+                    remaining.remove(task)
             for task in graph.tasks.values():
                 for dependency in task.dependencies:
                     connection.execute(
@@ -593,7 +627,13 @@ class TaskStore:
                         (f"{run_id}:{task.id}", f"{run_id}:{dependency}"),
                     )
             self.runs.record_event(
-                connection, run_id, "plan.saved", {"task_ids": list(graph.tasks)}
+                connection,
+                run_id,
+                "plan.saved",
+                {
+                    "task_ids": list(graph.tasks),
+                    "parent_ids": {task.id: task.parent_id for task in graph.tasks.values()},
+                },
             )
 
     def records(self, run_id: str) -> list[dict[str, Any]]:
@@ -618,6 +658,12 @@ class TaskStore:
             for row in rows:
                 record = dict(row)
                 record["local_id"] = record["id"][len(prefix) :]
+                record["parent_id"] = (
+                    record["parent_task_id"][len(prefix) :]
+                    if record["parent_task_id"] is not None
+                    else None
+                )
+                record.pop("parent_task_id")
                 record["dependencies"] = [
                     item[0][len(prefix) :]
                     for item in connection.execute(
@@ -665,6 +711,10 @@ class TaskStore:
             elif any(
                 statuses.get(dependency) in {"failed", "blocked", "cancelled"}
                 for dependency in record["dependencies"]
+            ) or any(
+                child["parent_id"] == record["local_id"]
+                and child["status"] in {"failed", "blocked", "cancelled"}
+                for child in records
             ):
                 record["blocked_reason"] = "dependency_failed"
             else:
@@ -672,7 +722,7 @@ class TaskStore:
         return records
 
     def cancel_queued(self, run_id: str, task_id: str) -> None:
-        """Cancel an assignment only while it is still queued and has no worker."""
+        """Cancel a queued assignment and its still-queued descendants atomically."""
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -685,16 +735,34 @@ class TaskStore:
                 return
             if row["status"] != "queued":
                 raise ValueError("Only a queued specialist task can be cancelled before it starts.")
-            connection.execute(
-                "UPDATE tasks SET status='cancelled',updated_at=? WHERE run_id=? AND id=? AND status='queued'",
-                (utc_now(), run_id, f"{run_id}:{task_id}"),
-            )
-            self.runs.record_event(
-                connection,
-                run_id,
-                "task.cancelled",
-                {"task_id": task_id, "reason": "owner_cancelled_before_start"},
-            )
+            descendants = connection.execute(
+                "WITH RECURSIVE tree(id) AS ("
+                "SELECT id FROM tasks WHERE id=? AND run_id=? "
+                "UNION ALL SELECT child.id FROM tasks child JOIN tree parent "
+                "ON child.parent_task_id=parent.id WHERE child.run_id=?"
+                ") SELECT id FROM tree",
+                (f"{run_id}:{task_id}", run_id, run_id),
+            ).fetchall()
+            now = utc_now()
+            for descendant in descendants:
+                identity = str(descendant[0])
+                changed = connection.execute(
+                    "UPDATE tasks SET status='cancelled',updated_at=? "
+                    "WHERE run_id=? AND id=? AND status='queued'",
+                    (now, run_id, identity),
+                ).rowcount
+                if changed:
+                    local_id = identity[len(run_id) + 1 :]
+                    self.runs.record_event(
+                        connection,
+                        run_id,
+                        "task.cancelled",
+                        {
+                            "task_id": local_id,
+                            "reason": "owner_cancelled_before_start",
+                            **({"parent_task_id": task_id} if local_id != task_id else {}),
+                        },
+                    )
 
     def cancel_running(self, run_id: str, task_id: str) -> None:
         """Fence an active assignment before its asyncio worker is cancelled."""
@@ -1506,6 +1574,7 @@ class TaskStore:
                 input_artifacts=row["input_artifacts"],
                 expected_outputs=row["expected_outputs"],
                 dependencies=row["dependencies"],
+                parent_id=row["parent_id"],
                 role=row["assigned_role"],
                 permissions=row["permission_scope"],
                 **row["budgets"],

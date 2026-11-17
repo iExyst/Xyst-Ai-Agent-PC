@@ -11,7 +11,7 @@ function dependencyStages(tasks:Plan['tasks']):{stages:Array<[number,Plan['tasks
   const stages:Array<[number,Plan['tasks']]> = [];
   let depth=0;
   while(remaining.size){
-    const ready=[...remaining.values()].filter(task=>task.dependencies.every(dependency=>all.has(dependency)&&!remaining.has(dependency)));
+    const ready=[...remaining.values()].filter(task=>task.dependencies.every(dependency=>all.has(dependency)&&!remaining.has(dependency))&&![...all.values()].some(child=>child.parent_id===task.local_id&&remaining.has(child.local_id)));
     if(!ready.length)return {stages:[[0,tasks]],valid:false};
     stages.push([depth,ready]);
     for(const task of ready)remaining.delete(task.local_id);
@@ -74,14 +74,15 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
         const taskAnchor = `plan-task-${encodeURIComponent(task.local_id)}`;
         const usage=task.resource_usage??{inference_attempts:0,iterations_remaining:task.budgets.max_iterations,elapsed_seconds:0,seconds_remaining:task.budgets.max_seconds,measured_tokens:0,tokens_remaining:task.budgets.max_total_tokens,usage_measured:true};
         const dependencies = task.dependencies.map(id => ({id, task:plan.tasks.find(candidate=>candidate.local_id===id)}));
-        const dependents = plan.tasks.filter(candidate=>candidate.dependencies.includes(task.local_id));
-        const readiness = task.status === 'queued' ? plan.blocked.includes(task.local_id) ? 'Blocked by a dependency' : plan.ready.includes(task.local_id) ? 'Ready to start' : 'Waiting for dependencies' : task.status;
+        const dependents = plan.tasks.filter(candidate=>candidate.dependencies.includes(task.local_id)||candidate.parent_id===task.local_id);
+        const subtasks = plan.tasks.filter(child=>child.parent_id===task.local_id);
+        const readiness = task.status === 'queued' ? plan.blocked.includes(task.local_id) ? 'Blocked by a prerequisite' : plan.ready.includes(task.local_id) ? 'Ready to start' : subtasks.length ? 'Waiting for reviewed subtasks' : 'Waiting for prerequisites' : task.status;
         return <article id={taskAnchor} tabIndex={-1} key={task.id} aria-label={`Task ${task.local_id}`}>
           <h3>{task.local_id} <small>{task.assigned_role}</small></h3>
           <p>{task.objective}</p>
           <p className="plan-task-status"><strong>Status</strong><span>{task.status==='queued'?`queued · ${readiness}`:task.status==='verifying'?'Awaiting review':task.status}</span></p>
           <p className="plan-task-output-preview"><strong>Expected output</strong><span>{task.expected_outputs.length?task.expected_outputs.join(' · '):'None recorded.'}</span></p>
-          {(task.status==='queued'||task.status==='running')&&<button type="button" disabled={task.status==='queued'&&!canCancelQueued} onClick={()=>{if(window.confirm(`Cancel ${task.local_id}? Any tasks depending on it will be blocked.`))void cancelTask(task.local_id);}}>Cancel {task.local_id}</button>}
+          {(task.status==='queued'||task.status==='running')&&<button type="button" disabled={task.status==='queued'&&!canCancelQueued} onClick={()=>{if(window.confirm(`Cancel ${task.local_id}?${subtasks.length?' Any queued subtasks will also be cancelled.':''} Tasks depending on it will be blocked.`))void cancelTask(task.local_id);}}>Cancel {task.local_id}</button>}
           {task.status==='blocked' && <p>{task.blocked_reason==='token_budget_exhausted_or_unmeasured'
             ? 'The reported token allowance was reached, or usage could not be measured. Start a new objective to change its allowance.'
             : task.blocked_reason==='task_time_budget_exhausted' ? 'This specialist reached its assigned time allowance. Review the task scope or time limits before retrying.'
@@ -92,7 +93,9 @@ export function PlanPanel({ plan, client, runId, partials, onReviewed, onDispatc
             : task.blocked_reason==='review_evidence_missing' ? 'The reviewer reached its request limit without inspecting every required source, changed artifact, and saved test output. This result cannot be accepted as independent review.'
             : 'Task execution is blocked. Inspect the activity before starting a new objective.'}</p>}
           <details className="plan-task-details"><summary>Task details · {task.acceptance_criteria.length} {task.acceptance_criteria.length===1?'criterion':'criteria'} · {task.input_artifacts.length} input {task.input_artifacts.length===1?'artifact':'artifacts'}</summary>
-          <dl><dt>Depends on</dt><dd>{dependencies.length ? dependencies.map(({id,task:dependency},index)=><span key={id}>{index>0?', ':''}{dependency?<a href={`#plan-task-${encodeURIComponent(dependency.local_id)}`}>{dependency.local_id}</a>:id}</span>) : 'None'}</dd>
+          <dl>{task.parent_id&&<><dt>Subtask of</dt><dd><a href={`#plan-task-${encodeURIComponent(task.parent_id)}`}>{task.parent_id}</a></dd></>}
+            <dt>Subtasks</dt><dd>{subtasks.length ? subtasks.map((child,index)=><span key={child.local_id}>{index>0?', ':''}<a href={`#plan-task-${encodeURIComponent(child.local_id)}`}>{child.local_id}</a></span>) : 'None'}{subtasks.length>0&&<span> · Parent waits for owner review of each subtask</span>}</dd>
+            <dt>Depends on</dt><dd>{dependencies.length ? dependencies.map(({id,task:dependency},index)=><span key={id}>{index>0?', ':''}{dependency?<a href={`#plan-task-${encodeURIComponent(dependency.local_id)}`}>{dependency.local_id}</a>:id}</span>) : 'None'}</dd>
             <dt>Unlocks</dt><dd>{dependents.length ? dependents.map((dependent,index)=><span key={dependent.id}>{index>0?', ':''}<a href={`#plan-task-${encodeURIComponent(dependent.local_id)}`}>{dependent.local_id}</a></span>) : 'None'}</dd>
             <dt>Model</dt><dd>{task.model_route ?? 'Unassigned'}</dd>
             <dt>Workspace</dt><dd>{task.workspace ?? 'None'}</dd>
