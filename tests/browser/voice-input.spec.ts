@@ -27,7 +27,10 @@ test('voice attachment submits WAV and the selected local transcription endpoint
     return route.fulfill({ json: run, headers });
   });
 
+  const voiceModuleRequests: string[] = [];
+  page.on('request', request => { if (request.url().includes('VoiceCapture')) voiceModuleRequests.push(request.url()); });
   await page.goto('/');
+  await expect.poll(() => voiceModuleRequests).toHaveLength(0);
   await page.getByLabel('Engine token').fill('x'.repeat(32));
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Model setup'}).click();
@@ -35,6 +38,7 @@ test('voice attachment submits WAV and the selected local transcription endpoint
   await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'New objective'}).click();
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open=true; });
+  await expect.poll(() => voiceModuleRequests.length).toBeGreaterThan(0);
   await page.getByLabel('Objective', { exact: true }).fill(run.objective);
   await page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)').setInputFiles({ name: 'request.wav', mimeType: 'audio/wav', buffer: audio });
   await expect(page.getByLabel('Local speech service URL')).toBeVisible();
