@@ -18,6 +18,15 @@ on:
       - 'docs/releases/dependency-inventory.md'
       - 'docs/releases/0.1.1.md'
   workflow_dispatch:
+    inputs:
+      acceptance:
+        description: Acceptance suite to run for a manual dispatch
+        type: choice
+        options:
+          - all
+          - wsl-node
+        default: all
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -252,7 +261,7 @@ jobs:
         timeout-minutes: 2
 
   windows-installer:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    if: (github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch') || (github.event_name == 'workflow_dispatch' && inputs.acceptance != 'wsl-node')
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -692,7 +701,7 @@ jobs:
           retention-days: 90
 
   wsl-node-acceptance:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.acceptance == 'wsl-node'
     runs-on: windows-latest
     timeout-minutes: 35
     env:
@@ -712,13 +721,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          wsl.exe --set-default-version 2
-          if ($LASTEXITCODE -ne 0) { throw 'Could not select WSL 2 for the acceptance distribution.' }
-          wsl.exe --install --distribution Ubuntu-24.04 --no-launch
-          if ($LASTEXITCODE -ne 0) { throw 'Could not install the Ubuntu-24.04 WSL distribution.' }
-          $launcher = Get-Command ubuntu2404.exe -ErrorAction Stop
-          & $launcher.Source install --root
-          if ($LASTEXITCODE -ne 0) { throw 'Could not initialize Ubuntu 24.04 without an interactive user prompt.' }
+          $rootfs = Join-Path $env:RUNNER_TEMP 'ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz'
+          $rootfsUrl = 'https://cloud-images.ubuntu.com/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz'
+          Invoke-WebRequest -Uri $rootfsUrl -OutFile $rootfs
+          $rootfsHash = (Get-FileHash -LiteralPath $rootfs -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($rootfsHash -ne '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934') { throw "Ubuntu WSL root filesystem SHA-256 mismatch: $rootfsHash" }
+          $installLocation = Join-Path $env:RUNNER_TEMP 'wsl-ubuntu-24.04'
+          wsl.exe --import Ubuntu-24.04 $installLocation $rootfs --version 2
+          if ($LASTEXITCODE -ne 0) { throw 'Could not import the verified Ubuntu 24.04 WSL root filesystem.' }
           $linuxSetup = "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm sudo"
           wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc $linuxSetup
           if ($LASTEXITCODE -ne 0) { throw 'Could not enable systemd and install the Ubuntu Node/npm prerequisites.' }
