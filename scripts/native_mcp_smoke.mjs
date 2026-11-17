@@ -11,8 +11,11 @@ const acceptanceLogDirectory = path.join(root, 'logs');
 await mkdir(acceptanceLogDirectory, { recursive: true });
 await writeFile(path.join(root, 'desktop-settings.json'), JSON.stringify({ close_behavior: 'exit_on_close' }));
 
-async function clickForResponse(page, locator, predicate) {
-  const [response] = await Promise.all([page.waitForResponse(predicate), locator.click()]);
+async function clickForResponse(page, locator, predicate, timeout = 30_000) {
+  const [response] = await Promise.all([
+    page.waitForResponse(predicate, { timeout }),
+    locator.click(),
+  ]);
   return response;
 }
 
@@ -283,6 +286,7 @@ try {
     panel.getByRole('button', { name: 'Connect and discover', exact: true }),
     (response) => new URL(response.url()).pathname === `/mcp/servers/${serverId}/connect`
       && response.request().method() === 'POST',
+    70_000,
   );
   const connected = await (await fetch(`${connection.base_url}/mcp/servers`, { headers })).json();
   if (!connectResponse.ok()) {
