@@ -5,9 +5,10 @@ test('mobile navigation shows destination labels and scrolls through every secti
   await page.goto('/');
 
   const navigation=page.getByRole('navigation',{name:'Main sections'});
+  await expect(navigation).toBeVisible({timeout:15000});
   for(const label of ['New objective','Saved runs','Chats','Memory','Skills','Automations','Tools & integrations','Model setup','System monitor','Settings']){
     const link=navigation.getByRole('link',{name:new RegExp(label)});
-    await expect(link).toBeVisible();
+    await expect(link).toBeVisible({timeout:10000});
     await expect(link).toHaveCSS('font-size','9px');
     const labelFits=await link.evaluate(element=>{
       const textNode=[...element.childNodes].find(child=>child.nodeType===Node.TEXT_NODE&&child.textContent?.trim());

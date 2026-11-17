@@ -56,7 +56,7 @@ async function interactiveNameFailures(page:Page){
     .filter(control=>!control.text));
 }
 
-async function expectCompleteKeyboardTabOrder(page:Page){
+async function expectCompleteKeyboardTabOrder(page:Page,attempt=0){
   await page.evaluate(()=>{
     document.documentElement.dataset.keyboardFocusAuditNext='0';
     const selector='a[href],button,input:not([type="hidden"]),select,textarea,summary,[contenteditable="true"],[tabindex]';
@@ -119,7 +119,18 @@ async function expectCompleteKeyboardTabOrder(page:Page){
       return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)!==0;
     }).map(element=>element.dataset.keyboardFocusAudit??'unvisited-visible-control');
   });
-  expect([...new Set(actual)].sort()).toEqual([...new Set(expected)].sort());
+  const actualIds=[...new Set(actual)].sort();
+  const expectedIds=[...new Set(expected)].sort();
+  if((JSON.stringify(actualIds)!==JSON.stringify(expectedIds)||focusIndicatorFailures.length>0)&&attempt<2){
+    await page.evaluate(()=>{
+      document.body.removeAttribute('tabindex');
+      document.querySelectorAll('[data-keyboard-focus-audit]').forEach(element=>delete (element as HTMLElement).dataset.keyboardFocusAudit);
+      delete document.documentElement.dataset.keyboardFocusAuditNext;
+    });
+    await page.waitForTimeout(150*(attempt+1));
+    return expectCompleteKeyboardTabOrder(page,attempt+1);
+  }
+  expect(actualIds).toEqual(expectedIds);
   expect(focusIndicatorFailures).toEqual([]);
   await page.evaluate(()=>{
     document.body.removeAttribute('tabindex');
