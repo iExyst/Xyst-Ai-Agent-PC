@@ -470,7 +470,9 @@ def test_workspace_change_pages_cover_more_than_two_hundred_specialist_files(wor
         first = client.get(f"/runs/{run_id}/workspace-changes", headers=headers)
         second = client.get(f"/runs/{run_id}/workspace-changes?offset=100", headers=headers)
         third = client.get(f"/runs/{run_id}/workspace-changes?offset=200", headers=headers)
+        oversized = client.get(f"/runs/{run_id}/workspace-changes?limit=201", headers=headers)
     assert first.status_code == second.status_code == third.status_code == 200
+    assert oversized.status_code == 422
     assert first.json()["total"] == second.json()["total"] == third.json()["total"] == 205
     assert len(first.json()["items"]) == len(second.json()["items"]) == 100
     assert [
