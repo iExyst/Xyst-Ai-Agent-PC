@@ -20,11 +20,12 @@ on:
   workflow_dispatch:
     inputs:
       acceptance:
-        description: Acceptance suite to run for a manual dispatch
+        description: Windows package or offline WSL dependency acceptance
         type: choice
         options:
           - all
           - wsl-node
+          - wsl-python
         default: all
         required: true
 
@@ -261,7 +262,7 @@ jobs:
         timeout-minutes: 2
 
   windows-installer:
-    if: (github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch') || (github.event_name == 'workflow_dispatch' && inputs.acceptance != 'wsl-node')
+    if: (github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch') || (github.event_name == 'workflow_dispatch' && inputs.acceptance == 'all')
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -750,8 +751,8 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  wsl-node-acceptance:
-    if: github.event_name == 'workflow_dispatch' && inputs.acceptance == 'wsl-node'
+  wsl-procedure-acceptance:
+    if: github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'wsl-node' || inputs.acceptance == 'wsl-python')
     runs-on: windows-latest
     timeout-minutes: 35
     env:
@@ -779,15 +780,16 @@ jobs:
           $installLocation = Join-Path $env:RUNNER_TEMP 'wsl-ubuntu-24.04'
           wsl.exe --import Ubuntu-24.04 $installLocation $rootfs --version 2
           if ($LASTEXITCODE -ne 0) { throw 'Could not import the verified Ubuntu 24.04 WSL root filesystem.' }
-          $linuxSetup = "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y bubblewrap nodejs npm sudo"
+          $linuxSetup = "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y bubblewrap nodejs npm python3-venv sudo"
           wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc $linuxSetup
-          if ($LASTEXITCODE -ne 0) { throw 'Could not enable systemd and install the Ubuntu Node/npm prerequisites.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enable systemd and install the Ubuntu Node/npm/Python prerequisites.' }
           wsl.exe --terminate Ubuntu-24.04
           if ($LASTEXITCODE -ne 0) { throw 'Could not restart Ubuntu 24.04 to apply its WSL systemd configuration.' }
           wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc 'test "$(cat /proc/1/comm)" = systemd'
           if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 systemd is not running as PID 1 under WSL.' }
         timeout-minutes: 12
       - name: Verify offline Node procedure environments through WSL
+        if: inputs.acceptance == 'wsl-node'
         run: uv run python scripts/wsl_node_environment_acceptance.py --distribution Ubuntu-24.04 --report .acceptance/wsl-node-environment-${{ github.run_id }}/report.json
         timeout-minutes: 18
       - uses: actions/upload-artifact@v4
@@ -795,6 +797,18 @@ jobs:
         with:
           name: wsl-node-environment-${{ github.run_id }}
           path: .acceptance/wsl-node-environment-${{ github.run_id }}/report.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Verify offline Python procedure environments through WSL
+        if: inputs.acceptance == 'wsl-python'
+        run: uv run python scripts/wsl_procedure_environment_acceptance.py --distribution Ubuntu-24.04 --report .acceptance/wsl-python-environment-${{ github.run_id }}/report.json
+        timeout-minutes: 18
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.acceptance == 'wsl-python'
+        with:
+          name: wsl-python-environment-${{ github.run_id }}
+          path: .acceptance/wsl-python-environment-${{ github.run_id }}/report.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 90

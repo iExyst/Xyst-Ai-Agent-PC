@@ -7,9 +7,12 @@ import base64
 import csv
 import hashlib
 import io
+import json
+import os
+import subprocess
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -26,9 +29,10 @@ from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport
 
 
-def build_wheel(name: str, value: str, requires_dist: str | None = None) -> tuple[str, bytes]:
+def build_wheel(
+    name: str, value: str, requires_dist: str | None = None, *, version: str = "1.0"
+) -> tuple[str, bytes]:
     normalized = name.replace("-", "_")
-    version = "1.0"
     dist_info = f"{normalized}-{version}.dist-info"
     files = {
         f"{normalized}/__init__.py": f"VALUE = {value!r}\n".encode(),
@@ -56,17 +60,77 @@ def build_wheel(name: str, value: str, requires_dist: str | None = None) -> tupl
     return f"{normalized}-{version}-py3-none-any.whl", output.getvalue()
 
 
+def _wsl_binary() -> str:
+    return str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "wsl.exe")
+
+
+def _wsl(distribution: str, *arguments: str) -> str:
+    completed = subprocess.run(
+        [_wsl_binary(), "--distribution", distribution, "--exec", *arguments],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stderr[-1200:] or "WSL fixture command failed.")
+    return completed.stdout.strip()
+
+
+def _seed_interrupted_install(distribution: str, digest: str) -> None:
+    target = PurePosixPath("/var/lib/xaa-procedure-environments") / digest
+    unit = f"xaa-procenv-{digest[:32]}.service"
+    _wsl(
+        distribution,
+        "sudo",
+        "install",
+        "-d",
+        "--",
+        str(target / "environment/venv"),
+    )
+    _wsl(distribution, "sudo", "touch", "--", str(target / "environment/venv/.partial"))
+    _wsl(
+        distribution,
+        "sudo",
+        "systemd-run",
+        "--quiet",
+        f"--unit={unit}",
+        "/bin/sleep",
+        "300",
+    )
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if _wsl(distribution, "sudo", "systemctl", "is-active", unit) == "active":
+            return
+        time.sleep(0.1)
+    raise RuntimeError("Could not seed the active interrupted Python-install fixture unit.")
+
+
+def _system_python_snapshot(distribution: str) -> dict[str, Any]:
+    script = (
+        "import importlib.util,json,sys,sysconfig\n"
+        "names=('xaa_top','xaa_leaf','xaa_isolation_probe')\n"
+        "print(json.dumps({'version':sys.version,'executable':sys.executable,"
+        "'prefix':sys.prefix,'base_prefix':sys.base_prefix,'paths':sysconfig.get_paths(),"
+        "'modules':{name:(spec.origin if (spec:=importlib.util.find_spec(name)) else None) "
+        "for name in names}},sort_keys=True))"
+    )
+    return json.loads(_wsl(distribution, "python3", "-c", script))
+
+
 def make_lock(
     distribution: str,
     artifacts: dict[str, bytes],
     *,
     requirements: tuple[str, ...] = ("xaa-top==1.0",),
+    skill_version: int = 1,
+    source_sha256: str = "a" * 64,
 ) -> ProcedurePythonDependencyLock:
     return ProcedurePythonDependencyLock(
         schema_version=1,
         skill_id="12345678-1234-4234-8234-123456789abc",
-        skill_version=1,
-        source_sha256="a" * 64,
+        skill_version=skill_version,
+        source_sha256=source_sha256,
         target=PythonDependencyTarget(
             distribution=distribution,
             environment={
@@ -89,7 +153,7 @@ def make_lock(
             LockedPythonWheel(
                 filename=filename,
                 project_name=filename.split("-", 1)[0].replace("_", "-"),
-                version="1.0",
+                version=filename.split("-")[1],
                 sha256=hashlib.sha256(content).hexdigest(),
                 size_bytes=len(content),
                 requires_dist=("xaa-leaf==1.0",) if filename.startswith("xaa_top-") else (),
@@ -116,6 +180,8 @@ async def run(distribution: str) -> dict[str, Any]:
         store.store(lock, artifacts)
         store.store(isolated_lock, isolated_artifacts)
         transport = await WSLTransport.discover(distribution, deadline=time.monotonic() + 30)
+        system_python_before = _system_python_snapshot(distribution)
+        _seed_interrupted_install(distribution, lock.environment_digest())
         installed = await transport.install_procedure_environment(
             lock, store.root / lock.environment_digest(), deadline=time.monotonic() + 180
         )
@@ -130,6 +196,29 @@ async def run(distribution: str) -> dict[str, Any]:
         observed = await transport.procedure_environment_status(
             lock.environment_digest(), deadline=time.monotonic() + 30
         )
+        interrupted_unit = f"xaa-procenv-{lock.environment_digest()[:32]}.service"
+        interrupted_unit_state = _wsl(
+            distribution,
+            "sudo",
+            "systemctl",
+            "show",
+            "--property=ActiveState",
+            "--value",
+            interrupted_unit,
+        )
+        interrupted_partial_state = _wsl(
+            distribution,
+            "sudo",
+            "bash",
+            "-lc",
+            'if test -e "$1"; then echo present; else echo absent; fi',
+            "xaa",
+            str(
+                PurePosixPath("/var/lib/xaa-procedure-environments")
+                / lock.environment_digest()
+                / "environment/venv/.partial"
+            ),
+        )
         if (
             installed.get("installed") is not True
             or installed.get("environment_digest") != lock.environment_digest()
@@ -140,8 +229,12 @@ async def run(distribution: str) -> dict[str, Any]:
             or observed.get("installed_bytes", 0) <= 0
             or isolated_installed.get("installed") is not True
             or isolated_installed.get("environment_digest") != isolated_lock.environment_digest()
+            or interrupted_unit_state != "inactive"
+            or interrupted_partial_state != "absent"
         ):
-            raise RuntimeError("Managed WSL environment install or integrity status failed.")
+            raise RuntimeError(
+                "Managed WSL environment install, integrity, or interrupted-install recovery failed."
+            )
         lease_started = asyncio.Event()
 
         async def capture_lease_start(stream: str, chunk: bytes) -> None:
@@ -268,6 +361,95 @@ async def run(distribution: str) -> dict[str, Any]:
                 "WSL did not execute the selected environment read-only: "
                 f"receipt={execution!r}; stdout={output!r}; stderr={stderr!r}"
             )
+
+        revision_top_name, revision_top_bytes = build_wheel(
+            "xaa-top", "top-revision-two", "xaa-leaf==1.0", version="1.1"
+        )
+        revision_artifacts = {leaf_name: leaf_bytes, revision_top_name: revision_top_bytes}
+        revision_lock = make_lock(
+            distribution,
+            revision_artifacts,
+            requirements=("xaa-top==1.1",),
+            skill_version=2,
+            source_sha256="c" * 64,
+        )
+        store.store(revision_lock, revision_artifacts)
+        revision_install = await transport.install_procedure_environment(
+            revision_lock,
+            store.root / revision_lock.environment_digest(),
+            deadline=time.monotonic() + 180,
+        )
+        if (
+            revision_lock.environment_digest() == lock.environment_digest()
+            or revision_install.get("installed") is not True
+            or (
+                await transport.procedure_environment_status(
+                    lock.environment_digest(), deadline=time.monotonic() + 30
+                )
+            ).get("installed")
+            is not True
+        ):
+            raise RuntimeError(
+                "Installing a new procedure revision replaced its older environment."
+            )
+
+        async def run_revision(
+            revision: ProcedurePythonDependencyLock,
+            tree_sha256: str,
+            workspace: str,
+        ) -> dict[str, Any]:
+            return await transport.run(
+                CommandIntent(
+                    argv=[
+                        "/opt/xaa/procedure-python/bin/python",
+                        "-I",
+                        "-c",
+                        "import xaa_top; print(xaa_top.VALUE)",
+                    ],
+                    max_seconds=10,
+                    execution_id=uuid4().hex,
+                    backend="wsl-bubblewrap-v1",
+                    distribution=distribution,
+                    profile_sha256=transport.profile_sha256,
+                    workspace=workspace,
+                    procedure_environment_digest=revision.environment_digest(),
+                    procedure_environment_tree_sha256=tree_sha256,
+                ),
+                WorkspaceSnapshot((), (), ()),
+                deadline=time.monotonic() + 30,
+            )
+
+        revision_execution = await run_revision(
+            revision_lock, revision_install["tree_sha256"], "procedure-environment-v2"
+        )
+        rollback_execution = await run_revision(
+            lock, installed["tree_sha256"], "procedure-environment-v1-rollback"
+        )
+        if (
+            revision_execution.get("succeeded") is not True
+            or base64.b64decode(revision_execution["stdout_b64"], validate=True).decode().strip()
+            != "top-revision-two"
+            or revision_execution.get("procedure_environment_digest")
+            != revision_lock.environment_digest()
+            or revision_execution.get("cleanup_confirmed") is not True
+            or rollback_execution.get("succeeded") is not True
+            or base64.b64decode(rollback_execution["stdout_b64"], validate=True).decode().strip()
+            != "top-ready"
+            or rollback_execution.get("procedure_environment_digest") != lock.environment_digest()
+            or rollback_execution.get("cleanup_confirmed") is not True
+        ):
+            raise RuntimeError("Immutable procedure revision selection or rollback failed.")
+        revision_removed = await transport.remove_procedure_environment(
+            revision_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        old_after_revision_removal = await transport.procedure_environment_status(
+            lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        if (
+            revision_removed.get("removed") is not True
+            or old_after_revision_removal.get("installed") is not True
+        ):
+            raise RuntimeError("Removing the new procedure revision changed the retained old one.")
         removed = await transport.remove_procedure_environment(
             lock.environment_digest(), deadline=time.monotonic() + 30
         )
@@ -287,18 +469,29 @@ async def run(distribution: str) -> dict[str, Any]:
             or isolated_after_remove.get("installed") is not False
         ):
             raise RuntimeError("Managed WSL environment removal did not close the exact fixture.")
+        system_python_after = _system_python_snapshot(distribution)
+        if system_python_after != system_python_before:
+            raise RuntimeError("Procedure dependency install changed the WSL system Python.")
         return {
             "distribution": distribution,
             "environment_digest": lock.environment_digest(),
             "tree_sha256": installed["tree_sha256"],
             "installed_bytes": installed["installed_bytes"],
             "idempotent_install": True,
+            "interrupted_install_recovered": True,
+            "interrupted_install_unit_stopped": interrupted_unit_state == "inactive",
+            "interrupted_staging_removed": interrupted_partial_state == "absent",
             "integrity_status": True,
             "procedure_imports_from_read_only_mount": True,
             "other_environment_path_hidden": "other-environment-visible False" in isolation_output,
             "cross_environment_import_blocked": "cross-environment-import-blocked"
             in isolation_output,
             "active_use_removal_refused": active_removal_refused,
+            "immutable_revision_identity": True,
+            "rollback_to_previous_revision": True,
+            "revision_removal_preserved_rollback_environment": True,
+            "system_python_unchanged": True,
+            "system_python_version": system_python_before["version"],
             "exact_environment_removed": True,
             "network": "none",
             "cleanup_confirmed": True,
@@ -307,13 +500,17 @@ async def run(distribution: str) -> dict[str, Any]:
 
 def main() -> None:
     import argparse
+    import json
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--distribution", default="Ubuntu-24.04")
+    parser.add_argument("--report", type=Path)
     args = parser.parse_args()
-    import json
-
-    print(json.dumps(asyncio.run(run(args.distribution)), indent=2, sort_keys=True))
+    rendered = json.dumps(asyncio.run(run(args.distribution)), indent=2, sort_keys=True)
+    if args.report:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(rendered + "\n", encoding="utf-8")
+    print(rendered)
 
 
 if __name__ == "__main__":
