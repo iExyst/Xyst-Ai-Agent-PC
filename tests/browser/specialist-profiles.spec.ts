@@ -18,7 +18,7 @@ test('configure persistent specialist model routes from discovered local models'
   const integrationModuleRequests: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => {
-    if (/SpecialistProfilesPanel|ChannelsPanel|SearchProviderPanel|MCPPanel|AgentPluginsPanel/.test(request.url())) integrationModuleRequests.push(request.url());
+    if (/SpecialistProfilesPanel|ChannelsPanel|SearchProviderPanel|MCPPanel|AgentPluginsPanel|ExecutionSetup/.test(request.url())) integrationModuleRequests.push(request.url());
   });
   await page.route('http://127.0.0.1:8765/**', async route => {
     const request = route.request();
@@ -110,5 +110,8 @@ test('configure persistent specialist model routes from discovered local models'
   await panel.getByRole('button',{name:'Save identity'}).nth(1).click();
   await expect(panel.getByLabel('Evidence Scout model')).toBeVisible();
   expect(identitySaves).toEqual([{role:'researcher',display_name:'Evidence Scout'}]);
+  await page.locator('summary').filter({hasText:'Command sandbox setup'}).click();
+  await expect.poll(() => integrationModuleRequests.some(url => url.includes('ExecutionSetup'))).toBe(true);
+  await expect(page.getByRole('button',{name:'Find installed distributions'})).toBeVisible();
   expect(errors).toEqual([]);
 });

@@ -2,7 +2,7 @@
 
 ## Load integration panels when opened (2026-11-17)
 
-Specialist profiles, channels, web search, MCP, and Agent Plugin panels now remain unloaded until their disclosure is opened, then retain their state for the session. Browser coverage verifies that entering Integrations loads none of these modules; opening Search or profiles loads the requested panel without loading its neighbors; and profile, channel, and MCP workflows work (3 browser specs). Production typecheck/build, native Windows development build, and `git diff --check` pass. Exact-source Windows workflow [44039435865](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44039435865) passed all 60 executed steps. The additional Search-specific request assertion passes locally. No live model inference was used.
+Specialist profiles, channels, web search, MCP, Agent Plugin, and command-sandbox setup panels now remain unloaded until their disclosure is opened, then retain their state for the session. Browser coverage verifies that entering Integrations loads none of these modules; opening Search, profiles, or command-sandbox setup loads only the requested module; and profile, channel, MCP, and sandbox-readiness workflows work. The focused browser specs pass. Production typecheck/build, native Windows development build, and `git diff --check` pass. The last exact-source Windows run for the preceding code [44040158011](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44040158011) passed all 60 steps; this added sandbox-panel deferral awaits hosted verification. No live model inference was used.
 
 ## Defer search settings and microphone code until use (2026-11-17)
 

@@ -34,7 +34,7 @@ export function ExecutionSetup({client,onReady}:{client:EngineClient;onReady:(re
     catch(failure){if(!controller.signal.aborted)setError(String(failure));}
     finally{if(!controller.signal.aborted)setBusy(false);}
   }
-  return <section aria-label="Command sandbox setup"><details><summary>Command sandbox setup</summary>
+  return <section aria-label="Command sandbox setup">
     <p>Choose where commands will run and check its isolation controls. The check uses a private fixture, not your project files, and does not enable command execution.</p>
     <label>Execution backend <select value={backend} disabled={busy} onChange={event=>{const value=event.target.value as Backend;setBackend(value);setSelected(value==='windows-appcontainer-v1'?'Windows-Local':'');setInventory(undefined);setResult(undefined);}}>
       <option value="wsl-bubblewrap-v1">WSL isolated Linux environment</option>
@@ -55,5 +55,5 @@ export function ExecutionSetup({client,onReady}:{client:EngineClient;onReady:(re
       <p>Checked {new Date(result.checked_at).toLocaleTimeString()} · Valid until {new Date(result.expires_at).toLocaleTimeString()}</p>
     </div>}
     {error&&<p role="alert">{error}</p>}
-  </details></section>;
+  </section>;
 }
