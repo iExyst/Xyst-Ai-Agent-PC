@@ -2,20 +2,28 @@
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MAX_TASKS = 64
 MAX_TASK_DEPENDENCY_DEPTH = 16
+MAX_TASK_ACCEPTANCE_CRITERIA = 16
+MAX_TASK_ACCEPTANCE_CRITERION_LENGTH = 500
+TaskAcceptanceCriterion = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_TASK_ACCEPTANCE_CRITERION_LENGTH),
+]
 
 
 class TaskDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     id: str = Field(min_length=1, max_length=128)
     objective: str = Field(min_length=1, max_length=10000)
-    acceptance_criteria: tuple[str, ...] = ()
-    dependencies: tuple[str, ...] = ()
+    acceptance_criteria: tuple[TaskAcceptanceCriterion, ...] = Field(
+        default=(), max_length=MAX_TASK_ACCEPTANCE_CRITERIA
+    )
+    dependencies: tuple[str, ...] = Field(default=(), max_length=MAX_TASKS - 1)
     input_artifacts: tuple[str, ...] = Field(default=(), max_length=8)
     expected_outputs: tuple[str, ...] = Field(default=(), max_length=16)
     role: Literal["planner", "researcher", "developer", "reviewer", "tester", "executor"] = (
@@ -44,6 +52,13 @@ class TaskDefinition(BaseModel):
     def unique_input_artifacts(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         if len(set(value)) != len(value) or any(not item.strip() for item in value):
             raise ValueError("Input artifact IDs must be nonempty and unique.")
+        return value
+
+    @field_validator("acceptance_criteria")
+    @classmethod
+    def valid_acceptance_criteria(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not item.strip() for item in value):
+            raise ValueError("Task acceptance criteria must not be blank.")
         return value
 
     @field_validator("expected_outputs")

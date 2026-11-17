@@ -5,7 +5,12 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.runtime.executor import ReconciliationRequired
-from xaa.runtime.task_graph import TaskDefinition
+from xaa.runtime.task_graph import (
+    MAX_TASK_ACCEPTANCE_CRITERIA,
+    MAX_TASKS,
+    TaskAcceptanceCriterion,
+    TaskDefinition,
+)
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
 
@@ -14,9 +19,11 @@ PLAN_TOOL_VERSION = "1"
 
 
 class ProposedTask(TaskDefinition):
-    acceptance_criteria: tuple[str, ...] = Field(min_length=1)
+    acceptance_criteria: tuple[TaskAcceptanceCriterion, ...] = Field(
+        min_length=1, max_length=MAX_TASK_ACCEPTANCE_CRITERIA
+    )
     expected_outputs: tuple[str, ...] = Field(min_length=1, max_length=16)
-    dependencies: tuple[str, ...] = Field()
+    dependencies: tuple[str, ...] = Field(max_length=MAX_TASKS - 1)
 
 
 class SavePlanArguments(BaseModel):

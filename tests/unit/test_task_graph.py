@@ -1,4 +1,5 @@
 import pytest
+from xaa.runtime.planning import ProposedTask, SavePlanArguments
 from xaa.runtime.task_graph import (
     MAX_TASK_DEPENDENCY_DEPTH,
     TaskDefinition,
@@ -83,3 +84,28 @@ def test_task_artifact_and_output_contracts_are_bounded_and_explicit():
         TaskDefinition(id="a", objective="A", input_artifacts=["x"] * 9)
     with pytest.raises(ValueError):
         TaskDefinition(id="a", objective="A", expected_outputs=["x" * 501])
+
+
+def test_task_acceptance_criteria_are_bounded_and_nonempty():
+    with pytest.raises(ValueError, match="acceptance_criteria"):
+        TaskDefinition(id="a", objective="A", acceptance_criteria=["criterion"] * 17)
+    with pytest.raises(ValueError, match="acceptance criteria"):
+        TaskDefinition(id="a", objective="A", acceptance_criteria=[" "])
+    with pytest.raises(ValueError, match="acceptance_criteria"):
+        TaskDefinition(id="a", objective="A", acceptance_criteria=["x" * 501])
+    with pytest.raises(ValueError, match="dependencies"):
+        TaskDefinition(id="a", objective="A", dependencies=["b"] * 64)
+
+
+def test_proposed_task_schema_exposes_acceptance_criteria_bounds():
+    schema = SavePlanArguments.model_json_schema()
+    criteria = schema["$defs"]["ProposedTask"]["properties"]["acceptance_criteria"]
+    assert criteria["minItems"] == 1
+    assert criteria["maxItems"] == 16
+    assert criteria["items"]["maxLength"] == 500
+    assert schema["$defs"]["ProposedTask"]["properties"]["dependencies"]["maxItems"] == 63
+
+    with pytest.raises(ValueError):
+        ProposedTask(
+            id="a", objective="A", acceptance_criteria=["x" * 501], expected_outputs=["done"]
+        )
