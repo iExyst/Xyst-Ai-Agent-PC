@@ -35,6 +35,7 @@ def main() -> None:
                     id="inspect",
                     objective="Inspect the primary fixture without making changes.",
                     acceptance_criteria=("Record the observed fixture state.",),
+                    expected_outputs=("Fixture state summary",),
                     role="researcher",
                     permissions=("workspace.read",),
                     max_iterations=1,
@@ -44,15 +45,30 @@ def main() -> None:
                     id="inventory",
                     objective="Inventory the independent fixture inputs.",
                     acceptance_criteria=("Record the available inputs.",),
+                    expected_outputs=("Input inventory",),
                     role="researcher",
                     permissions=("workspace.read",),
                     max_iterations=1,
                     max_seconds=10,
                 ),
+                *[
+                    TaskDefinition(
+                        id=f"extra-{index + 1}",
+                        objective=f"Inspect independent fixture input {index + 1}.",
+                        acceptance_criteria=("Record the available input.",),
+                        expected_outputs=("Concise input findings",),
+                        role="researcher",
+                        permissions=("workspace.read",),
+                        max_iterations=1,
+                        max_seconds=10,
+                    )
+                    for index in range(5)
+                ],
                 TaskDefinition(
                     id="review",
                     objective="Review the inspection evidence.",
                     acceptance_criteria=("Check the saved evidence.",),
+                    expected_outputs=("Review summary",),
                     dependencies=("inspect",),
                     role="reviewer",
                     permissions=("workspace.read",),
