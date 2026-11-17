@@ -2,7 +2,7 @@
 
 ## Queued specialist cancellation (2026-11-17)
 
-Owners can cancel queued or running specialist assignments. A running task's lease is fenced before its coroutine is stopped; independent specialists and the parent run can continue. Dependents remain blocked, retries are idempotent, and cancellation events are not duplicated. Local API/recovery acceptance (12 tests), task-review browser acceptance (5 tests), desktop build, static checks, and generated API contracts pass; exact-source hosted verification is pending. Broader Phase 4 reliability remains open. This is an X.A.A. orchestration control, not a Hermes parity claim. See [`progress.md`](../progress.md#cancel-queued-specialist-tasks-safely-2026-11-17).
+Owners can cancel queued or running specialist assignments. A running task's lease is fenced before its coroutine is stopped; independent specialists and the parent run can continue. Dependents remain blocked, retries are idempotent, and cancellation events are not duplicated. Local API/recovery acceptance (12 tests), task-review browser acceptance (5 tests), desktop build, static checks, and generated API contracts pass. Exact-source Windows run [44008625250](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44008625250) passed 1,433 Python tests (20 skipped), desktop checks, managed-browser acceptance, and recovery diagnostics. Broader Phase 4 reliability remains open. This is an X.A.A. orchestration control, not a Hermes parity claim. See [`progress.md`](../progress.md#cancel-queued-specialist-tasks-safely-2026-11-17).
 
 ## LM Studio model capabilities and lifecycle (2026-11-17)
 
