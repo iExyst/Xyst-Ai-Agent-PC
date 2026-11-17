@@ -507,6 +507,8 @@ Specialist plan proposals now expose provider-visible bounds of 16 acceptance cr
 
 Pinned upstream behavior for the programmatic-interface and training source is summarized in the [programmatic-interface source audit](programmatic-interface-source-audit.md).
 
+Specialist workspace discovery now includes the existing bounded `workspace_search` contract for tasks with `workspace.read`. Non-isolated specialists search through their task-scoped worker; isolated specialists search their captured snapshot and private overlays and journal matches as internal, untrusted results. The 52-test focused specialist/workspace/worker set plus Ruff and Pyright pass locally. The overall tool row remains partial; hosted and packaged acceptance are pending.
+
 ## Windows release package acceptance
 
 Current exact-source package: source workflow [44048352340](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44048352340) passed on rerun for commit `aabbb877`, including 1,441 Python tests (20 skipped) and the configured source, browser, and recovery checks. Installer workflow [44051919980](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44051919980) passed 51 Windows package checks with three cache steps skipped. The unsigned 0.1.1 installer SHA-256 is `2d71ae01ed80056c4ba0f5baa4f2ca74b8cc66bda0ea2d05e55eeace5b756b74`; desktop and engine hashes match the manifest. Package and native reports are retained in [`.acceptance/hosted-installer-44051919980/`](../../.acceptance/hosted-installer-44051919980/). Deterministic fixtures were used; live LM Studio acceptance remains deferred.

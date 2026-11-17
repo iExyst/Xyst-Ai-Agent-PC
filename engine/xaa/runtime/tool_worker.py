@@ -24,11 +24,13 @@ FilesystemOperation = Literal[
     "patch",
     "list",
     "search",
+    "task_search",
     "reconcile",
     "reconcile_not_applied",
     "branch_init",
     "branch_read",
     "branch_list",
+    "branch_search",
     "branch_write",
     "branch_create",
     "branch_delete",
@@ -54,15 +56,19 @@ class WorkerRequest(BaseModel):
     def task_scope_only(self) -> "WorkerRequest":
         if (self.task_id is None) != (self.task_token is None):
             raise ValueError("Task worker scope needs both task identity and lease.")
+        if self.operation == "task_search" and self.task_id is None:
+            raise PermissionError("Task search requires a saved specialist scope.")
         if self.task_id is not None and (
             not self.internal
             or self.operation
             not in {
                 "read",
                 "list",
+                "task_search",
                 "branch_init",
                 "branch_read",
                 "branch_list",
+                "branch_search",
                 "branch_write",
                 "branch_create",
                 "branch_delete",
@@ -251,6 +257,7 @@ def main() -> None:
             elif request.operation in {
                 "branch_read",
                 "branch_list",
+                "branch_search",
                 "branch_write",
                 "branch_create",
                 "branch_delete",
@@ -288,9 +295,11 @@ def main() -> None:
                     request.arguments,
                     internal=request.internal,
                 )
-            elif request.operation == "search":
-                if request.internal:
+            elif request.operation in {"search", "task_search"}:
+                if request.operation == "search" and request.internal:
                     raise ValueError("Internal search is not supported.")
+                if request.operation == "task_search" and not request.internal:
+                    raise ValueError("Task search must be an internal scoped operation.")
                 result = asyncio.run(
                     search_workspace(
                         executor.store,
@@ -298,6 +307,7 @@ def main() -> None:
                         request.token,
                         request.call_id,
                         request.arguments,
+                        internal=request.internal,
                     )
                 )
             elif request.operation == "read":

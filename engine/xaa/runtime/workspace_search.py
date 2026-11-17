@@ -6,7 +6,7 @@ import stat
 import time
 from collections import deque
 from functools import partial
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -102,7 +102,13 @@ SEARCH_TOOL = {
 
 
 async def search_workspace(
-    store: RunStore, run_id: str, token: str, call_id: str, arguments: dict[str, Any]
+    store: RunStore,
+    run_id: str,
+    token: str,
+    call_id: str,
+    arguments: dict[str, Any],
+    *,
+    internal: bool = False,
 ) -> dict[str, Any]:
     parsed = SearchArguments.model_validate(arguments)
     run = store.get_run(run_id)
@@ -149,6 +155,7 @@ async def search_workspace(
         version="1",
         arguments=parsed.model_dump(),
         idempotency_key=call_id,
+        internal=internal,
     ):
         raise ReconciliationRequired("Search already journaled; inspect its result.")
     excluded = {".git", "node_modules", ".venv", "__pycache__", "target", "dist", "build"}
@@ -255,5 +262,118 @@ async def search_workspace(
         "trust": "untrusted_workspace_content",
     }
     result = _bounded_search_output(result)
-    store.record_tool_result(run_id, token, call_id, result)
+    store.record_tool_result(run_id, token, call_id, result, internal=internal)
     return result
+
+
+def search_snapshot(
+    arguments: dict[str, Any],
+    files: dict[str, bytes],
+    directories: tuple[str, ...],
+    excluded_paths: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Search an isolated specialist's immutable snapshot plus its private overlays."""
+    parsed = SearchArguments.model_validate(arguments)
+    requested = Path(parsed.path)
+    if requested.is_absolute() or ".." in requested.parts:
+        raise PermissionError("Search requires a portable relative directory path.")
+    root = PurePosixPath(parsed.path).as_posix()
+    if root == "":
+        root = "."
+    known_directories = {".", *directories}
+    excluded_set = set(excluded_paths)
+    if root not in known_directories:
+        raise FileNotFoundError(root)
+    excluded = {".git", "node_modules", ".venv", "__pycache__", "target", "dist", "build"}
+    queue = deque([(root, 0)])
+    matches: list[dict[str, Any]] = []
+    reasons: set[str] = set()
+    scanned_files = scanned_directories = excluded_directories = 0
+    started = time.monotonic()
+    needle = parsed.query if parsed.case_sensitive else parsed.query.casefold()
+
+    def add_match(match: dict[str, Any]) -> bool:
+        matches.append(match)
+        if len(matches) >= parsed.limit:
+            reasons.add("match_limit")
+            return False
+        if len(json.dumps(matches, ensure_ascii=False).encode("utf-8")) > SEARCH_RESULT_BYTES:
+            matches.pop()
+            reasons.add("output_bytes_limit")
+            return False
+        return True
+
+    stopped = False
+    while queue and not stopped:
+        if scanned_directories >= 32 or time.monotonic() - started >= 3:
+            reasons.add("directory_limit" if scanned_directories >= 32 else "time_limit")
+            break
+        directory, depth = queue.popleft()
+        scanned_directories += 1
+        names = sorted(
+            [name for name in files if str(PurePosixPath(name).parent) == directory]
+            + [
+                name
+                for name in known_directories | excluded_set
+                if name != "." and str(PurePosixPath(name).parent) == directory
+            ]
+        )
+        for name in names:
+            if time.monotonic() - started >= 3:
+                reasons.add("time_limit")
+                stopped = True
+                break
+            basename = PurePosixPath(name).name
+            if name in known_directories | excluded_set:
+                if name in excluded_set or basename in excluded:
+                    excluded_directories += 1
+                elif depth >= 8:
+                    reasons.add("depth_limit")
+                else:
+                    queue.append((name, depth + 1))
+                continue
+            if scanned_files >= 128:
+                reasons.add("file_limit")
+                stopped = True
+                break
+            scanned_files += 1
+            if parsed.target == "filename":
+                candidate = basename if parsed.case_sensitive else basename.casefold()
+                if needle in candidate and not add_match({"path": name}):
+                    stopped = True
+                    break
+                continue
+            data = files[name][:65536]
+            if len(files[name]) > 65536:
+                reasons.add("file_bytes_limit")
+            text = data.decode("utf-8", errors="replace")
+            for number, line in enumerate(text.splitlines(), start=1):
+                haystack = line if parsed.case_sensitive else line.casefold()
+                offset = haystack.find(needle)
+                if offset < 0:
+                    continue
+                source_offset = offset
+                if not parsed.case_sensitive:
+                    folded_length = 0
+                    for source_offset, character in enumerate(line):
+                        if folded_length >= offset:
+                            break
+                        folded_length += len(character.casefold())
+                if not add_match({"path": name, "line": number, "excerpt": line[max(0, source_offset - 80):source_offset + 220]}):
+                    stopped = True
+                    break
+            if stopped:
+                break
+    return _bounded_search_output({
+        "query": parsed.query,
+        "target": parsed.target,
+        "matches": matches,
+        "truncated": bool(reasons),
+        "limits_reached": sorted(reasons),
+        "scanned_files": scanned_files,
+        "scanned_directories": scanned_directories,
+        "skipped_links": 0,
+        "excluded_directories": excluded_directories,
+        "excluded_names": sorted(excluded),
+        "trust": "untrusted_workspace_content",
+    })

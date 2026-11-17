@@ -18,6 +18,7 @@ from xaa.runtime.executor import (
     WriteFileArguments,
 )
 from xaa.runtime.file_handles import open_for_read, opened_file_path
+from xaa.runtime.workspace_search import SearchArguments, search_snapshot
 from xaa.runtime.workspace_snapshot import (
     SnapshotFile,
     WorkspaceSnapshot,
@@ -28,7 +29,7 @@ from xaa.storage.commands import command_artifact_root
 from xaa.storage.runs import RunStore, has_completed_workspace_read, utc_now
 
 BranchOperation = Literal[
-    "branch_read", "branch_list", "branch_write", "branch_create", "branch_delete"
+    "branch_read", "branch_list", "branch_search", "branch_write", "branch_create", "branch_delete"
 ]
 
 
@@ -198,6 +199,8 @@ class TaskWorkspaces:
             if operation == "branch_read"
             else ListDirectoryArguments
             if operation == "branch_list"
+            else SearchArguments
+            if operation == "branch_search"
             else WriteFileArguments
             if operation == "branch_write"
             else CreateFileArguments
@@ -208,6 +211,7 @@ class TaskWorkspaces:
         tool = {
             "branch_read": "workspace.read_file",
             "branch_list": "workspace.list_directory",
+            "branch_search": "workspace.search",
             "branch_write": "workspace.write_file",
             "branch_create": "workspace.create_file",
             "branch_delete": "workspace.delete_file",
@@ -247,6 +251,8 @@ class TaskWorkspaces:
                     "truncated": False,
                     "trust": "untrusted_workspace_content",
                 }
+            elif operation == "branch_search":
+                result = search_snapshot(arguments, files, base.directories, base.excluded)
             elif operation == "branch_delete":
                 delete = DeleteFileArguments.model_validate(arguments)
                 if not has_completed_workspace_read(

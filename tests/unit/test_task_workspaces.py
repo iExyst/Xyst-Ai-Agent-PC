@@ -50,6 +50,50 @@ def setup(root):
     return store, run_id, owner, tasks, project
 
 
+def test_private_workspace_search_includes_overlays_and_excludes_parent_changes(workspace_tmp_path):
+    store, run_id, owner, tasks, project = setup(workspace_tmp_path)
+    (project / ".git").mkdir()
+    (project / ".git" / "secret.txt").write_text("excluded-marker", encoding="utf-8")
+    claim = tasks.claim_ready(run_id, owner)
+    assert claim is not None
+    workspaces = TaskWorkspaces(store)
+    workspaces.initialize(run_id, owner, "a", claim["token"])
+    (project / "after-capture.txt").write_text("parent-only-marker", encoding="utf-8")
+    workspaces.operate(
+        run_id,
+        owner,
+        "a",
+        claim["token"],
+        "private-create",
+        "branch_create",
+        {"path": "private.txt", "content": "private-overlay-marker"},
+        idempotency_key="private-create",
+    )
+    result = workspaces.operate(
+        run_id,
+        owner,
+        "a",
+        claim["token"],
+        "private-search",
+        "branch_search",
+        {"query": "private-overlay-marker"},
+        idempotency_key="private-search",
+    )
+    assert [match["path"] for match in result["matches"]] == ["private.txt"]
+    assert result["trust"] == "untrusted_workspace_content"
+    assert result["scanned_files"] == 2
+    assert result["excluded_directories"] == 1
+    assert not store.unresolved_tool_calls(run_id)
+    with store.connection() as connection:
+        row = connection.execute(
+            "SELECT task_id,tool_name,state,result FROM tool_calls WHERE provider_call_id='private-search'"
+        ).fetchone()
+    assert row["task_id"] == f"{run_id}:a"
+    assert row["tool_name"] == "workspace.search"
+    assert row["state"] == "completed"
+    assert json.loads(row["result"]) == result
+
+
 async def test_reviewer_manifest_includes_source_evidence_beyond_ui_summary_limit(
     workspace_tmp_path,
 ):

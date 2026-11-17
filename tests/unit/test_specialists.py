@@ -155,6 +155,7 @@ async def test_independent_specialists_read_scoped_files_without_polluting_paren
             assert {tool["function"]["name"] for tool in tools} == {
                 "workspace_read_file",
                 "workspace_list_directory",
+                "workspace_search",
             }
             await asyncio.sleep(0.01)
             if messages[-1]["role"] == "user":
