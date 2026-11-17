@@ -62,6 +62,7 @@ from xaa.runtime.procedure_tools import (
     selected_procedure_write_schema,
 )
 from xaa.runtime.snapshot_worker import selected_skill_script_paths
+from xaa.runtime.specialist_workers import SpecialistWorkerRegistry
 from xaa.runtime.specialists import (
     RUN_READY_CONTRACT,
     RUN_READY_TOOL,
@@ -113,6 +114,7 @@ class Coordinator:
         stream_responses: bool = False,
         credential_store: CredentialStore | None = None,
         mcp_manager: MCPManager | None = None,
+        specialist_workers: SpecialistWorkerRegistry | None = None,
     ) -> None:
         self.store = store
         self.provider = provider
@@ -120,6 +122,7 @@ class Coordinator:
         self.stream_responses = stream_responses
         self.credential_store = credential_store
         self.mcp_manager = mcp_manager
+        self.specialist_workers = specialist_workers or SpecialistWorkerRegistry()
 
     async def _sample_mcp_request(
         self,
@@ -1152,6 +1155,7 @@ class Coordinator:
                 self.provider,
                 stream_responses=self.stream_responses,
                 credential_store=self.credential_store,
+                worker_registry=self.specialist_workers,
             ).run_ready(run_id, token, deadline=deadline)
             result = RunReadyResult.model_validate(
                 {
@@ -1405,6 +1409,7 @@ class Coordinator:
                     stream_responses=self.stream_responses,
                     credential_store=self.credential_store,
                     mcp_manager=self.mcp_manager,
+                    worker_registry=self.specialist_workers,
                 ).run_ready(run_id, token, deadline=deadline)
             ready, _ = TaskStore(self.store).readiness(run_id)
             blocked = (

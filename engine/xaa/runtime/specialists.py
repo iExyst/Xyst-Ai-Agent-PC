@@ -31,6 +31,7 @@ from xaa.runtime.executor import (
 from xaa.runtime.line_edit import WriteLinesArguments
 from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
 from xaa.runtime.snapshot_worker import selected_skill_script_paths
+from xaa.runtime.specialist_workers import SpecialistWorkerRegistry
 from xaa.runtime.task_commands import (
     execute_task_command,
     read_dependency_command_output,
@@ -234,6 +235,7 @@ class SpecialistRunner:
         stream_responses: bool = False,
         credential_store: CredentialStore | None = None,
         mcp_manager: MCPManager | None = None,
+        worker_registry: SpecialistWorkerRegistry | None = None,
     ) -> None:
         self.store = store
         self.memory = MemoryStore(store)
@@ -242,6 +244,7 @@ class SpecialistRunner:
         self.stream_responses = stream_responses
         self.credential_store = credential_store
         self.mcp_manager = mcp_manager
+        self.worker_registry = worker_registry or SpecialistWorkerRegistry()
         self._budgeted_inference_lock = asyncio.Lock()
 
     async def _heartbeat(self, run_id: str, parent: str, task_id: str, worker: str) -> None:
@@ -1731,14 +1734,34 @@ class SpecialistRunner:
             if budgeted and not reserved:
                 # Claim immediately before execution so the second lease cannot
                 # expire while waiting behind the first full assignment.
-                await self.run_claim(run_id, parent, claim, deadline=deadline)
+                worker = asyncio.create_task(
+                    self._run_registered(run_id, parent, claim, deadline=deadline)
+                )
+                result = (await asyncio.gather(worker, return_exceptions=True))[0]
+                if isinstance(result, BaseException) and not isinstance(
+                    result, asyncio.CancelledError
+                ):
+                    raise result
             else:
                 claims.append(claim)
         async with asyncio.TaskGroup() as group:
             for claim in claims:
-                group.create_task(self.run_claim(run_id, parent, claim, deadline=deadline))
+                group.create_task(self._run_registered(run_id, parent, claim, deadline=deadline))
         self.tasks.propagate_dependency_blocks(run_id, parent)
         return [
             {"task_id": row["local_id"], "status": row["status"]}
             for row in self.tasks.records(run_id)
         ]
+
+    async def _run_registered(
+        self, run_id: str, parent: str, claim: dict[str, Any], *, deadline: float
+    ) -> None:
+        task_id = claim["task"]["local_id"]
+        worker = asyncio.current_task()
+        if worker is None:
+            raise RuntimeError("Specialist worker is not running in an asyncio task.")
+        self.worker_registry.register(run_id, task_id, worker)
+        try:
+            await self.run_claim(run_id, parent, claim, deadline=deadline)
+        finally:
+            self.worker_registry.unregister(run_id, task_id, worker)

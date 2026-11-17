@@ -232,3 +232,121 @@ def test_api_stop_cancels_both_specialists_and_fences_results(
                 time.sleep(0.01)
             assert store.get_run(run_id)["state"] == "blocked"
             assert provider.started_count == 2  # An uncertain dispatch is not replayed.
+
+
+def test_owner_cancels_one_running_specialist_without_stopping_parent_run(workspace_tmp_path):
+    class WaitingSpecialist(LMStudioProvider):
+        def __init__(self):
+            super().__init__()
+            self.started = threading.Event()
+            self.inspect_stopped = threading.Event()
+            self.independent_stopped = threading.Event()
+            self.started_count = 0
+            self.planner_calls = 0
+
+        async def diagnose_tools(self, model, *, request=None):
+            return True
+
+        async def chat(self, *, model, messages, tools=None):
+            if messages[0]["content"].startswith("You are "):
+                self.started_count += 1
+                if self.started_count == 2:
+                    self.started.set()
+                task_id = (
+                    "inspect"
+                    if '"objective": "Inspect"' in messages[1]["content"]
+                    else "independent"
+                )
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    if task_id == "inspect":
+                        self.inspect_stopped.set()
+                    else:
+                        self.independent_stopped.set()
+            self.planner_calls += 1
+            if self.planner_calls == 1:
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                        "id": "dispatch",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "plan_run_ready",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            return {"choices": [{"message": {"role": "assistant", "content": "Finished."}}]}
+
+    store = RunStore(workspace_tmp_path / "cancel-running.sqlite3")
+    run_id = store.create_run(
+        objective="Execute plan",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="observe",
+        model="fixture",
+    )["id"]
+    parent = store.acquire_lease(run_id, "planner")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(id="inspect", objective="Inspect", max_iterations=2),
+            TaskDefinition(id="independent", objective="Continue validation", max_iterations=2),
+        ],
+    )
+    store.release_lease(run_id, parent)
+    provider = WaitingSpecialist()
+    token = "x" * 32
+    headers = {"Authorization": f"Bearer {token}"}
+    with TestClient(create_app(provider, SecretStr(token), store=store)) as client:
+        assert provider.started.wait(3)
+        parent_token = store.get_run(run_id)["lease_owner"]
+        with store.connection() as connection:
+            worker_token = connection.execute(
+                "SELECT token FROM task_leases WHERE task_id=?", (f"{run_id}:inspect",)
+            ).fetchone()["token"]
+        response = client.post(f"/runs/{run_id}/tasks/inspect/cancel", headers=headers)
+        assert response.status_code == 200
+        assert provider.inspect_stopped.wait(2)
+        assert {row["local_id"]: row["status"] for row in response.json()["tasks"]} == {
+            "inspect": "cancelled",
+            "independent": "running",
+        }
+        assert not provider.independent_stopped.is_set()
+        with pytest.raises(PermissionError):
+            tasks.record_outcome(
+                run_id,
+                parent_token,
+                "inspect",
+                worker_token,
+                state="verifying",
+                result={"candidate": "stale"},
+            )
+        parent_cancel = client.post(f"/runs/{run_id}/cancel", headers=headers)
+        assert parent_cancel.status_code == 200
+        assert provider.independent_stopped.wait(2)
+        with store.connection() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM task_leases").fetchone()[0] == 0
+        assert not any(event["event_type"] == "task.result" for event in store.list_events(run_id))
+        repeated = client.post(f"/runs/{run_id}/tasks/inspect/cancel", headers=headers)
+        assert repeated.status_code == 200
+        assert (
+            sum(
+                event["event_type"] == "task.cancelled"
+                and event["payload"]
+                == {"task_id": "inspect", "reason": "owner_cancelled_while_running"}
+                for event in store.list_events(run_id)
+            )
+            == 1
+        )

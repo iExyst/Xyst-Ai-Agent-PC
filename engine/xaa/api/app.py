@@ -4343,15 +4343,34 @@ def create_app(
         return {"tasks": records, "ready": ready, "blocked": blocked}
 
     @app.post(
-        "/runs/{run_id}/tasks/{task_id}/cancel-queued",
+        "/runs/{run_id}/tasks/{task_id}/cancel",
         response_model=PlanRecord,
     )
-    def cancel_queued_task(
+    @app.post(
+        "/runs/{run_id}/tasks/{task_id}/cancel-queued",
+        response_model=PlanRecord,
+        include_in_schema=False,
+    )
+    async def cancel_task(
         run_id: str, task_id: str, _: None = Depends(authenticate)
     ) -> dict[str, Any]:
         tasks = TaskStore(run_store)
         try:
-            tasks.cancel_queued(run_id, task_id)
+            record = next(
+                (row for row in tasks.records(run_id) if row["local_id"] == task_id), None
+            )
+            if record is None:
+                raise KeyError(task_id)
+            if record["status"] == "queued":
+                tasks.cancel_queued(run_id, task_id)
+            elif record["status"] == "running":
+                workers = supervisor.coordinator.specialist_workers
+                if not workers.is_active(run_id, task_id):
+                    raise ValueError("The specialist worker is no longer active; refresh the plan.")
+                tasks.cancel_running(run_id, task_id)
+                await workers.cancel(run_id, task_id)
+            elif record["status"] != "cancelled":
+                raise ValueError("Only queued or running specialist tasks can be cancelled.")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Task not found.") from exc
         except ValueError as exc:

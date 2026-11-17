@@ -1566,7 +1566,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/runs/{run_id}/tasks/{task_id}/cancel-queued": {
+    "/runs/{run_id}/tasks/{task_id}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -1575,8 +1575,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Cancel Queued Task */
-        post: operations["cancel_queued_task_runs__run_id__tasks__task_id__cancel_queued_post"];
+        /** Cancel Task */
+        post: operations["cancel_task_runs__run_id__tasks__task_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8345,7 +8345,7 @@ export interface operations {
             };
         };
     };
-    cancel_queued_task_runs__run_id__tasks__task_id__cancel_queued_post: {
+    cancel_task_runs__run_id__tasks__task_id__cancel_post: {
         parameters: {
             query?: never;
             header?: never;

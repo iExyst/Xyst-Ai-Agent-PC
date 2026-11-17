@@ -75,7 +75,7 @@ test('cancel a queued specialist before dispatch and block its dependents',async
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-    if(path.endsWith('/cancel-queued')){expect(request.method()).toBe('POST');cancelled=true;return route.fulfill({json:graph(),headers});}
+    if(path.endsWith('/cancel')){expect(request.method()).toBe('POST');cancelled=true;return route.fulfill({json:graph(),headers});}
     if(path.endsWith('/plan'))return route.fulfill({json:graph(),headers});
     if(path.endsWith('/events/stream'))return route.fulfill({body:'event: done\ndata: {}\n\n',contentType:'text/event-stream',headers});
     return route.fulfill({json:run,headers});
@@ -90,11 +90,46 @@ test('cancel a queued specialist before dispatch and block its dependents',async
   await page.getByLabel('Workspace path').fill('C:\\fixture');
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
-  await page.getByRole('button',{name:'Cancel cancel-me before start'}).click();
+  await page.getByRole('button',{name:'Cancel cancel-me'}).click();
   await expect(page.getByRole('article',{name:'Task cancel-me'})).toContainText('cancelled');
   await expect(page.getByRole('article',{name:'Task dependent'})).toContainText('Blocked by a dependency');
   await expect(page.getByRole('list',{name:'Task status counts'})).toContainText('0 waiting');
   await expect(page.getByRole('list',{name:'Task status counts'})).toContainText('1 need attention');
+  expect(cancelled).toBe(true);
+});
+
+test('cancel a running specialist from the plan',async({page})=>{
+  const run={id:'cancel-running-run',objective:'Stop one active specialist',state:'running',acceptance_criteria:[],revision:1};
+  const task={id:'cancel-running-run:cancel-me',local_id:'cancel-me',objective:'Inspect the project',acceptance_criteria:[],input_artifacts:[],expected_outputs:[],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:1,max_seconds:30},status:'running'};
+  let cancelled=false;
+  const graph=()=>({tasks:[{...task,status:cancelled?'cancelled':'running'}],ready:[],blocked:[]});
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const request=route.request();
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type,last-event-id','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    const path=new URL(request.url()).pathname;
+    if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
+    if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
+    if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
+    if(path.endsWith('/cancel')){expect(request.method()).toBe('POST');cancelled=true;return route.fulfill({json:graph(),headers});}
+    if(path.endsWith('/plan'))return route.fulfill({json:graph(),headers});
+    if(path.endsWith('/events/stream'))return route.fulfill({body:'event: done\ndata: {}\n\n',contentType:'text/event-stream',headers});
+    return route.fulfill({json:run,headers});
+  });
+  page.on('dialog',dialog=>void dialog.accept());
+  await page.goto('/');
+  await page.getByLabel('Engine token').fill('x'.repeat(32));
+  await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Model setup'}).click();
+  await page.getByLabel('Local model').selectOption('fixture/model');
+  await page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'New objective'}).click();
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await page.getByLabel('Objective',{exact:true}).fill(run.objective);
+  await page.getByRole('button',{name:'Start objective'}).click();
+  await expect(page.getByRole('button',{name:'Cancel cancel-me'})).toBeEnabled();
+  await page.getByRole('button',{name:'Cancel cancel-me'}).click();
+  await expect(page.getByRole('article',{name:'Task cancel-me'})).toContainText('cancelled');
   expect(cancelled).toBe(true);
 });
 

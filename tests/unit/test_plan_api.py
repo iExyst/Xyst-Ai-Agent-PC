@@ -168,7 +168,7 @@ def test_owner_can_cancel_only_a_queued_task_and_dependents_become_blocked(works
     assert claim is not None and claim["task"]["local_id"] == "independent"
     running = client.post(f"/runs/{run_id}/tasks/independent/cancel-queued", headers=headers)
     assert running.status_code == 409
-    assert "Only a queued" in running.json()["detail"]
+    assert "worker is no longer active" in running.json()["detail"]
 
 
 def test_plan_exposes_safe_block_reasons_without_private_outcome(workspace_tmp_path):

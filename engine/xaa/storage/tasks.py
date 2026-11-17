@@ -655,6 +655,37 @@ class TaskStore:
                 {"task_id": task_id, "reason": "owner_cancelled_before_start"},
             )
 
+    def cancel_running(self, run_id: str, task_id: str) -> None:
+        """Fence an active assignment before its asyncio worker is cancelled."""
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            identity = f"{run_id}:{task_id}"
+            row = connection.execute(
+                "SELECT status FROM tasks WHERE run_id=? AND id=?", (run_id, identity)
+            ).fetchone()
+            if row is None:
+                raise KeyError(task_id)
+            if row["status"] == "cancelled":
+                return
+            if row["status"] != "running":
+                raise ValueError("Only a running specialist task can be cancelled while active.")
+            lease = connection.execute(
+                "SELECT 1 FROM task_leases WHERE task_id=?", (identity,)
+            ).fetchone()
+            if lease is None:
+                raise ValueError("The specialist worker is no longer active; refresh the plan.")
+            connection.execute(
+                "UPDATE tasks SET status='cancelled',updated_at=? WHERE id=? AND status='running'",
+                (utc_now(), identity),
+            )
+            connection.execute("DELETE FROM task_leases WHERE task_id=?", (identity,))
+            self.runs.record_event(
+                connection,
+                run_id,
+                "task.cancelled",
+                {"task_id": task_id, "reason": "owner_cancelled_while_running"},
+            )
+
     def recovery_summary(self, run_id: str, task_id: str) -> dict[str, Any]:
         """Summarize durable worker evidence without treating a missing result as success."""
         task = next((row for row in self.records(run_id) if row["local_id"] == task_id), None)

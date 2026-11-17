@@ -12296,9 +12296,9 @@
         "summary": "Decide Run"
       }
     },
-    "/runs/{run_id}/tasks/{task_id}/cancel-queued": {
+    "/runs/{run_id}/tasks/{task_id}/cancel": {
       "post": {
-        "operationId": "cancel_queued_task_runs__run_id__tasks__task_id__cancel_queued_post",
+        "operationId": "cancel_task_runs__run_id__tasks__task_id__cancel_post",
         "parameters": [
           {
             "in": "path",
@@ -12346,7 +12346,7 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Cancel Queued Task"
+        "summary": "Cancel Task"
       }
     },
     "/runs/{run_id}/tasks/{task_id}/candidate": {
