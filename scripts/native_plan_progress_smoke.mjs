@@ -43,6 +43,10 @@ try{
   await page.getByRole('link',{name:/Saved runs/}).click();
   await page.getByRole('button',{name:`Open ${objective}`,exact:true}).click();
   await page.getByRole('heading',{name:'Active run verifying'}).waitFor({timeout:15000});
+  const resources=page.getByRole('region',{name:'Run resources'});
+  await expect(resources).toContainText('Inference iterations remaining: 7 of 8');
+  const usageResponse=await fetch(`${connection.base_url}/runs/${run.id}/usage`,{headers:{Authorization:`Bearer ${connection.token}`}});
+  if(!usageResponse.ok||(await usageResponse.json()).inference_attempts!==1)throw new Error('Native resource API did not report the saved inference attempt.');
   const plan=page.getByRole('region',{name:'Task plan'});
   const stageOne=plan.getByRole('group',{name:'Dependency stage 1'});
   const stageTwo=plan.getByRole('group',{name:'Dependency stage 2'});
@@ -52,7 +56,7 @@ try{
   await expect(stageTwo.getByRole('progressbar',{name:'Stage 2 completion'})).toHaveAttribute('max','1');
   await expect(stageTwo).toContainText('1 waiting');
   await page.screenshot({path:path.join(root,'plan-progress.png'),fullPage:true});
-  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
+  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory','review'],dependency_stages:2,stage_one_tasks:2,stage_two_tasks:1,stage_progress_bars_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   passed=true;
   await page.evaluate(async()=>{

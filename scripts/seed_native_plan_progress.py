@@ -57,6 +57,8 @@ def main() -> None:
                 ),
             ],
         )
+        # Exercise the saved allowance display without contacting a model.
+        store.reserve_parent_inference(run_id, owner, limit=8)
         store.transition(run_id, RunState.RUNNING, reason="native_fixture_plan_ready", owner=owner)
         store.transition(
             run_id, RunState.VERIFYING, reason="native_fixture_plan_saved", owner=owner
