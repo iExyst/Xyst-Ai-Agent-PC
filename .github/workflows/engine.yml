@@ -729,7 +729,7 @@ jobs:
           $installLocation = Join-Path $env:RUNNER_TEMP 'wsl-ubuntu-24.04'
           wsl.exe --import Ubuntu-24.04 $installLocation $rootfs --version 2
           if ($LASTEXITCODE -ne 0) { throw 'Could not import the verified Ubuntu 24.04 WSL root filesystem.' }
-          $linuxSetup = "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm sudo"
+          $linuxSetup = "printf '[boot]\nsystemd=true\n' > /etc/wsl.conf && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y bubblewrap nodejs npm sudo"
           wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc $linuxSetup
           if ($LASTEXITCODE -ne 0) { throw 'Could not enable systemd and install the Ubuntu Node/npm prerequisites.' }
           wsl.exe --terminate Ubuntu-24.04
