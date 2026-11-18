@@ -360,14 +360,12 @@ async def test_fixture_edit_runs_project_validation_before_final_review(
     direct_sequence = next(
         event["sequence"]
         for event in event_records
-        if event["event_type"] == "tool.completed"
-        and event["payload"].get("call_id") == "edit-1"
+        if event["event_type"] == "tool.completed" and event["payload"].get("call_id") == "edit-1"
     )
     specialist_sequence = next(
         event["sequence"]
         for event in event_records
-        if event["event_type"] == "task.reviewed"
-        and event["payload"].get("task_id") == "repair"
+        if event["event_type"] == "task.reviewed" and event["payload"].get("task_id") == "repair"
     )
     token = "fixture-review-token-that-is-long-enough"
     with TestClient(create_app(LMStudioProvider(), SecretStr(token), store=store)) as client:

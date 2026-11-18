@@ -1,5 +1,9 @@
 # Progress
 
+## Fix the hosted source-format gate for final-review provenance coverage (2026-11-18)
+
+The latest hosted Engine checks failed only at `ruff format --check`: two multiline comprehensions in the new coordinator provenance regression did not match Ruff's canonical formatting. Formatted the test, then verified all 383 Python source/test files pass Ruff formatting, the coordinator suite passes (13), Ruff lint passes, engine Pyright reports zero errors, and `git diff --check` passes. The full Python suite had already passed on the same behavior (1,505 passed, 1 skipped); hosted verification of this format-only correction is pending.
+
 ## Verify the complete Python suite after CLI and scheduler changes (2026-11-18)
 
 The full Python suite passed on the current source: 1,505 passed and 1 skipped in 14m09s. The first full run exposed a Windows permission error when pytest tried to rename a fixture under a workspace-local temp directory; the isolated test passed when rerun under `%TEMP%`, and the complete suite then passed using a fresh `%TEMP%` basetemp. No source changes were needed for the environment-specific failure. This verifies the Python suite only; it does not close desktop, installer, provider interoperability, or release acceptance. No live model inference was used.
