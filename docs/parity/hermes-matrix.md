@@ -1,5 +1,13 @@
 # Hermes capability reference matrix
 
+## Keep desktop toolbar actions readable at compact widths (2026-11-18)
+
+Inspection of the exact Windows package screenshot showed the quick-navigation shortcut wrapping at 1014 px. The responsive header now allows the toolbar to wrap cleanly while keeping action labels intact; the browser flow checks the 1014 px layout for no horizontal overflow and verifies the shortcut labels stay on one line. The production desktop build and focused flow pass locally; hosted verification is pending. See [`progress.md`](../progress.md#prevent-desktop-toolbar-wrapping-at-compact-window-widths-2026-11-18).
+
+## Verify the dark desktop and package lifecycle in Windows (2026-11-18)
+
+Exact-branch installer workflow [44283741344](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44283741344) passed the Windows installer lifecycle, native deterministic onboarding, frozen/installed AppContainer checks, upgrade, standard-user install, uninstall, and data-choice acceptance. Its unsigned 0.1.1 installer manifest binds SHA-256 `5de0c16fdbbce18a0c883a5e0c520db40c5f03ce6c5ca172c3ffd1dde920da1b`; the downloaded artifact independently matches. The packaged onboarding report records no live model inference. This verifies the packaged desktop baseline before the compact-header refinement; it is not a signed release or live LM Studio gate. See [`progress.md`](../progress.md#verify-the-dark-desktop-in-the-packaged-windows-installer-2026-11-18).
+
 ## Search and jump between desktop sections with the keyboard (2026-11-18)
 
 The dark desktop provides a Ctrl+K/Cmd+K searchable section palette with arrow/Enter navigation, Escape dismissal, and contained/restored focus. The focused browser acceptance covers the interaction and the complete desktop browser suite passes (45 passed, 3 live/dependency-gated skipped); the production TypeScript/Vite build passes. Exact-source Windows run [44282759054](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44282759054) passed its objective browser flow, including the palette, along with configured browser security, contracts, TypeScript/client, other desktop and recovery checks. Python, WSL and installer checks were skipped because Python inputs were unchanged and by feature-branch filters, respectively. This improves X.A.A.'s desktop workflow without claiming an upstream parity capability. No model inference was used. See [`progress.md`](../progress.md#add-keyboard-quick-navigation-across-desktop-sections-2026-11-18).

@@ -331,6 +331,12 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
   await selectLocalModel(page,'fixture/model');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeEnabled();
+  await page.setViewportSize({width:1014,height:768});
+  await expect(page.locator('.palette-trigger')).toHaveCSS('white-space','nowrap');
+  await expect(page.locator('.palette-trigger kbd')).toHaveCSS('white-space','nowrap');
+  await expect(page.locator('.emergency-stop-trigger')).toHaveCSS('white-space','nowrap');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.setViewportSize({width:1280,height:800});
   await page.keyboard.press('Control+k');
   const quickNavigation=page.getByRole('dialog',{name:'Go to a section'});
   await expect(quickNavigation).toBeVisible();
