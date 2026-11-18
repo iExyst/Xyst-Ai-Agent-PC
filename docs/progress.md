@@ -2,7 +2,7 @@
 
 ## Fix the hosted source-format gate for final-review provenance coverage (2026-11-18)
 
-The latest hosted Engine checks failed only at `ruff format --check`: two multiline comprehensions in the new coordinator provenance regression did not match Ruff's canonical formatting. Formatted the test, then verified all 383 Python source/test files pass Ruff formatting, the coordinator suite passes (13), Ruff lint passes, engine Pyright reports zero errors, and `git diff --check` passes. The full Python suite had already passed on the same behavior (1,505 passed, 1 skipped); hosted verification of this format-only correction is pending.
+The latest hosted Engine checks failed only at `ruff format --check`: two multiline comprehensions in the new coordinator provenance regression did not match Ruff's canonical formatting. Formatted the test, then verified all 383 Python source/test files pass Ruff formatting, the coordinator suite passes (13), Ruff lint passes, engine Pyright reports zero errors, and `git diff --check` passes. Exact-source Windows workflow [44258739351](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44258739351) passed on `2c9427ba`: browser security and interaction acceptance, Hermes inventories, Ruff, Pyright, API contracts, TypeScript/client checks, focused desktop flows, all 1,486 Python tests (20 platform/dependency-gated skips), and specialist, channel, and schedule recovery checks. WSL and installer jobs were skipped by path filters because this correction changed only a test and progress record. The full local Python suite had also passed (1,505 passed, 1 skipped).
 
 ## Verify the complete Python suite after CLI and scheduler changes (2026-11-18)
 
