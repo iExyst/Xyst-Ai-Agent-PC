@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { EngineClient, type Run } from './api/client.ts';
 import type { components } from './generated/api.js';
 import {runRemainingSeconds} from './run-time.ts';
+import './run-resources.css';
 
 type Usage = components['schemas']['UsageReport'];
 export function RunResources({client, run, refresh}: {client: EngineClient; run: Run; refresh: number}) {
@@ -52,18 +53,30 @@ export function RunResources({client, run, refresh}: {client: EngineClient; run:
       : unavailable
         ? 'Unavailable until usage loads.'
         : 'Loading usage…';
-  return <section aria-label="Run resources"><h2>Run resources</h2><p>Model: {run.model ?? 'Not selected'}</p>
-    {run.procedure_trial&&<p>{run.procedure_trial.purpose==='active_use'?'Active procedure':'Procedure trial'}: {run.procedure_trial.name} &middot; version {run.procedure_trial.version}. This run does not activate or independently evaluate the procedure.</p>}
-    {run.limits && <><p>{run.limits.max_iterations} {run.limits.max_iterations===1?'iteration':'iterations'} · {run.limits.max_seconds} {run.limits.max_seconds===1?'second':'seconds'}</p>
-      <p>Inference iterations remaining: {iterationAllowanceRemaining}</p>
-      <p>Wall-clock allowance remaining: {timeRemainingLabel}</p>
-      <p>Reported token threshold: {run.limits.max_total_tokens ?? 'Not set'} · Output tokens per request: {run.limits.max_output_tokens ?? 'Server default'}</p>
-      <p>Token allowance remaining: {tokenAllowanceRemaining}</p>
-      <p>Pre-inference token reservation: {run.limits.pre_inference_token_reservations ? 'Required; exact LM Studio count' : 'Off'}</p></>}
-    {usage ? <p>Measured tokens: {usage.total_tokens} ({usage.prompt_tokens} input, {usage.completion_tokens} output). Calls without measured usage: {usage.unmeasured_calls}.</p> : <p>{unavailable ? 'Token usage unavailable.' : 'Loading token usage…'}</p>}
-    {usage && <><p>Reserved tokens awaiting measured results: {usage.outstanding_reserved_tokens} across {usage.outstanding_reservations} {usage.outstanding_reservations === 1 ? 'request' : 'requests'}.</p>
-      {usage.outstanding_reservations > 0 && <p>These holds include input and the output allowance. Interrupted requests keep their hold until a measured result is saved.</p>}</>}
+  return <section aria-label="Run resources" className="run-resources">
+    <h2>Run resources</h2>
+    <dl className="run-resource-summary">
+      <div><dt>Model</dt><dd>{run.model ?? 'Not selected'}</dd></div>
+      {run.limits && <>
+        <div><dt>Run limits</dt><dd>{run.limits.max_iterations} {run.limits.max_iterations===1?'iteration':'iterations'} · {run.limits.max_seconds} {run.limits.max_seconds===1?'second':'seconds'}</dd></div>
+        <div><dt>Iterations remaining</dt><dd>{iterationAllowanceRemaining}</dd></div>
+        <div><dt>Time remaining</dt><dd>{timeRemainingLabel}</dd></div>
+        <div><dt>Token threshold</dt><dd>{run.limits.max_total_tokens?.toLocaleString() ?? 'Not set'} · {run.limits.max_output_tokens?.toLocaleString() ?? 'Server default'} per request</dd></div>
+      </>}
+    </dl>
+    {run.procedure_trial&&<p className="run-resource-procedure"><strong>{run.procedure_trial.purpose==='active_use'?'Active procedure':'Procedure trial'}: {run.procedure_trial.name} · version {run.procedure_trial.version}</strong><span>This run does not activate or independently evaluate the procedure.</span></p>}
+    <details className="run-resource-details">
+      <summary>Usage accounting and reservations</summary>
+      <div className="run-resource-detail-content">
+        {run.limits && <><p>Token allowance remaining: {tokenAllowanceRemaining}</p>
+          <p>Pre-inference token reservation: {run.limits.pre_inference_token_reservations ? 'Required; exact LM Studio count' : 'Off'}</p>
+          <p>Iteration allowance remaining: {iterationAllowanceRemaining}</p></>}
+        {usage ? <p>Measured tokens: {usage.total_tokens.toLocaleString()} ({usage.prompt_tokens.toLocaleString()} input, {usage.completion_tokens.toLocaleString()} output). Calls without measured usage: {usage.unmeasured_calls}.</p> : <p>{unavailable ? 'Token usage unavailable.' : 'Loading token usage…'}</p>}
+        {usage && <><p>Reserved tokens awaiting measured results: {usage.outstanding_reserved_tokens.toLocaleString()} across {usage.outstanding_reservations} {usage.outstanding_reservations === 1 ? 'request' : 'requests'}.</p>
+          {usage.outstanding_reservations > 0 && <p>These holds include input and the output allowance. Interrupted requests keep their hold until a measured result is saved.</p>}</>}
+        <p>Measured usage covers the parent, specialists, and run-triggered capability diagnostics.</p>
+      </div>
+    </details>
     {unavailable && <button onClick={()=>setRetry(value=>value+1)}>Retry token usage</button>}
-    <p>Measured usage covers the parent, specialists, and run-triggered capability diagnostics.</p>
   </section>;
 }
