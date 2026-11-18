@@ -2,7 +2,7 @@
 
 ## Keep the desktop browser acceptance stable with multiple status regions (2026-11-18)
 
-The system-monitor acceptance now selects its own update announcement while the top bar separately exposes model readiness. The full model-free browser suite passes at four workers (45 passed, three live/dependency-gated skipped); the production desktop build and onboarding keyboard/contrast/name audit pass. A high-parallelism objective timeout passed when rerun alone and with four workers. This is current desktop acceptance evidence, not a complete screen-reader audit. See [`progress.md`](../progress.md#keep-the-desktop-browser-acceptance-stable-with-multiple-status-regions-2026-11-18).
+The system-monitor acceptance now selects its own update announcement while the top bar separately exposes model readiness. The full model-free browser suite passes at four workers (45 passed, three live/dependency-gated skipped); the production desktop build and onboarding keyboard/contrast/name audit pass. Exact-source Windows workflow [44241952721](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44241952721) passed configured Windows/browser checks on `a7f3d1af`; Python, WSL, and installer jobs were skipped by input filters. A high-parallelism objective timeout passed when rerun alone and with four workers. This is current desktop acceptance evidence, not a complete screen-reader audit. See [`progress.md`](../progress.md#keep-the-desktop-browser-acceptance-stable-with-multiple-status-regions-2026-11-18).
 
 ## Keep keyboard focus visible across mobile navigation (2026-11-18)
 
