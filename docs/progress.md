@@ -1,5 +1,9 @@
 # Progress
 
+## Trace final-review workspace changes to saved activity (2026-11-18)
+
+Final review now shows the durable run-event sequence for each completed workspace change. Direct edits display their `tool.completed` sequence and provider call ID; accepted specialist edits display the owner-review sequence and task ID. The authenticated API contract and generated desktop types include this provenance, and the UI rejects malformed sequence metadata. `uv run pytest tests/unit/test_coordinator.py -q` passed (13); `npx playwright test tests/browser/run-review.spec.ts --workers=4` passed (4); TypeScript typecheck, generated-contract check, Ruff, Pyright, and `git diff --check` passed. This strengthens traceability for final review; it does not close the broader parity row. No live model inference was used.
+
 ## Reject cycles that combine delegation and dependencies (2026-11-18)
 
 The Phase 4 graph regression now covers a cycle formed when a child depends on its parent while the parent waits for that child. This checks the combined dependency/delegation graph; pure dependency cycles and pure hierarchy cycles already had coverage. The focused task-graph suite passes (11 tests). Exact-source Windows workflow [44248137893](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44248137893) passed on `422e3c95`: 1,484 Python tests passed, 20 skipped, plus configured Ruff, format, strict Pyright, API contract, browser, and process-recovery checks. Installer and WSL acceptance were skipped by the source-push filters. No model inference was used.

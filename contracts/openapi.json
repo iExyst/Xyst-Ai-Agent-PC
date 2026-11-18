@@ -5073,6 +5073,11 @@
             ],
             "title": "Call Id"
           },
+          "event_sequence": {
+            "minimum": 1.0,
+            "title": "Event Sequence",
+            "type": "integer"
+          },
           "operation": {
             "enum": [
               "created",
@@ -5124,6 +5129,7 @@
           }
         },
         "required": [
+          "event_sequence",
           "operation",
           "path"
         ],

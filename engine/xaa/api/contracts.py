@@ -64,6 +64,7 @@ class RunWorkspaceChange(BaseModel):
     call_id: str | None = Field(default=None, min_length=1, max_length=128)
     source: Literal["direct", "specialist"] = "direct"
     task_id: str | None = Field(default=None, min_length=1, max_length=128)
+    event_sequence: int = Field(ge=1)
     operation: Literal["created", "edited", "deleted"]
     path: str = Field(min_length=1, max_length=2048)
     sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")

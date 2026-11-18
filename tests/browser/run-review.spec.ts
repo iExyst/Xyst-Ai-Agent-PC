@@ -14,7 +14,7 @@ test('explicit final review completes a run after objective and criterion confir
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
-    if(path.endsWith('/workspace-changes')){const offset=Number(new URL(request.url()).searchParams.get('offset')??0);return route.fulfill({json:offset===0?{items:[{call_id:'edit-1',source:'direct',task_id:null,operation:'edited',path:'src/input.py',sha256:'d'.repeat(64)}],total:2,limit:100,offset:0,next_offset:1}:{items:[{call_id:null,source:'specialist',task_id:'repair-task',operation:'created',path:'src/fix.py',sha256:'e'.repeat(64)}],total:2,limit:100,offset:1,next_offset:null},headers});}
+    if(path.endsWith('/workspace-changes')){const offset=Number(new URL(request.url()).searchParams.get('offset')??0);return route.fulfill({json:offset===0?{items:[{call_id:'edit-1',source:'direct',task_id:null,event_sequence:4,operation:'edited',path:'src/input.py',sha256:'d'.repeat(64)}],total:2,limit:100,offset:0,next_offset:1}:{items:[{call_id:null,source:'specialist',task_id:'repair-task',event_sequence:8,operation:'created',path:'src/fix.py',sha256:'e'.repeat(64)}],total:2,limit:100,offset:1,next_offset:null},headers});}
     if(path.endsWith('/review')){
       expect(request.postDataJSON()).toEqual({decision:'accept',expected_revision:3,rationale:'Compared the candidate with the objective and evidence.',objective_confirmed:true,confirmed_criteria:[0]});
       accepted=true;run.state='completed';run.revision=4;
@@ -32,10 +32,11 @@ test('explicit final review completes a run after objective and criterion confir
   await page.getByRole('button',{name:'Start objective'}).click();
   const panel=page.getByRole('region',{name:'Final run review'});
   await expect(panel.getByText('src/input.py',{exact:true})).toBeVisible();
+  await expect(panel.getByText('Direct workspace change · tool result #4 · edit-1',{exact:true})).toBeVisible();
   await expect(panel.getByText('Changed workspace files · 1 of 2')).toBeVisible();
   await panel.getByRole('button',{name:'Load more changed files'}).click();
   await expect(panel.getByText('src/fix.py',{exact:true})).toBeVisible();
-  await expect(panel.getByText('Specialist integration · repair-task',{exact:true})).toBeVisible();
+  await expect(panel.getByText('Specialist integration · repair-task · owner review #8',{exact:true})).toBeVisible();
   await panel.getByText('SHA-256',{exact:true}).first().click();
   await expect(panel.getByText('d'.repeat(64),{exact:true})).toBeVisible();
   const accept=panel.getByRole('button',{name:'Accept and complete run',exact:true});

@@ -4213,6 +4213,8 @@ export interface components {
         RunWorkspaceChange: {
             /** Call Id */
             call_id?: string | null;
+            /** Event Sequence */
+            event_sequence: number;
             /**
              * Operation
              * @enum {string}
