@@ -2,7 +2,7 @@
 
 ## Require a supported trajectory version before batch scoring (2026-11-18)
 
-Batch scoring and training export now require `format_version: 1` in every native trajectory. Missing or unsupported versions fail schema validation instead of being interpreted as the current format. Regression coverage verifies both cases; `uv run pytest tests/unit/test_batch.py -q` passes (15 tests), covering both scoring and training export. No model inference was used.
+Batch scoring and training export now require `format_version: 1` in every native trajectory. Missing or unsupported versions fail schema validation instead of being interpreted as the current format. Regression coverage verifies both cases; `uv run pytest tests/unit/test_batch.py -q` passes (15 tests), covering both scoring and training export. Exact-source Windows run [44267400726](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44267400726) passed on attempt 3 for `5efe8819`: 1,490 Python tests passed and 20 were skipped, along with the configured browser, static, contract and recovery checks. The first two attempts failed at different browser timing points; the successful retry passed the entire browser group. Exact package validation is running separately in [44270170758](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44270170758). No model inference was used.
 
 ## Reconfirm installed desktop backup restore in the current installer (2026-11-18)
 

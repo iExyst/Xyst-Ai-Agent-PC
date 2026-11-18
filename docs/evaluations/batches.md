@@ -42,7 +42,7 @@ uv run xaa batch cases.json --output .xaa-batch-results --model MODEL_ID --works
 uv run xaa batch cases.json --output .xaa-batch-results --model MODEL_ID --workspace C:\path\to\project --resume
 ```
 
-The first command requires a new output directory. Resume requires identical input bytes and run settings. The manifest is checkpointed atomically, each run submission has an idempotency key, and trajectories are capped at 10 MiB each. `batch.json` records run states, evaluation totals, trajectory paths, byte sizes, and SHA-256 hashes. Trajectories use the authenticated redacted run-export API.
+The first command requires a new output directory. Resume requires identical input bytes and run settings. The manifest is checkpointed atomically, each run submission has an idempotency key, and trajectories are capped at 10 MiB each. `batch.json` records run states, evaluation totals, trajectory paths, byte sizes, and SHA-256 hashes. Trajectories use the authenticated redacted run-export API and must declare `format_version: 1`; batch scoring rejects missing or unsupported versions.
 
 ## Reviewed text-only training export
 
@@ -52,7 +52,7 @@ After reviewing and accepting a candidate in the desktop, refresh its batch chec
 uv run xaa export-training .xaa-batch-results --output reviewed-training.jsonl
 ```
 
-Only cases whose refreshed manifest says `completed`, whose configured deterministic checks still pass, and whose trajectory integrity and accepted run state match are included. The JSONL contains the public trajectory's run objective and final assistant text. It omits manifest objectives, tool proposals, tool transcripts, and all other events; any case with a tool proposal is skipped because flattening it would lose tool semantics. Pending/rejected reviews, unscored cases, and empty text are skipped. The command refuses to overwrite a file, exports at most 10 MiB, and prints the included IDs, skipped counts, output size, and digest. This is a local text-only dataset export, not provider-specific fine-tuning integration or upload. Checks that explicitly expect `verifying` will no longer pass after accepting a run; use checks that remain true at completed state for exportable examples.
+Only cases whose refreshed manifest says `completed`, whose configured deterministic checks still pass, and whose trajectory integrity, version `1`, and accepted run identity/state match are included. The JSONL contains the public trajectory's run objective and final assistant text. It omits manifest objectives, tool proposals, tool transcripts, and all other events; any case with a tool proposal is skipped because flattening it would lose tool semantics. Pending/rejected reviews, unscored cases, and empty text are skipped. The command refuses to overwrite a file, exports at most 10 MiB, and prints the included IDs, skipped counts, output size, and digest. This is a local text-only dataset export, not provider-specific fine-tuning integration or upload. Checks that explicitly expect `verifying` will no longer pass after accepting a run; use checks that remain true at completed state for exportable examples.
 
 ## Compress conversational trajectories
 
