@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Search and jump between desktop sections with the keyboard (2026-11-18)
+
+The dark desktop provides a Ctrl+K/Cmd+K searchable section palette with arrow/Enter navigation, Escape dismissal, and contained/restored focus. The focused browser acceptance covers the interaction and the complete desktop browser suite passes (45 passed, 3 live/dependency-gated skipped); the production TypeScript/Vite build passes. This improves X.A.A.'s desktop workflow without claiming an upstream parity capability. No model inference was used. See [`progress.md`](../progress.md#add-keyboard-quick-navigation-across-desktop-sections-2026-11-18).
+
 ## Help first-run users reach model setup when LM Studio is offline (2026-11-18)
 
 The home screen's engine-connected/model-unavailable alert now links directly to Model setup. After local discovery recovers, the stale connection warning clears; other errors and compatible-provider-only discovery remain distinct. The focused browser test covers failed discovery, navigation, and recovery. Exact-source Windows workflow [44279771111](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44279771111) passed configured browser security, desktop type/client, API contract, UI and recovery checks; Python, WSL and installer jobs were skipped by path filters for this desktop-only change. This improves Phase 6 onboarding guidance without completing LM Studio interoperability or the real-model onboarding gate. See [`progress.md`](../progress.md#route-the-offline-first-run-state-to-model-setup-2026-11-18).

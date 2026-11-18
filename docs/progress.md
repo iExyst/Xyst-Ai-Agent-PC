@@ -1,5 +1,9 @@
 # Progress
 
+## Add keyboard quick navigation across desktop sections (2026-11-18)
+
+The dark desktop now has a searchable **Go to…** palette on Ctrl+K/Cmd+K, with arrow-key selection, Enter to open a destination, Escape to close, and focus kept inside the dialog and restored on close. The native navigation links remain available. The focused flow verifies filtering, selection, navigation, Escape, and focus cycling; `npm run build:desktop` passes. The full desktop browser suite passes (45 passed, 3 live/dependency-gated skipped at four workers). No model inference was used.
+
 ## Route the offline first-run state to model setup (2026-11-18)
 
 When the engine connects but local model discovery fails, the home alert now offers a direct **Open model setup** action. Model discovery clears that specific stale warning after a local model is found; unrelated errors remain visible, and compatible-provider-only discoveries do not hide an LM Studio warning. The browser flow simulates the unavailable server, follows the action, rediscovers a fixture model, and verifies the warning clears. `npm run build:desktop` passes; `npx playwright test tests/browser/objective.spec.ts --workers=4` passes (1). Exact-source Windows workflow [44279771111](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44279771111) passed its configured Edge security/browser checks, desktop typecheck/client checks, API contracts, final-review/schedule/browser/mobile/conflict/onboarding flows, and specialist/channel/schedule recovery checks. Python, WSL, and installer jobs were skipped by path filters for this desktop-only change. This is model-free UI acceptance; no live provider or model was used.

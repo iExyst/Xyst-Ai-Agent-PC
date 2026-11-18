@@ -90,6 +90,11 @@ function conversationObjective(previous:ChatSession['messages'],current:string):
 
 function App() {
   const [page,setPage]=useState<DesktopPage>('home');
+  const [commandPaletteOpen,setCommandPaletteOpen]=useState(false);
+  const [commandPaletteQuery,setCommandPaletteQuery]=useState('');
+  const [commandPaletteIndex,setCommandPaletteIndex]=useState(0);
+  const commandPaletteInput=useRef<HTMLInputElement>(null);
+  const commandPaletteReturnFocus=useRef<HTMLElement|null>(null);
   const [visitedPages,setVisitedPages]=useState<Set<DesktopPage>>(()=>new Set(['home']));
   const [visitedIntegrationSections,setVisitedIntegrationSections]=useState<Set<string>>(()=>new Set());
   const [homeConversationsOpen,setHomeConversationsOpen]=useState(false);
@@ -514,6 +519,53 @@ function App() {
       document.querySelector<HTMLElement>('.app-topbar h1')?.focus({preventScroll:true});
     },0);
   }
+  const navigationCommands:[string,DesktopPage,DesktopNavTarget,string][]=[
+    ['New objective','home','new-objective','workspace task create'],
+    ...(run?[['Active run','runs','active-run','current task progress activity'] as [string,DesktopPage,DesktopNavTarget,string]]:[]),
+    ['Saved runs','runs','saved-runs','history previous tasks'],
+    ['Chats','chats','chats','conversation messages'],
+    ['Memory','memory','memory','preferences recall'],
+    ['Skills','skills','skills','procedures'],
+    ['Automations','automations','automations','schedules recurring'],
+    ['Tools & integrations','integrations','integrations','mcp channels specialist identities'],
+    ['Model setup','models','model-setup','lm studio provider models'],
+    ['System monitor','monitor','system-monitor','resources cpu memory'],
+    ['Settings','settings','app-settings','preferences backups permissions']
+  ];
+  const filteredNavigationCommands=navigationCommands.filter(([label,, ,keywords])=>`${label} ${keywords}`.toLowerCase().includes(commandPaletteQuery.trim().toLowerCase()));
+  function openCommandPalette(){
+    commandPaletteReturnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    setCommandPaletteQuery('');setCommandPaletteIndex(0);setCommandPaletteOpen(true);
+  }
+  function closeCommandPalette(){
+    setCommandPaletteOpen(false);setCommandPaletteQuery('');
+    window.setTimeout(()=>commandPaletteReturnFocus.current?.focus({preventScroll:true}),0);
+  }
+  function chooseNavigationCommand(command:[string,DesktopPage,DesktopNavTarget,string]){
+    setCommandPaletteOpen(false);setCommandPaletteQuery('');navigateTo(command[1],command[2]);
+  }
+  useEffect(()=>{
+    const handlePaletteKeys=(event:KeyboardEvent)=>{
+      if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){
+        event.preventDefault();
+        if(commandPaletteOpen)closeCommandPalette();else openCommandPalette();
+        return;
+      }
+      if(!commandPaletteOpen)return;
+      if(event.key==='Escape'){event.preventDefault();closeCommandPalette();}
+      else if(event.key==='Tab'){
+        const dialog=document.querySelector<HTMLElement>('.command-palette');
+        const focusable=dialog?.querySelectorAll<HTMLElement>('input,button:not(:disabled)');
+        if(focusable?.length){const first=focusable[0]!,last=focusable[focusable.length-1]!;if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
+      }
+      else if(event.key==='ArrowDown'&&filteredNavigationCommands.length){event.preventDefault();setCommandPaletteIndex(index=>(index+1)%filteredNavigationCommands.length);}
+      else if(event.key==='ArrowUp'&&filteredNavigationCommands.length){event.preventDefault();setCommandPaletteIndex(index=>(index-1+filteredNavigationCommands.length)%filteredNavigationCommands.length);}
+      else if(event.key==='Enter'&&filteredNavigationCommands[commandPaletteIndex]){event.preventDefault();chooseNavigationCommand(filteredNavigationCommands[commandPaletteIndex]!);}
+    };
+    window.addEventListener('keydown',handlePaletteKeys);
+    return()=>window.removeEventListener('keydown',handlePaletteKeys);
+  },[commandPaletteOpen,commandPaletteIndex,commandPaletteQuery,run]);
+  useEffect(()=>{if(commandPaletteOpen)commandPaletteInput.current?.focus();},[commandPaletteOpen]);
   async function savePortableBackup(){
     if(!client||backupBusy)return;
     setBackupBusy(true);setBackupStatus('Choose where to save the backup…');
@@ -578,7 +630,8 @@ function App() {
       <div className="sidebar-footer"><span className={`connection-dot ${client&&models.length?'online':''}`}/><div><strong>{client?'Engine ready':'Starting engine'}</strong><small>{models.length?`${models.length} model${models.length===1?'':'s'} found`:'Local runtime'}</small></div></div>
     </aside>
     <div className="app-frame">
-      <header className="app-topbar"><p className="sr-only" role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p><div><p className="eyebrow">XYST AI AGENT · LOCAL WORKSPACE</p><h1 tabIndex={-1}>{page==='home'?'Workspace':page==='runs'?'Runs and activity':page==='chats'?'Chats':page==='integrations'?'Tools & integrations':page==='memory'?'Memory':page==='skills'?'Skills':page==='automations'?'Automations':page==='models'?'Model setup':page==='monitor'?'System monitor':'Settings'}</h1></div><div className="topbar-actions"><span className={`status-pill ${client&&model?'':'muted'}`} role="status" aria-live="polite" aria-atomic="true"><span className={`connection-dot ${client&&model?'online':''}`} aria-hidden="true"/>{model?'Model ready':client&&models.length?'Choose a model':'Model not connected'}</span>{client&&<button type="button" className="emergency-stop-trigger" aria-expanded={confirmEmergencyStop} aria-controls="emergency-stop-confirmation" onClick={()=>setConfirmEmergencyStop(true)} disabled={emergencyStopBusy}>Emergency stop</button>}{page!=='home'&&<button type="button" className="topbar-new" onClick={()=>{setPage('home');setActiveSection('new-objective');window.setTimeout(()=>document.getElementById('run-objective')?.focus(),0);}}>+ New objective</button>}</div></header>
+      <header className="app-topbar"><p className="sr-only" role="note">{closeBehavior==='keep_running'?'Closing this window hides X.A.A. and keeps it running in the system tray.':'Closing this window quits X.A.A. and stops its engine.'}</p><div><p className="eyebrow">XYST AI AGENT · LOCAL WORKSPACE</p><h1 tabIndex={-1}>{page==='home'?'Workspace':page==='runs'?'Runs and activity':page==='chats'?'Chats':page==='integrations'?'Tools & integrations':page==='memory'?'Memory':page==='skills'?'Skills':page==='automations'?'Automations':page==='models'?'Model setup':page==='monitor'?'System monitor':'Settings'}</h1></div><div className="topbar-actions"><span className={`status-pill ${client&&model?'':'muted'}`} role="status" aria-live="polite" aria-atomic="true"><span className={`connection-dot ${client&&model?'online':''}`} aria-hidden="true"/>{model?'Model ready':client&&models.length?'Choose a model':'Model not connected'}</span><button type="button" className="palette-trigger" onClick={openCommandPalette} aria-keyshortcuts="Control+K Meta+K"><span>Go to…</span><kbd>Ctrl / ⌘ K</kbd></button>{client&&<button type="button" className="emergency-stop-trigger" aria-expanded={confirmEmergencyStop} aria-controls="emergency-stop-confirmation" onClick={()=>setConfirmEmergencyStop(true)} disabled={emergencyStopBusy}>Emergency stop</button>}{page!=='home'&&<button type="button" className="topbar-new" onClick={()=>{setPage('home');setActiveSection('new-objective');window.setTimeout(()=>document.getElementById('run-objective')?.focus(),0);}}>+ New objective</button>}</div></header>
+      {commandPaletteOpen&&<div className="command-palette-backdrop" onMouseDown={event=>{if(event.target===event.currentTarget)closeCommandPalette();}}><section className="command-palette" role="dialog" aria-modal="true" aria-labelledby="command-palette-title"><div className="command-palette-heading"><h2 id="command-palette-title">Go to a section</h2><button type="button" className="secondary-button" aria-label="Close quick navigation" onClick={closeCommandPalette}>×</button></div><label className="sr-only" htmlFor="command-palette-search">Search sections</label><input id="command-palette-search" ref={commandPaletteInput} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="command-palette-options" aria-activedescendant={filteredNavigationCommands[commandPaletteIndex]?`command-option-${commandPaletteIndex}`:undefined} value={commandPaletteQuery} onChange={event=>{setCommandPaletteQuery(event.target.value);setCommandPaletteIndex(0);}} placeholder="Search workspace, runs, tools…"/><ul id="command-palette-options" role="listbox" aria-label="Sections">{filteredNavigationCommands.map(([label,, ,keywords],index)=><li role="presentation" key={label} onMouseEnter={()=>setCommandPaletteIndex(index)}><button id={`command-option-${index}`} type="button" role="option" aria-selected={index===commandPaletteIndex} onClick={()=>chooseNavigationCommand(filteredNavigationCommands[index]!)}><span>{label}</span><small>{keywords.split(' ').slice(0,3).join(' · ')}</small>{index===commandPaletteIndex&&<kbd>Enter</kbd>}</button></li>)}{filteredNavigationCommands.length===0&&<li className="command-palette-empty">No matching section. Try a shorter search.</li>}</ul><p className="command-palette-hint"><kbd>↑</kbd><kbd>↓</kbd> to move <kbd>Enter</kbd> to open <kbd>Esc</kbd> to close</p></section></div>}
       <main id="main-content" className="app-content" tabIndex={-1}>
         <InlineConfirmation id="emergency-stop-confirmation" open={confirmEmergencyStop} label="Confirm emergency stop"><p>This stops all queued and active runs, saves them as paused for explicit recovery, and closes X.A.A. and its local engine. An action already sent to another service may have taken effect and cannot be recalled.</p>{emergencyStopError&&<p role="alert">{emergencyStopError}</p>}<button type="button" onClick={()=>void emergencyStop()} disabled={emergencyStopBusy}>{emergencyStopBusy?'Stopping all work…':'Stop all work and close X.A.A.'}</button><button type="button" onClick={()=>{setConfirmEmergencyStop(false);setEmergencyStopError('');}} disabled={emergencyStopBusy}>Keep working</button></InlineConfirmation>
         {error&&<div className={page==='home'&&client&&models.length===0?'app-alert app-alert-action':'app-alert'} role="alert"><p>{error}</p>{page==='home'&&client&&models.length===0&&<button type="button" className="secondary-button alert-action" onClick={()=>navigateTo('models','model-setup')}>Open model setup</button>}</div>}
