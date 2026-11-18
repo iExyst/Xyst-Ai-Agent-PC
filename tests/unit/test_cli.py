@@ -350,6 +350,91 @@ def test_cli_chat_carries_context_and_reset_starts_fresh_session(monkeypatch, ca
     assert "Fresh answer" in objectives[3]
 
 
+def test_cli_chat_rejects_mismatched_event_id_and_reconnects(monkeypatch, capsys) -> None:
+    cursors: list[int] = []
+
+    class StreamResponse:
+        def __init__(self, lines: list[str]) -> None:
+            self.lines = lines
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def iter_lines(self):
+            yield from self.lines
+
+    class Client:
+        attempts = 0
+
+        def stream(
+            self,
+            _method: str,
+            _path: str,
+            *,
+            params: dict[str, object],
+            timeout: float | None,
+        ) -> StreamResponse:
+            assert timeout is None
+            cursor = int(params["after"])
+            cursors.append(cursor)
+            self.attempts += 1
+            if self.attempts == 1:
+                event = {
+                    "sequence": 1,
+                    "event_type": "model.delta",
+                    "payload": {"inference_id": "i", "text": "incorrect"},
+                }
+                lines = ["id: 9", "event: run_event", f"data: {json.dumps(event)}", ""]
+            else:
+                lines = []
+                events = [
+                    {
+                        "sequence": 1,
+                        "event_type": "model.delta",
+                        "payload": {"inference_id": "i", "text": "Correct answer"},
+                    },
+                    {
+                        "sequence": 2,
+                        "event_type": "model.message",
+                        "payload": {
+                            "inference_id": "i",
+                            "message": {"role": "assistant", "content": "Correct answer"},
+                        },
+                    },
+                    {
+                        "sequence": 3,
+                        "event_type": "run.state_changed",
+                        "payload": {"to": "verifying"},
+                    },
+                ]
+                for event in events:
+                    lines.extend(
+                        [
+                            f"id: {event['sequence']}",
+                            "event: run_event",
+                            f"data: {json.dumps(event)}",
+                            "",
+                        ]
+                    )
+            return StreamResponse(lines)
+
+    monkeypatch.setattr(cli.time, "sleep", lambda _seconds: None)
+    state, answer = cli._stream_chat_run(Client(), "/runs/fixture")
+
+    assert cursors == [0, 0]
+    assert state == "verifying"
+    assert answer == "Correct answer"
+    output = capsys.readouterr().out
+    assert "Correct answer" in output
+    assert "incorrect" not in output
+
+
 def test_cli_chat_interrupt_requests_run_cancellation(monkeypatch, capsys) -> None:
     posts: list[str] = []
 

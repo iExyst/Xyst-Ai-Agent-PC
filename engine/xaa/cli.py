@@ -545,11 +545,14 @@ def _stream_chat_run(client: httpx.Client, run_path: str) -> tuple[str, str]:
             ) as response:
                 response.raise_for_status()
                 event_name = ""
+                event_id = ""
                 data: list[str] = []
                 for line in response.iter_lines():
                     if line:
                         if line.startswith("event:"):
                             event_name = line[6:].strip()
+                        elif line.startswith("id:"):
+                            event_id = line[3:].strip()
                         elif line.startswith("data:"):
                             data.append(line[5:].lstrip())
                         continue
@@ -561,16 +564,22 @@ def _stream_chat_run(client: httpx.Client, run_path: str) -> tuple[str, str]:
                     if event_name == "run_event" and data:
                         raw: object = json.loads("\n".join(data))
                         if not isinstance(raw, dict):
-                            raise ValueError("Engine returned a malformed run event.")
+                            raise httpx.RemoteProtocolError(
+                                "Engine returned a malformed run event."
+                            )
                         event = cast(dict[str, object], raw)
                         sequence = event.get("sequence")
-                        if not isinstance(sequence, int) or sequence <= 0:
-                            raise ValueError(
+                        if type(sequence) is not int or sequence <= 0:
+                            raise httpx.RemoteProtocolError(
                                 "Engine returned a run event without a valid sequence."
+                            )
+                        if event_id != str(sequence):
+                            raise httpx.RemoteProtocolError(
+                                "Engine event ID disagrees with its sequence."
                             )
                         if sequence > cursor:
                             if sequence != cursor + 1:
-                                raise ValueError(
+                                raise httpx.RemoteProtocolError(
                                     "Engine event sequence has a gap; reconnect from the last saved cursor."
                                 )
                             cursor = sequence
@@ -616,6 +625,7 @@ def _stream_chat_run(client: httpx.Client, run_path: str) -> tuple[str, str]:
                                     if state in terminal:
                                         return state, answer
                     event_name = ""
+                    event_id = ""
                     data.clear()
             if attempts == 3:
                 raise httpx.RemoteProtocolError("Run event stream ended before completion.")
