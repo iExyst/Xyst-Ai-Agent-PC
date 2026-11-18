@@ -102,6 +102,21 @@ def test_nested_tasks_run_before_parent_and_parent_waits_for_reviewed_children()
     )
 
 
+def test_parent_child_and_dependency_edges_cannot_form_a_mixed_cycle():
+    with pytest.raises(ValueError, match="cycle"):
+        graph(
+            [
+                TaskDefinition(id="parent", objective="Aggregate child work"),
+                TaskDefinition(
+                    id="child",
+                    objective="Prepare the result",
+                    parent_id="parent",
+                    dependencies=["parent"],
+                ),
+            ]
+        )
+
+
 def test_task_hierarchy_rejects_cycles_broader_permissions_and_budgets():
     with pytest.raises(ValueError, match="cycle"):
         graph(
