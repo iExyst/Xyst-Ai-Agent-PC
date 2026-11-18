@@ -114,9 +114,12 @@ def test_abandoned_local_read_requeues_and_is_sealed(workspace_tmp_path, tool, f
 
 
 @pytest.mark.parametrize("registered", [False, True])
-def test_interrupted_git_read_discards_only_its_owned_artifact(workspace_tmp_path, registered):
+@pytest.mark.parametrize("operation", ["status", "diff", "branch", "log"])
+def test_interrupted_git_read_discards_only_its_owned_artifact(
+    workspace_tmp_path, registered, operation
+):
     store, run_id, token = setup(workspace_tmp_path)
-    call_id = "git-call"
+    call_id = f"git-{operation}"
     artifact_name = f"{uuid4()}.git-output.txt"
     artifact_path = store.path.parent / "artifacts" / artifact_name
     artifact_path.parent.mkdir(exist_ok=True)
@@ -127,19 +130,21 @@ def test_interrupted_git_read_discards_only_its_owned_artifact(workspace_tmp_pat
         token,
         call_id,
         "workspace_git_inspect",
-        json.dumps({"operation": "status"}),
+        json.dumps({"operation": operation}),
     )
     store.record_tool_intent(
         run_id,
         token,
         call_id=call_id,
-        tool="git.status",
+        tool=f"git.{operation}",
         version="2",
         arguments={"workspace": str(workspace_tmp_path), "artifact_filename": artifact_name},
         idempotency_key=call_id,
     )
     if registered:
-        store.register_artifact(run_id, token, artifact_name, provenance=f"git.status:{call_id}")
+        store.register_artifact(
+            run_id, token, artifact_name, provenance=f"git.{operation}:{call_id}"
+        )
     store.append_worker_event(run_id, token, "tool.executing", {"call_id": call_id})
     store.transition(run_id, RunState.PLANNING, owner=token)
     connection = sqlite3.connect(store.path)

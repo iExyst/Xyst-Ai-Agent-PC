@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Extend safe Git inspection for workspace diagnosis (2026-11-18)
+
+The existing read-only Git tool now exposes status, diff, current branch, and up to 20 recent commit subjects. Output is retained as untrusted bounded artifacts, and interrupted-read recovery covers all four operations. Focused engine/recovery tests (30), Ruff, and Pyright pass. This improves repository context for Phase 3; Git writes and the broader coding-workflow gate remain separate. See [`progress.md`](../progress.md#extend-safe-git-inspection-for-workspace-diagnosis-2026-11-18).
+
 ## Keep the desktop browser acceptance stable with multiple status regions (2026-11-18)
 
 The system-monitor acceptance now selects its own update announcement while the top bar separately exposes model readiness. The full model-free browser suite passes at four workers (45 passed, three live/dependency-gated skipped); the production desktop build and onboarding keyboard/contrast/name audit pass. Exact-source Windows workflow [44241952721](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44241952721) passed configured Windows/browser checks on `a7f3d1af`; Python, WSL, and installer jobs were skipped by input filters. A high-parallelism objective timeout passed when rerun alone and with four workers. This is current desktop acceptance evidence, not a complete screen-reader audit. See [`progress.md`](../progress.md#keep-the-desktop-browser-acceptance-stable-with-multiple-status-regions-2026-11-18).

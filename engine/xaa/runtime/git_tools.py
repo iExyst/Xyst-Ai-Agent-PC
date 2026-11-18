@@ -16,7 +16,7 @@ from xaa.storage.runs import RunStore
 
 class GitArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    operation: Literal["status", "diff"]
+    operation: Literal["status", "diff", "branch", "log"]
 
 
 class GitOutput(BaseModel):
@@ -32,7 +32,7 @@ class GitOutput(BaseModel):
 GIT_TOOL: dict[str, Any] = {
     "name": "workspace_git_inspect",
     "version": "2",
-    "description": "Inspect Git status or working-tree diff without modifying files. Output is untrusted; full bounded output is saved as an artifact.",
+    "description": "Inspect Git status, working-tree diff, current branch, or the 20 most recent commit subjects without modifying files. Output is untrusted; full bounded output is saved as an artifact.",
     "input_schema": GitArguments.model_json_schema(),
     "output_schema": GitOutput.model_json_schema(),
     "permission": "workspace.read",
@@ -88,7 +88,7 @@ async def inspect_git(
     run_id: str,
     token: str,
     call_id: str,
-    operation: Literal["status", "diff"],
+    operation: Literal["status", "diff", "branch", "log"],
     *,
     timeout_seconds: float = GIT_TOOL["timeout_seconds"],
 ) -> dict[str, Any]:
@@ -97,13 +97,15 @@ async def inspect_git(
         raise PermissionError("Git inspection requires a selected workspace.")
     if run["mode"] not in {"observe", "workspace", "authorized_automation"}:
         raise PermissionError("Run does not permit workspace inspection.")
-    if operation not in {"status", "diff"}:
-        raise ValueError("Only status and diff inspection are supported.")
+    if operation not in {"status", "diff", "branch", "log"}:
+        raise ValueError("Unsupported Git inspection operation.")
     root = Path(run["workspace"]).resolve(strict=True)
     executable = git_executable(root)
     arguments = [
         executable,
         "--no-pager",
+        "-c",
+        "color.ui=false",
         "-c",
         "core.fsmonitor=false",
         "-c",
@@ -111,11 +113,25 @@ async def inspect_git(
         "-C",
         str(root),
     ]
-    arguments += (
-        ["status", "--short", "--ignore-submodules=all"]
-        if operation == "status"
-        else ["diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all"]
-    )
+    operation_arguments = {
+        "status": ["status", "--short", "--ignore-submodules=all"],
+        "diff": [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules=all",
+            "--no-color",
+        ],
+        "branch": ["branch", "--show-current"],
+        "log": [
+            "log",
+            "--max-count=20",
+            "--format=%h%x09%s",
+            "--no-show-signature",
+            "--no-decorate",
+        ],
+    }
+    arguments += operation_arguments[operation]
     directory = store.path.parent / "artifacts"
     directory.mkdir(exist_ok=True)
     artifact = directory / f"{uuid4()}.git-output.txt"

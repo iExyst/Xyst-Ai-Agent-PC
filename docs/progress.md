@@ -1,5 +1,9 @@
 # Progress
 
+## Extend safe Git inspection for workspace diagnosis (2026-11-18)
+
+The existing `workspace_git_inspect` tool now supports four read-only views: status, working-tree diff, current branch, and the 20 most recent commit subjects. All output remains untrusted, is saved in the bounded artifact path, and interrupted reads discard only their own artifact. Git color and pager behavior are disabled without invoking a project shell, external diff, or text conversion. Focused Git and read-recovery tests pass (30); Ruff and engine/storage Pyright pass. This expands Phase 3 repository inspection without adding write or publish operations.
+
 ## Keep the desktop browser acceptance stable with multiple status regions (2026-11-18)
 
 The system-monitor browser assertion now targets its own update announcement rather than assuming there is only one `role="status"` on the page; the header model-readiness status is independently announced. Production typecheck/build passed. The focused onboarding keyboard, contrast, and accessible-name audit passed, as did the objective and system-monitor flows individually. The full 48-test browser suite passed at four workers (45 passed, three live/dependency-gated skipped). Exact-source Windows workflow [44241952721](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44241952721) passed the configured Windows/browser checks on `a7f3d1af`; Python tests, WSL acceptance, and installer acceptance were skipped by their input filters. A 16-worker local run hit an objective-flow timeout under contention; that flow passed alone and in the four-worker suite. Live LM Studio tests remain deferred until the end. This verifies current model-free desktop flows, not the broad screen-reader or release gates.

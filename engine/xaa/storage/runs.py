@@ -32,6 +32,8 @@ SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "procedure.catalog": "1",
     "git.status": "2",
     "git.diff": "2",
+    "git.branch": "2",
+    "git.log": "2",
     "mcp.call": "2",
 }
 
@@ -44,6 +46,8 @@ SAFE_READ_PROPOSALS: dict[str, set[str]] = {
     "procedure.catalog": {"procedure_catalog"},
     "git.status": {"workspace_git_inspect"},
     "git.diff": {"workspace_git_inspect"},
+    "git.branch": {"workspace_git_inspect"},
+    "git.log": {"workspace_git_inspect"},
 }
 
 
@@ -2541,7 +2545,7 @@ class RunStore:
         arguments: dict[str, Any],
     ) -> bool:
         operation = tool_name.removeprefix("git.")
-        if operation not in {"status", "diff"}:
+        if operation not in {"status", "diff", "branch", "log"}:
             return False
         filename = arguments.get("artifact_filename")
         if not isinstance(filename, str) or not filename.endswith(".git-output.txt"):
