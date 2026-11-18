@@ -2,7 +2,7 @@
 
 ## Make mobile section navigation easier to read and tap (2026-11-18)
 
-Mobile section links use 12px labels and 76×60px targets while retaining horizontal scrolling. The browser acceptance checks that labels fit, every section is reachable, and targets meet the 44px minimum. The focused mobile-navigation flow and production desktop build pass locally; hosted verification is pending. This is one responsive accessibility improvement, not a complete keyboard, contrast or screen-reader audit. See [`progress.md`](../progress.md#make-mobile-section-navigation-easier-to-read-and-tap-2026-11-18).
+Mobile section links use 12px labels and 76×60px targets while retaining horizontal scrolling. The browser acceptance checks that labels fit, every section is reachable, and targets meet the 44px minimum. Exact-source workflow [44233197768](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44233197768) passed the desktop/browser and configured recovery checks; its Python/static checks were skipped because only UI inputs changed. Exact-commit installer workflow [44233233716](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44233233716) is in progress. This is one responsive accessibility improvement, not a complete keyboard, contrast or screen-reader audit. See [`progress.md`](../progress.md#make-mobile-section-navigation-easier-to-read-and-tap-2026-11-18).
 
 ## Announce model connection changes to assistive technology (2026-11-18)
 
