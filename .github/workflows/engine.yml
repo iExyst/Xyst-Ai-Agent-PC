@@ -185,6 +185,15 @@ jobs:
           path: docs/releases/evidence/browser-download-live.json
           if-no-files-found: error
           include-hidden-files: true
+      - name: Verify owner-granted button interaction in managed Edge
+        run: uv run python scripts/browser_interaction_smoke.py
+        timeout-minutes: 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-interaction-edge-${{ github.run_id }}
+          path: docs/releases/evidence/browser-interaction-live.json
+          if-no-files-found: error
+          include-hidden-files: true
       - uses: actions/cache/save@v6
         if: success() && steps.uv-cache.outputs.cache-hit != 'true'
         with:

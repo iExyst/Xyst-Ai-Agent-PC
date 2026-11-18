@@ -1,0 +1,30 @@
+{
+  "checked_at_utc": "2026-11-18T02:34:38.922610+00:00",
+  "browser": "managed Microsoft Edge worker subprocess",
+  "approved_hosts": [
+    "www.w3.org",
+    "aria-at.w3.org"
+  ],
+  "grants": {
+    "browser_read": true,
+    "browser_interaction": true,
+    "form_submission": false
+  },
+  "result": {
+    "status": "ok",
+    "url": "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/",
+    "title": "Example Disclosure Navigation Menu | APG | WAI | W3C",
+    "clicked_button": "Academics",
+    "button_expanded_before_click": false,
+    "button_expanded_after_click": true,
+    "trust": "untrusted_web_content",
+    "content_characters": 10426,
+    "journal_tool": "browser.interact",
+    "journal_state": "completed"
+  },
+  "elapsed_ms": 2382,
+  "source_sha256": {
+    "browser.py": "3812beb4066994902ec1bf6756991fc45f30f301cde9d7f05357670db634decd",
+    "browser_worker.py": "81f84756a6b3c600fee2b00036976becae3ba19078355f12d2aafa9044a4742f"
+  }
+}

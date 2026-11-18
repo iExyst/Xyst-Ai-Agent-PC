@@ -2692,6 +2692,11 @@ export interface components {
              */
             approved_browser_download: boolean;
             /**
+             * Approved Browser Interaction
+             * @default false
+             */
+            approved_browser_interaction: boolean;
+            /**
              * Approved Browser Submission
              * @default false
              */
@@ -4101,6 +4106,11 @@ export interface components {
              * @default false
              */
             approved_browser_download: boolean;
+            /**
+             * Approved Browser Interaction
+             * @default false
+             */
+            approved_browser_interaction: boolean;
             /**
              * Approved Browser Submission
              * @default false

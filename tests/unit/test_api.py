@@ -1717,6 +1717,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
                 "approved_browser": True,
                 "approved_browser_submission": True,
                 "approved_browser_download": True,
+                "approved_browser_interaction": True,
             },
         )
         assert created.status_code == 201
@@ -1726,6 +1727,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
         assert created.json()["approved_browser"] is True
         assert created.json()["approved_browser_submission"] is True
         assert created.json()["approved_browser_download"] is True
+        assert created.json()["approved_browser_interaction"] is True
         events = client.get(f"/runs/{run_id}/events", headers=headers).json()
         assert events[-1]["event_type"] == "web.access_granted"
         assert events[-1]["payload"] == {
@@ -1734,6 +1736,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
             "browser": True,
             "browser_submission": True,
             "browser_download": True,
+            "browser_interaction": True,
             "actor": "local_user",
         }
         no_browser_grant = client.post(
@@ -1758,6 +1761,17 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
         )
         assert no_download_grant.status_code == 409
         assert "downloads require browser access" in no_download_grant.json()["detail"]
+        no_interaction_grant = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Interaction requires browser permission",
+                "approved_web_hosts": ["docs.example.com"],
+                "approved_browser_interaction": True,
+            },
+        )
+        assert no_interaction_grant.status_code == 409
+        assert "interactions require browser access" in no_interaction_grant.json()["detail"]
         invalid = client.post(
             "/runs",
             headers=headers,
@@ -1773,6 +1787,7 @@ def test_run_web_host_grant_is_authenticated_validated_and_durable(workspace_tmp
     assert recovered["approved_browser"] is True
     assert recovered["approved_browser_submission"] is True
     assert recovered["approved_browser_download"] is True
+    assert recovered["approved_browser_interaction"] is True
 
 
 def test_run_can_require_pre_inference_token_reservations(workspace_tmp_path):

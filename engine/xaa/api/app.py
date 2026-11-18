@@ -215,6 +215,7 @@ class CreateRunRequest(BaseModel):
     approved_browser: bool = False
     approved_browser_submission: bool = False
     approved_browser_download: bool = False
+    approved_browser_interaction: bool = False
     allow_procedure_drafting: bool = False
     allow_procedure_revision: bool = False
     allow_procedure_resource_revision: bool = False
@@ -4096,6 +4097,7 @@ def create_app(
                 approved_browser=payload.approved_browser,
                 approved_browser_submission=payload.approved_browser_submission,
                 approved_browser_download=payload.approved_browser_download,
+                approved_browser_interaction=payload.approved_browser_interaction,
                 allow_procedure_drafting=payload.allow_procedure_drafting,
                 allow_procedure_revision=payload.allow_procedure_revision,
                 allow_procedure_resource_revision=payload.allow_procedure_resource_revision,

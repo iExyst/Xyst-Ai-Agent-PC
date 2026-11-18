@@ -46,6 +46,7 @@ class BrowserRequest(BaseModel):
     url: str = Field(min_length=9, max_length=2048)
     approved_hosts: list[str] = Field(min_length=1, max_length=10)
     links: list[str] = Field(default_factory=list, max_length=5)
+    button_name: str | None = Field(default=None, min_length=1, max_length=200)
     screenshot: bool = False
     inspect_forms: bool = False
     submission: BrowserFormSubmission | None = None
@@ -63,6 +64,10 @@ class BrowserRequest(BaseModel):
             raise ValueError(
                 "Browser download link and managed destination must be supplied together."
             )
+        if self.button_name is not None and (
+            self.links or self.submission is not None or self.download_link_name is not None
+        ):
+            raise ValueError("A button interaction must be the only page action in this request.")
         return self
 
     @field_validator("links")
@@ -73,6 +78,16 @@ class BrowserRequest(BaseModel):
             raise ValueError("Link names cannot be empty.")
         if any(len(item) > 200 for item in cleaned):
             raise ValueError("Link names cannot exceed 200 characters.")
+        return cleaned
+
+    @field_validator("button_name")
+    @classmethod
+    def clean_button_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Button name cannot be empty.")
         return cleaned
 
 
@@ -474,6 +489,43 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                             )
                         await link.click(timeout=8000)
                         await page.wait_for_load_state("domcontentloaded", timeout=10000)
+                    clicked_button: str | None = None
+                    button_expanded_before: bool | None = None
+                    button_expanded: bool | None = None
+                    if request.button_name is not None:
+                        # Do not interact before page scripts and event handlers finish loading.
+                        await page.wait_for_load_state("load", timeout=10000)
+                        button = page.get_by_role("button", name=request.button_name, exact=True)
+                        if await button.count() != 1 or not await button.is_visible():
+                            raise ValueError("Button name must match exactly one visible button.")
+                        if not await button.is_enabled():
+                            raise ValueError("The selected browser button is disabled.")
+                        details = await button.evaluate(
+                            """element => ({
+                              tag: element.tagName.toLowerCase(),
+                              type: (element.getAttribute('type') || 'submit').toLowerCase(),
+                              in_form: element.form !== null
+                            })"""
+                        )
+                        if (
+                            details.get("tag") != "button"
+                            or details.get("type") != "button"
+                            or details.get("in_form") is not False
+                        ):
+                            raise ValueError(
+                                "Only standalone native buttons with type=button can be clicked."
+                            )
+                        expanded_before = await button.get_attribute("aria-expanded")
+                        if expanded_before in {"true", "false"}:
+                            button_expanded_before = expanded_before == "true"
+                        await button.click(timeout=8000)
+                        clicked_button = request.button_name
+                        if expanded_before in {"true", "false"}:
+                            # Disclosure handlers may update ARIA state in a queued task.
+                            await page.wait_for_timeout(100)
+                        expanded_value = await button.get_attribute("aria-expanded")
+                        if expanded_value in {"true", "false"}:
+                            button_expanded = expanded_value == "true"
                     if blocked_main_navigations["count"] or blocked_main_hosts:
                         raise PermissionError(
                             "Browser blocked a top-level navigation outside the approved host list."
@@ -578,6 +630,9 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         "truncated": len(text) >= MAX_PAGE_TEXT,
                         "submitted": submitted_fields is not None,
                         "submitted_fields": submitted_fields,
+                        "clicked_button": clicked_button,
+                        "button_expanded_before": button_expanded_before,
+                        "button_expanded": button_expanded,
                         "trust": "untrusted_web_content",
                         "blocked_subresources": {
                             "count": sum(blocked_subresources.values()),

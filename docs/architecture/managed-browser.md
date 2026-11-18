@@ -1,6 +1,6 @@
-# Managed browser reads
+# Managed browser workflows
 
-Updated 2026-11-08. This is an initial Phase 7 browser slice, not general browser automation or Hermes parity.
+Updated 2026-11-17. These are controlled Phase 7 browser slices, not general browser automation or Hermes parity.
 
 ## Packaged acceptance
 
@@ -14,13 +14,15 @@ The desktop has a per-run **Allow managed browser reads** grant. At least one ex
 
 Form submission uses a separate **Allow browser form submissions** run grant and the `browser_submit_form` tool. It only accepts visible URL-encoded POST forms on the current page hostname, visible editable scalar inputs, single selects and textareas, and one matching visible submitter. Values are bounded; password, file, checkbox, radio, cross-host, alternate-window, and GET submission are refused. One armed same-host main-frame POST is allowed per tool call; later POSTs and XHR/fetch writes remain blocked. The page response stays untrusted. Submission is a direct external side effect: it is not delegated or automatically replayed, and cancellation or uncertain completion tells the owner that the site may have received it.
 
+Button interaction uses the separate **Allow one browser button click** run grant and `browser_click_button`. Each call clicks one exact visible native `<button type="button">` outside a form. Buttons that could submit a form, ARIA-only button substitutes, disabled controls, ambiguous labels, and buttons inside forms are refused. The fresh context, exact approved-host list and proxy remain in force; the worker blocks HTTP methods other than GET and HEAD. A page can still change state through JavaScript or a state-changing GET, so this grant is explicit, applies only to that run, and does not flow to specialists. Cancellation or timeout records that the click outcome may be uncertain and tells the agent to inspect the site before retrying. The clicked page and returned text remain untrusted.
+
 The coordinator starts a short-lived Python worker with engine and provider bearer tokens removed from its environment. The worker launches the installed Microsoft Edge channel with a new nonpersistent context, blocks service workers, downloads, permissions, and QUIC, closes pages opened beyond the primary page, and closes both context and browser at completion. Cancellation or timeout ends the owned process tree. Worker input and output are capped at 1 MiB; visible text at 20,000 characters; screenshots at 512 KiB; the proxy limits each run to 32 tunnels and 2 MiB transferred data.
 
 Ordinary browser reads use HTTPS to an exact approved host and GET/HEAD. The one submission exception is restricted by the armed form flow above. A local CONNECT proxy checks every hostname, resolves DNS, rejects the request if any answer is not globally routable unicast (including private, reserved, multicast, or unspecified addresses), and opens the tunnel directly to one of the validated IP addresses. Chromium's loopback proxy bypass is removed so local and metadata destinations cannot avoid the proxy. Playwright request routing independently checks URLs/methods, including redirects and page requests.
 
 ## Limits
 
-This is not an OS-level isolated browser. Edge runs under the current Windows account with its normal browser sandbox and processes untrusted public pages. GET requests can still trigger state changes on poorly designed sites; callers should avoid URLs/links that perform writes. Browser automation does not inherit the user's Edge cookies or profile. Edge must be installed. Sites that require login or cross-host form actions are unsupported by this slice. Form inspection exposes page-supplied labels as untrusted data; it does not itself grant authority to interact with controls.
+This is not an OS-level isolated browser. Edge runs under the current Windows account with its normal browser sandbox and processes untrusted public pages. GET requests and explicitly granted page JavaScript can still trigger state changes on poorly designed sites; use interaction only when you intend to operate that page. Browser automation does not inherit the user's Edge cookies or profile. Edge must be installed. Sites that require login or cross-host form actions are unsupported by this slice. Form inspection exposes page-supplied labels as untrusted data; it does not itself grant authority to interact with controls.
 
 ## Verification
 
@@ -31,6 +33,7 @@ This is not an OS-level isolated browser. Edge runs under the current Windows ac
 - `uv run python scripts/browser_cancel_smoke.py` starts delayed HTTPBin navigations, verifies both owner cancellation and deadline timeout stop the Edge worker, and checks the durable results.
 - `uv run python scripts/browser_api_cancel_smoke.py` drives a deterministic fake provider through the authenticated run API, cancels its active real Edge worker, and verifies the terminal `cancelled` result is durably journaled without model inference.
 - `uv run python scripts/browser_submit_smoke.py` reads HTTPBin's echo form, sends synthetic values only under the separate run grant, verifies the echo response and durable `browser.submit` journal result, and makes no model call.
+- `uv run python scripts/browser_interaction_smoke.py` clicks the W3C disclosure example's standalone **About** button in managed Edge, verifies the visible page result and durable `browser.interact` journal record, and makes no model call.
 - `node scripts/native_browser_cancel_smoke.mjs build/native-dev/xaa-desktop.exe` tests the native desktop UI with a deterministic local provider: cancel a live Edge navigation, explicitly allow and complete the HTTPBin echo submission, owner-review the untrusted result, then accept a workspace read. The fixture uses synthetic form data and no real model inference.
 - `uv run python scripts/build_engine.py` builds the frozen Windows engine including Playwright resources.
 - `uv run python scripts/frozen_browser_diagnostic.py` launches the packaged worker against `example.com`, verifies page text and PNG output, then terminates a delayed packaged navigation through its owned Windows process tree.

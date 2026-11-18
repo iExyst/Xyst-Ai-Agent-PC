@@ -42,6 +42,33 @@ def main() -> None:
     screenshot = base64.b64decode(result.pop("screenshot_png"), validate=True)
     if result.get("title") != "Example Domain" or not screenshot.startswith(b"\x89PNG\r\n\x1a\n"):
         raise RuntimeError("Frozen browser worker returned invalid page or screenshot evidence.")
+    interaction_request = {
+        "url": "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/",
+        "approved_hosts": ["www.w3.org", "aria-at.w3.org"],
+        "button_name": "Academics",
+    }
+    interaction_completed = subprocess.run(
+        [str(executable.resolve()), "--browser-worker"],
+        input=json.dumps(interaction_request, separators=(",", ":")).encode(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=60,
+        check=False,
+        creationflags=0x08000000,
+    )
+    if interaction_completed.returncode != 0 or len(interaction_completed.stdout) > 1_048_576:
+        raise RuntimeError("Frozen browser interaction worker exited without a bounded result.")
+    interaction_response = WorkerResult.model_validate_json(interaction_completed.stdout)
+    if not interaction_response.ok:
+        raise RuntimeError(interaction_response.error or "Frozen browser interaction failed.")
+    interaction = interaction_response.result
+    if (
+        interaction.get("clicked_button") != "Academics"
+        or not isinstance(interaction.get("button_expanded_before"), bool)
+        or not isinstance(interaction.get("button_expanded"), bool)
+        or interaction["button_expanded_before"] == interaction["button_expanded"]
+    ):
+        raise RuntimeError("Frozen browser worker did not verify that the button state changed.")
     download = verify_packaged_browser_download(executable.resolve(strict=True))
     cancel_request = {
         "url": "https://httpbin.org/delay/10",
@@ -95,6 +122,13 @@ def main() -> None:
             "content_characters": len(result["content"]),
             "screenshot_bytes": len(screenshot),
             "screenshot_sha256": hashlib.sha256(screenshot).hexdigest(),
+            "interaction": {
+                "url": interaction["url"],
+                "clicked_button": interaction["clicked_button"],
+                "button_expanded_before_click": interaction["button_expanded_before"],
+                "button_expanded_after_click": interaction["button_expanded"],
+                "trust": interaction["trust"],
+            },
             "download": download,
         },
         "cancellation": {

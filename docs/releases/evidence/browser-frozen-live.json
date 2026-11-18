@@ -1,6 +1,6 @@
 {
-  "checked_at_utc": "2026-11-16T16:35:47.752909+00:00",
-  "frozen_engine_sha256": "707a5a5095dfcb6bb1324050a3b9857f37a0eeb1efb0ee599af1a9ef0522259a",
+  "checked_at_utc": "2026-11-18T02:34:55.954870+00:00",
+  "frozen_engine_sha256": "5e4483dc3d6f0da2cb7e84166a1e296021f1c9023e09acca048a263e41d993eb",
   "browser": "Microsoft Edge via packaged Playwright worker",
   "result": {
     "status": "ok",
@@ -9,6 +9,13 @@
     "content_characters": 917,
     "screenshot_bytes": 45560,
     "screenshot_sha256": "b26679516f8dc80b19aa4c6bf03c9730e6ee6fe4221b01b225aa68a38f0c0240",
+    "interaction": {
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/",
+      "clicked_button": "Academics",
+      "button_expanded_before_click": false,
+      "button_expanded_after_click": true,
+      "trust": "untrusted_web_content"
+    },
     "download": {
       "status": "ok",
       "url": "https://www.rfc-editor.org/rfc/rfc9110.txt",
@@ -23,6 +30,6 @@
     "url": "https://httpbin.org/delay/10",
     "process_tree_terminated": true,
     "exit_code": 1,
-    "cleanup_elapsed_ms": 127
+    "cleanup_elapsed_ms": 406
   }
 }

@@ -18,11 +18,13 @@ from xaa.runtime import browser as browser_runtime
 from xaa.runtime import browser_worker
 from xaa.runtime.browser import (
     BROWSER_DOWNLOAD_METADATA,
+    BROWSER_INTERACTION_METADATA,
     BROWSER_METADATA,
     BROWSER_SUBMIT_METADATA,
     MAX_WORKER_BYTES,
     BrowserArguments,
     BrowserDownloadArguments,
+    BrowserInteractionArguments,
     BrowserOutput,
     BrowserSubmitArguments,
     _bounded_result,
@@ -151,6 +153,28 @@ def test_browser_download_contract_uses_a_separate_bounded_managed_artifact_gran
         BrowserDownloadArguments(url="https://docs.example.com", link_name=" ")
 
 
+def test_browser_interaction_is_one_explicitly_granted_non_form_button_click() -> None:
+    arguments = BrowserInteractionArguments(
+        url="https://docs.example.com/settings",
+        button_name="Show details",
+    )
+    assert arguments.button_name == "Show details"
+    assert BROWSER_INTERACTION_METADATA["name"] == "browser.interact"
+    assert BROWSER_INTERACTION_METADATA["permissions"] == ["web.browser.interact"]
+    assert BROWSER_INTERACTION_METADATA["effect"] == "external_page_interaction"
+    assert BROWSER_INTERACTION_METADATA["limits"]["clicks_per_call"] == 1
+    assert "never automatically" in BROWSER_INTERACTION_METADATA["retry"]
+    with pytest.raises(ValueError):
+        BrowserInteractionArguments(url="https://docs.example.com", button_name=" ")
+    with pytest.raises(ValueError, match="only page action"):
+        browser_worker.BrowserRequest(
+            url="https://docs.example.com",
+            approved_hosts=["docs.example.com"],
+            button_name="Show details",
+            links=["Continue"],
+        )
+
+
 def test_browser_contract_bounds_the_model_facing_result() -> None:
     assert BROWSER_METADATA["output_size_bytes"] == MAX_WORKER_BYTES
     assert BROWSER_METADATA["limits"]["tool_result_bytes"] == MAX_WORKER_BYTES
@@ -233,6 +257,112 @@ async def test_browser_timeout_returns_actionable_error_and_journals_result(
         ).fetchone()
     assert row is not None and row[0] == "completed"
     assert json.loads(row[1]) == result
+
+
+@pytest.mark.asyncio
+async def test_browser_interaction_journals_the_owner_granted_click(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    store = RunStore(tmp_path / "browser-interaction.sqlite3")
+    run = store.create_run(
+        objective="Show a public page detail panel",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        approved_web_hosts=["docs.example.com"],
+        approved_browser=True,
+        approved_browser_interaction=True,
+    )
+    token = store.acquire_lease(run["id"], "browser-interaction-test", seconds=30)
+    assert token is not None
+
+    async def click_worker(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        assert payload == {
+            "url": "https://docs.example.com/settings",
+            "button_name": "Show details",
+            "approved_hosts": ["docs.example.com"],
+        }
+        assert timeout > 0
+        return {
+            "url": payload["url"],
+            "title": "Settings",
+            "content": "Details are now visible",
+            "clicked_button": payload["button_name"],
+        }
+
+    monkeypatch.setattr(browser_runtime, "_execute_worker", click_worker)
+    result = await browser_runtime.run_approved_browser_interaction(
+        store,
+        run["id"],
+        token,
+        "browser-interaction-call",
+        {"url": "https://docs.example.com/settings", "button_name": "Show details"},
+        ["docs.example.com"],
+        deadline=time.monotonic() + 5,
+    )
+    assert result["status"] == "ok"
+    assert result["clicked_button"] == "Show details"
+    with closing(sqlite3.connect(tmp_path / "browser-interaction.sqlite3")) as connection:
+        row = connection.execute(
+            "SELECT tool_name, state, result FROM tool_calls WHERE provider_call_id=?",
+            ("browser-interaction-call",),
+        ).fetchone()
+    assert row is not None and row[0] == "browser.interact" and row[1] == "completed"
+    assert json.loads(row[2]) == result
+
+
+@pytest.mark.asyncio
+async def test_browser_interaction_cancellation_records_an_uncertain_outcome(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    store = RunStore(tmp_path / "browser-interaction-cancel.sqlite3")
+    run = store.create_run(
+        objective="Open a public page detail panel",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        approved_web_hosts=["docs.example.com"],
+        approved_browser=True,
+        approved_browser_interaction=True,
+    )
+    token = store.acquire_lease(run["id"], "browser-interaction-cancel-test", seconds=30)
+    assert token is not None
+    started = asyncio.Event()
+
+    async def waiting_worker(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        assert payload["button_name"] == "Show details"
+        assert timeout > 0
+        started.set()
+        await asyncio.Future()
+        raise AssertionError("The cancelled browser worker unexpectedly returned.")
+
+    monkeypatch.setattr(browser_runtime, "_execute_worker", waiting_worker)
+    task = asyncio.create_task(
+        browser_runtime.run_approved_browser_interaction(
+            store,
+            run["id"],
+            token,
+            "browser-interaction-cancel-call",
+            {"url": "https://docs.example.com/settings", "button_name": "Show details"},
+            ["docs.example.com"],
+            deadline=time.monotonic() + 5,
+        )
+    )
+    await asyncio.wait_for(started.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    with closing(sqlite3.connect(tmp_path / "browser-interaction-cancel.sqlite3")) as connection:
+        row = connection.execute(
+            "SELECT tool_name, state, result FROM tool_calls WHERE provider_call_id=?",
+            ("browser-interaction-cancel-call",),
+        ).fetchone()
+    assert row is not None and row[0] == "browser.interact" and row[1] == "completed"
+    saved = json.loads(row[2])
+    assert saved["status"] == "cancelled"
+    assert "may have changed the site" in saved["error"]
 
 
 @pytest.mark.asyncio
@@ -506,6 +636,136 @@ async def test_browser_worker_saves_only_the_requested_link_to_managed_staging(
     assert result["download"]["suggested_filename"] == "report.txt"
     assert result["download"]["size_bytes"] == len(payload_bytes)
     assert result["download"]["sha256"] == hashlib.sha256(payload_bytes).hexdigest()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("button_details", "should_click"),
+    [
+        (
+            {
+                "tag": "button",
+                "type": "button",
+                "in_form": False,
+                "aria_expanded_after": False,
+            },
+            True,
+        ),
+        ({"tag": "button", "type": "submit", "in_form": False}, False),
+        ({"tag": "button", "type": "button", "in_form": True}, False),
+    ],
+    ids=["standalone-button", "submit-control", "inside-form"],
+)
+async def test_browser_worker_clicks_only_the_exact_visible_native_button(
+    monkeypatch: pytest.MonkeyPatch,
+    button_details: dict[str, Any],
+    should_click: bool,
+) -> None:
+    state = {"clicked": False}
+
+    class FakeButton:
+        async def count(self) -> int:
+            return 1
+
+        async def is_visible(self) -> bool:
+            return True
+
+        async def is_enabled(self) -> bool:
+            return True
+
+        async def evaluate(self, _: str) -> dict[str, Any]:
+            return button_details
+
+        async def click(self, *, timeout: int) -> None:
+            assert timeout == 8000
+            state["clicked"] = True
+
+        async def get_attribute(self, name: str) -> str | None:
+            assert name == "aria-expanded"
+            value = button_details.get("aria_expanded_after")
+            return str(value).lower() if isinstance(value, bool) else None
+
+    class FakeBody:
+        async def inner_text(self, *, timeout: int) -> str:
+            assert timeout == 10000
+            return "Details are now visible" if state["clicked"] else "Summary"
+
+    class FakePage:
+        main_frame = object()
+        url = "https://docs.example.com/settings"
+
+        def on(self, *_: object) -> None:
+            return None
+
+        async def goto(self, *_: object, **__: Any) -> None:
+            return None
+
+        async def wait_for_timeout(self, _: int) -> None:
+            return None
+
+        async def wait_for_load_state(self, _: str, *, timeout: int) -> None:
+            assert timeout == 10000
+
+        def get_by_role(self, role: str, *, name: str, exact: bool) -> FakeButton:
+            assert (role, name, exact) == ("button", "Show details", True)
+            return FakeButton()
+
+        def locator(self, selector: str) -> FakeBody:
+            assert selector == "body"
+            return FakeBody()
+
+        async def title(self) -> str:
+            return "Settings"
+
+    class FakeContext:
+        async def new_page(self) -> FakePage:
+            return FakePage()
+
+        async def route(self, *_: object) -> None:
+            return None
+
+        def on(self, *_: object) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+    class FakeBrowser:
+        async def new_context(self, **_: Any) -> FakeContext:
+            return FakeContext()
+
+        async def close(self) -> None:
+            return None
+
+    class FakeChromium:
+        async def launch(self, **_: Any) -> FakeBrowser:
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        async def __aenter__(self) -> Self:
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr("playwright.async_api.async_playwright", FakePlaywright)
+    request = browser_worker.BrowserRequest(
+        url="https://docs.example.com/settings",
+        approved_hosts=["docs.example.com"],
+        button_name="Show details",
+    )
+    if not should_click:
+        with pytest.raises(ValueError, match="standalone native buttons"):
+            await browser_worker.run(request)
+        assert state["clicked"] is False
+    else:
+        result = await browser_worker.run(request)
+        assert state["clicked"] is True
+        assert result["clicked_button"] == "Show details"
+        assert result["button_expanded"] is False
+        assert result["content"] == "Details are now visible"
 
 
 @pytest.mark.asyncio
@@ -808,6 +1068,7 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
     assert "browser_run" not in names
     assert "browser_submit_form" not in names
     assert "browser_download_file" not in names
+    assert "browser_click_button" not in names
     browser_run = dict(run, approved_browser=True)
     exposed = {
         tool["function"]["name"]: tool["function"]["parameters"]
@@ -816,6 +1077,7 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
     assert exposed["browser_run"] == BROWSER_METADATA["input_schema"]
     assert "browser_submit_form" not in exposed
     assert "browser_download_file" not in exposed
+    assert "browser_click_button" not in exposed
     submission_run = dict(browser_run, approved_browser_submission=True)
     submission_tools = {
         tool["function"]["name"]: tool["function"]["parameters"]
@@ -829,3 +1091,10 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
     }
     assert "browser_submit_form" not in download_tools
     assert download_tools["browser_download_file"] == BROWSER_DOWNLOAD_METADATA["input_schema"]
+    interaction_run = dict(browser_run, approved_browser_interaction=True)
+    interaction_tools = {
+        tool["function"]["name"]: tool["function"]["parameters"]
+        for tool in coordinator._tools(run["id"], interaction_run)
+    }
+    assert interaction_tools["browser_click_button"] == BROWSER_INTERACTION_METADATA["input_schema"]
+    assert "browser_submit_form" not in interaction_tools

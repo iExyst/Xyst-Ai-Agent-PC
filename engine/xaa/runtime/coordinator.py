@@ -28,12 +28,15 @@ from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.browser import (
     BROWSER_DOWNLOAD_METADATA,
     BROWSER_DOWNLOAD_TOOL,
+    BROWSER_INTERACTION_METADATA,
+    BROWSER_INTERACTION_TOOL,
     BROWSER_METADATA,
     BROWSER_SUBMIT_METADATA,
     BROWSER_SUBMIT_TOOL,
     BROWSER_TOOL,
     run_approved_browser,
     run_approved_browser_download,
+    run_approved_browser_interaction,
     run_approved_browser_submission,
 )
 from xaa.runtime.command_contracts import CommandArguments, command_tool_description
@@ -1130,6 +1133,24 @@ class Coordinator:
                 run["approved_web_hosts"],
                 deadline=deadline,
             )
+        if name == "browser_click_button":
+            if (
+                not run.get("approved_browser_interaction")
+                or not run.get("approved_browser")
+                or not run.get("approved_web_hosts")
+            ):
+                raise PermissionError(
+                    "This run has no user-approved browser-interaction permission and hostnames."
+                )
+            return await run_approved_browser_interaction(
+                self.store,
+                run_id,
+                token,
+                call["id"],
+                arguments,
+                run["approved_web_hosts"],
+                deadline=deadline,
+            )
         if name == "plan_save":
             return self._propose_plan(run_id, token, call["id"], function["arguments"], tools)
         if name == "plan_run_ready":
@@ -1739,6 +1760,15 @@ class Coordinator:
                 " Approved exact hostnames: " + ", ".join(approved_web_hosts) + "."
             )
             tools.append(download_tool)
+        if run.get("approved_browser_interaction") and approved_web_hosts:
+            interaction_tool = json.loads(json.dumps(BROWSER_INTERACTION_TOOL))
+            interaction_tool["function"]["parameters"] = BROWSER_INTERACTION_METADATA[
+                "input_schema"
+            ]
+            interaction_tool["function"]["description"] += (
+                " Approved exact hostnames: " + ", ".join(approved_web_hosts) + "."
+            )
+            tools.append(interaction_tool)
         tools.append(
             {
                 "type": "function",
