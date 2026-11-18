@@ -144,9 +144,7 @@ async def _kill_and_retry_procedure_install(
     digest = lock.environment_digest()
     unit = f"xaa-procenv-{digest[:32]}.service"
     install_task = asyncio.create_task(
-        transport.install_procedure_environment(
-            lock, wheelhouse, deadline=time.monotonic() + 300
-        )
+        transport.install_procedure_environment(lock, wheelhouse, deadline=time.monotonic() + 300)
     )
     deadline = time.monotonic() + 90
     killed = False
@@ -186,9 +184,7 @@ async def _kill_and_retry_procedure_install(
         pass
     else:
         raise RuntimeError("The Python installer completed despite the requested process kill.")
-    status = await transport.procedure_environment_status(
-        digest, deadline=time.monotonic() + 30
-    )
+    status = await transport.procedure_environment_status(digest, deadline=time.monotonic() + 30)
     root = PurePosixPath("/var/lib/xaa-procedure-environments") / digest
     target_state = _wsl(
         distribution,
@@ -204,10 +200,7 @@ async def _kill_and_retry_procedure_install(
     recovered = await transport.install_procedure_environment(
         lock, wheelhouse, deadline=time.monotonic() + 300
     )
-    if (
-        recovered.get("installed") is not True
-        or recovered.get("environment_digest") != digest
-    ):
+    if recovered.get("installed") is not True or recovered.get("environment_digest") != digest:
         raise RuntimeError("Retry after killing Python install did not recover the environment.")
     return recovered
 
