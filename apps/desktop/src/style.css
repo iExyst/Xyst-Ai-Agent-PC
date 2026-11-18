@@ -509,7 +509,7 @@ body{
 .side-nav a{transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s ease}
 .side-nav a:hover{transform:translateX(2px)}
 .side-nav a.active{box-shadow:inset 2px 0 #83e8ad,0 4px 14px #0002}
-.app-frame{min-height:100vh}
+.app-frame{min-height:100vh;container-type:inline-size}
 .app-topbar{
   background:#101612e8;
   border-color:#27372d;
@@ -602,7 +602,7 @@ body{
 .engine-connect-footer p strong{color:#dcebe0;font-size:11px;font-weight:650}
 .engine-connect-footer p span{color:#87988c;font-size:10px;line-height:1.5}
 .engine-connect-footer-index{color:#56705d;font-size:11px;font-weight:700;letter-spacing:.1em}
-@media(max-width:850px){.app-content>.engine-connect-card{grid-template-columns:1fr;gap:25px;min-height:0;margin:18px auto;padding:28px}.engine-connect-hero{max-width:560px}.app-content .engine-connect-hero h2{margin-top:18px}.engine-connect-assurance{margin-top:22px;padding-top:18px}.engine-connect-panel{padding:20px}.engine-connect-footer{grid-column:auto}}
+@container (max-width:850px){.app-content>.engine-connect-card{grid-template-columns:1fr;gap:25px;min-height:0;margin:18px auto;padding:28px}.engine-connect-hero{max-width:560px}.app-content .engine-connect-hero h2{margin-top:18px}.engine-connect-assurance{margin-top:22px;padding-top:18px}.engine-connect-panel{padding:20px}.engine-connect-footer{grid-column:auto}}
 @media(max-width:640px){
   .app-sidebar{width:100%;background:#101612f5}
   .app-topbar{background:#101612ed}

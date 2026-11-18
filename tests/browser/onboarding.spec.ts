@@ -188,6 +188,13 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
     return route.fulfill({json:[],headers});
   });
   await page.goto('/');
+  const connectionCard=page.locator('.engine-connect-card');
+  await expect(connectionCard).toBeVisible();
+  expect(await connectionCard.evaluate(element=>getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length)).toBe(2);
+  await page.setViewportSize({width:1014,height:768});
+  expect(await connectionCard.evaluate(element=>getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length)).toBe(1);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.setViewportSize({width:1280,height:720});
   await page.keyboard.press('Tab');
   const skipLink=page.getByRole('link',{name:'Skip to main content'});
   await expect(skipLink).toBeFocused();
