@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Verify estimator and updated desktop in the unsigned Windows package (2026-11-18)
+
+Exact-revision installer workflow [44304719705](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44304719705) passed all executed package checks for `ee7e5c94`, including frozen/installed execution, recovery, upgrade, current/standard-user install, boot, uninstall and data removal. The downloaded unsigned 0.1.1 installer is 78,275,151 bytes; its SHA-256 `369e7065fd33d82d5bc0c96cdfce73c1ba9110802b8f4d6661dfff4ec09bcddb` matches its manifest. Package reports and binary are retained in [`.acceptance/hosted-installer-44304719705/`](../../.acceptance/hosted-installer-44304719705/). This verifies packaging and lifecycle, not live LM Studio model-estimate interoperability or inference. See [`progress.md`](../progress.md#verify-the-model-estimate-build-in-the-packaged-windows-app-2026-11-18).
+
 ## Estimate model memory during LM Studio setup (2026-11-18)
 
 The authenticated LM Studio API and dark setup panel expose LM Studio's estimate-only GPU/total memory output for a discovered local model and optional context length. The result is advisory and does not load or download the model. Deterministic endpoint/provider tests and the focused setup browser scenario pass; the browser proves estimating does not invoke model load. Local frontend build, API contract generation, Ruff and strict Pyright pass. Hosted verification is pending. The estimate is not queue admission, VRAM enforcement, or live LM Studio interoperability, so hardware-aware inference scheduling remains partial and live provider testing stays deferred. See [`inference-queue.md`](../architecture/inference-queue.md) and [`progress.md`](../progress.md#estimate-local-model-memory-before-loading-2026-11-18).
