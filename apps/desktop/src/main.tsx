@@ -1,5 +1,5 @@
 import {ResourceLimits, parseLimits, type LimitInputs} from './ResourceLimits.tsx';
-import { lazy, Suspense, useState, useRef, useEffect, useCallback, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useLayoutEffect, useCallback, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { EngineClient, EngineRequestError, type Run, type RunEvent, type Artifact, type Plan, type ChatSession } from './api/client.ts';
 import './style.css';
@@ -565,7 +565,7 @@ function App() {
     window.addEventListener('keydown',handlePaletteKeys);
     return()=>window.removeEventListener('keydown',handlePaletteKeys);
   },[commandPaletteOpen,commandPaletteIndex,commandPaletteQuery,run]);
-  useEffect(()=>{if(commandPaletteOpen)commandPaletteInput.current?.focus();},[commandPaletteOpen]);
+  useLayoutEffect(()=>{if(commandPaletteOpen)commandPaletteInput.current?.focus();},[commandPaletteOpen]);
   async function savePortableBackup(){
     if(!client||backupBusy)return;
     setBackupBusy(true);setBackupStatus('Choose where to save the backup…');
