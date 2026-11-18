@@ -32,7 +32,10 @@ try{
   }
   if(!browser)throw new Error('Native WebView did not expose the acceptance port');
   const page=browser.contexts()[0].pages()[0];
-  await page.getByLabel('Workspace path').waitFor({timeout:30000});
+  // A clean Windows profile can spend up to 60 seconds extracting and starting
+  // the bundled engine. Allow the UI's full startup retry window before
+  // treating a missing workspace field as a packaged-app failure.
+  await page.getByLabel('Workspace path').waitFor({timeout:75000});
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   if(typeof connection?.base_url!=='string'||typeof connection?.token!=='string')throw new Error('Native engine connection is unavailable');
   await page.locator('details.saved-conversations > summary').click();
