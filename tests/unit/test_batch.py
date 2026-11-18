@@ -53,6 +53,7 @@ class BatchClient:
             if self.export_content is None:
                 exported = {
                     "format": "xaa-trajectory",
+                    "format_version": 1,
                     "run": {
                         "id": record["id"],
                         "objective": json["objective"],
@@ -237,6 +238,7 @@ def test_batch_scores_structured_checks_against_exported_trajectory(
     client.export_content = json_bytes(
         {
             "format": "xaa-trajectory",
+            "format_version": 1,
             "run": {
                 "id": "fixture-run",
                 "objective": "Read the fixture nonce",
@@ -310,6 +312,28 @@ def test_batch_scores_structured_checks_against_exported_trajectory(
     assert "checks" not in submitted_payload
 
 
+@pytest.mark.parametrize("format_version", [None, 2])
+def test_batch_scoring_rejects_missing_or_unsupported_trajectory_version(
+    format_version: int | None,
+) -> None:
+    trajectory: dict[str, Any] = {
+        "format": "xaa-trajectory",
+        "run": {"id": "fixture-run", "objective": "Read the fixture nonce", "state": "completed"},
+        "events": [],
+    }
+    if format_version is not None:
+        trajectory["format_version"] = format_version
+    case = BatchCase(
+        id="checked",
+        objective="Read the fixture nonce",
+        acceptance_criteria=[],
+        checks=[BatchCheck(kind="state_equals", expected="completed")],
+    )
+
+    with pytest.raises(ValueError):
+        batch_module.score_trajectory(case, json_bytes(trajectory))
+
+
 def _training_fixture(batch_dir: Path) -> None:
     batch_dir.mkdir()
     (batch_dir / "trajectories").mkdir()
@@ -317,6 +341,7 @@ def _training_fixture(batch_dir: Path) -> None:
     trajectory = json_bytes(
         {
             "format": "xaa-trajectory",
+            "format_version": 1,
             "run": {"id": run_id, "objective": "Summarize the safe fixture", "state": "completed"},
             "events": [
                 {

@@ -1,5 +1,9 @@
 # Progress
 
+## Require a supported trajectory version before batch scoring (2026-11-18)
+
+Batch scoring and training export now require `format_version: 1` in every native trajectory. Missing or unsupported versions fail schema validation instead of being interpreted as the current format. Regression coverage verifies both cases; `uv run pytest tests/unit/test_batch.py -q` passes (13 tests). No model inference was used.
+
 ## Reconfirm installed desktop backup restore in the current installer (2026-11-18)
 
 Hosted installer run [44260973472](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44260973472) passed the installed Tauri restore flow. The retained report verifies authenticated restore into a separate profile, database and artifact contents, unchanged active profile until owner confirmation, disabled profile switching before confirmation, restart into the restored profile, and restored-run availability after restart ([report](../.acceptance/hosted-installer-44260973472/xaa-windows-installer-unsigned/.acceptance/installed-backup-1300a267dff5404dad9d2186641d970b/report.json)). This closes the packaged desktop restore/profile-switch acceptance gap for synthetic data. Existing-user migration beyond the tested upgrade baseline and disaster recovery with real user data remain open. No model inference was requested.

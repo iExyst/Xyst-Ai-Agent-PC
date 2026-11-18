@@ -96,6 +96,7 @@ class _TrajectoryDocument(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
     format: Literal["xaa-trajectory"]
+    format_version: Literal[1]
     run: _TrajectoryRun
     events: list[_TrajectoryEvent]
 
