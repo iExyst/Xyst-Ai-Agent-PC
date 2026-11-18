@@ -2,7 +2,7 @@
 
 ## Announce model connection changes to assistive technology (2026-11-18)
 
-The desktop top bar exposes the changing local-model readiness state as a polite atomic status live region. The objective browser flow verifies the accessible ready state. Local focused Playwright, desktop production build, API-contract, and strict Pyright checks pass; hosted verification is pending. This is a narrow improvement to desktop keyboard and screen-reader behavior, not a closure of the broader accessibility audit. See [`progress.md`](../progress.md#announce-model-readiness-to-assistive-technology-2026-11-18).
+The desktop top bar exposes the changing local-model readiness state as a polite atomic status live region. The objective browser flow verifies the accessible ready state. Local focused Playwright, desktop production build, API-contract, and strict Pyright checks pass. Exact-source Windows workflow [44229867965](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44229867965) and exact-commit installer workflow [44230470914](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44230470914) passed. The installer acceptance covered packaged native recovery and conflict review, frozen workers, upgrade, install/boot/uninstall, and standard-user install using deterministic providers. The broader keyboard, contrast, screen-reader, and complete desktop workflow audit remains open. See [`progress.md`](../progress.md#announce-model-readiness-to-assistive-technology-2026-11-18).
 
 ## Inspect both sides of a specialist integration conflict (2026-11-17)
 
