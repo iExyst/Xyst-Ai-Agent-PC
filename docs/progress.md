@@ -2,7 +2,7 @@
 
 ## Simplify run resource details in the dark desktop (2026-11-17)
 
-The active-run screen now presents model, run limits, remaining iterations/time, and the token threshold as a compact dark summary. Detailed token measurements, reservations, and accounting notes are behind a keyboard-accessible disclosure so they remain available without crowding the main task view. The focused objective browser flow verifies the summary is visible, usage details start collapsed, and the accounting expands on demand. `npm run build:desktop` and `npx playwright test tests/browser/objective.spec.ts --workers=4` pass. This is a focused UI improvement, not completion of the desktop or release gates.
+The active-run screen now presents model, run limits, remaining iterations/time, and the token threshold as a compact dark summary. Detailed token measurements, reservations, and accounting notes are behind a keyboard-accessible disclosure so they remain available without crowding the main task view. The disclosure uses the desktop's 3px visible keyboard focus treatment. The focused objective browser flow verifies the summary is visible, usage details start collapsed, and the accounting expands on demand. The objective flow and the task-review, voice-input, and onboarding keyboard/browser flows pass locally (9); `npm run build:desktop` also passes. This is a focused UI improvement, not completion of the desktop or release gates.
 
 ## Recheck locked dependency notice references (2026-11-17)
 

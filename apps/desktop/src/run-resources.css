@@ -68,9 +68,8 @@
 }
 
 .run-resource-details summary:focus-visible {
-  outline: 2px solid #a1e8b7;
-  outline-offset: 4px;
-  border-radius: 2px;
+  outline: 3px solid #a1e8b7;
+  outline-offset: 3px;
 }
 
 .run-resource-detail-content {
