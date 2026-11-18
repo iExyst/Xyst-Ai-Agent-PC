@@ -91,6 +91,7 @@ function conversationObjective(previous:ChatSession['messages'],current:string):
 function App() {
   const [page,setPage]=useState<DesktopPage>('home');
   const [commandPaletteOpen,setCommandPaletteOpen]=useState(false);
+  const commandPaletteOpenRef=useRef(false);
   const [commandPaletteQuery,setCommandPaletteQuery]=useState('');
   const [commandPaletteIndex,setCommandPaletteIndex]=useState(0);
   const commandPaletteInput=useRef<HTMLInputElement>(null);
@@ -535,14 +536,14 @@ function App() {
   const filteredNavigationCommands=navigationCommands.filter(([label,, ,keywords])=>`${label} ${keywords}`.toLowerCase().includes(commandPaletteQuery.trim().toLowerCase()));
   function openCommandPalette(){
     commandPaletteReturnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
-    setCommandPaletteQuery('');setCommandPaletteIndex(0);setCommandPaletteOpen(true);
+    commandPaletteOpenRef.current=true;setCommandPaletteQuery('');setCommandPaletteIndex(0);setCommandPaletteOpen(true);
   }
   function closeCommandPalette(){
-    setCommandPaletteOpen(false);setCommandPaletteQuery('');
+    commandPaletteOpenRef.current=false;setCommandPaletteOpen(false);setCommandPaletteQuery('');
     window.setTimeout(()=>commandPaletteReturnFocus.current?.focus({preventScroll:true}),0);
   }
   function chooseNavigationCommand(command:[string,DesktopPage,DesktopNavTarget,string]){
-    setCommandPaletteOpen(false);setCommandPaletteQuery('');navigateTo(command[1],command[2]);
+    commandPaletteOpenRef.current=false;setCommandPaletteOpen(false);setCommandPaletteQuery('');navigateTo(command[1],command[2]);
   }
   function trapCommandPaletteTab(event:ReactKeyboardEvent<HTMLElement>){
     if(event.key!=='Tab')return;
@@ -558,10 +559,10 @@ function App() {
     const handlePaletteKeys=(event:KeyboardEvent)=>{
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){
         event.preventDefault();
-        if(commandPaletteOpen)closeCommandPalette();else openCommandPalette();
+        if(commandPaletteOpenRef.current)closeCommandPalette();else openCommandPalette();
         return;
       }
-      if(!commandPaletteOpen)return;
+      if(!commandPaletteOpenRef.current)return;
       if(event.key==='Escape'){event.preventDefault();closeCommandPalette();}
       else if(event.key==='ArrowDown'&&filteredNavigationCommands.length){event.preventDefault();setCommandPaletteIndex(index=>(index+1)%filteredNavigationCommands.length);}
       else if(event.key==='ArrowUp'&&filteredNavigationCommands.length){event.preventDefault();setCommandPaletteIndex(index=>(index-1+filteredNavigationCommands.length)%filteredNavigationCommands.length);}

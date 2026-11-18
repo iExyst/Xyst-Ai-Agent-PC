@@ -353,7 +353,10 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await quickNavigation.getByRole('combobox',{name:'Search sections'}).fill('saved runs');
   await quickNavigation.getByRole('combobox',{name:'Search sections'}).press('Enter');
   await expect(page.getByRole('navigation',{name:'Main sections'}).getByRole('link',{name:'Saved runs'})).toHaveAttribute('aria-current','page');
+  await expect(quickNavigation).toBeHidden();
   await page.keyboard.press('Control+k');
+  await expect(quickNavigation).toBeVisible();
+  await expect(quickNavigation.getByRole('combobox',{name:'Search sections'})).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(quickNavigation.getByRole('button',{name:'Close quick navigation'})).toBeFocused();
   await page.keyboard.press('Shift+Tab');
