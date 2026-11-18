@@ -1,5 +1,9 @@
 # Progress
 
+## Verify the complete Python suite after CLI and scheduler changes (2026-11-18)
+
+The full Python suite passed on the current source: 1,505 passed and 1 skipped in 14m09s. The first full run exposed a Windows permission error when pytest tried to rename a fixture under a workspace-local temp directory; the isolated test passed when rerun under `%TEMP%`, and the complete suite then passed using a fresh `%TEMP%` basetemp. No source changes were needed for the environment-specific failure. This verifies the Python suite only; it does not close desktop, installer, provider interoperability, or release acceptance. No live model inference was used.
+
 ## Stream interactive CLI chat from durable run events (2026-11-18)
 
 Interactive terminal chat now consumes the authenticated event stream and writes model text deltas as they arrive instead of polling until a turn finishes. It validates SSE IDs and contiguous event sequence numbers, reconnects from the last complete event after a dropped stream, and bounds retries; Ctrl+C still requests cancellation of the active run. The mocked CLI regression covers resume after a saved delta and rejects a mismatched wire ID before accepting later events. The full CLI suite passed (7); Ruff, formatting, and CLI Pyright passed. No live model inference was used. Broader interactive terminal feature parity remains partial.
