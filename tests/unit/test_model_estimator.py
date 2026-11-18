@@ -151,6 +151,43 @@ async def test_estimator_timeout_tolerates_process_exit_racing_with_kill(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_estimator_cancellation_stops_the_cli(monkeypatch):
+    started = asyncio.Event()
+
+    class Process:
+        returncode = None
+        killed = False
+
+        async def communicate(self):
+            started.set()
+            await asyncio.Event().wait()
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+
+        async def wait(self):
+            return self.returncode
+
+    process = Process()
+
+    async def create_subprocess_exec(*args, **kwargs):
+        return process
+
+    monkeypatch.setattr(model_estimator, "_find_lms_executable", lambda: "lms")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_subprocess_exec)
+    estimate = asyncio.create_task(
+        model_estimator.estimate_model_resources("fixture/model", host="http://127.0.0.1:1234")
+    )
+    await started.wait()
+    estimate.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await estimate
+    assert process.killed
+
+
+@pytest.mark.asyncio
 async def test_provider_estimate_requires_discovered_model_and_respects_context(monkeypatch):
     calls: list[tuple[str, str, int | None]] = []
 
