@@ -1,5 +1,9 @@
 # Progress
 
+## Stream interactive CLI chat from durable run events (2026-11-18)
+
+Interactive terminal chat now consumes the authenticated event stream and writes model text deltas as they arrive instead of polling until a turn finishes. It validates contiguous event sequence numbers and reconnects from the last complete event after a dropped stream, with bounded retries; Ctrl+C still requests cancellation of the active run. The mocked CLI regression drops the first stream after a saved delta, resumes from that sequence, and verifies the full answer is recorded once in session history. `uv run pytest tests/unit/test_cli.py -q` passed (6); Ruff, formatting, and CLI Pyright passed. No live model inference was used. Broader interactive terminal feature parity remains partial.
+
 ## Keep scheduled execution polling after dispatch failures (2026-11-18)
 
 The scheduler persists each occurrence and queued run before handing it to the supervisor. A dispatch exception previously escaped the tick and could terminate the background polling task. Dispatch failures are now isolated per queued run, logged without request contents, and do not stop later dispatches; the durable queued runs remain eligible for supervisor recovery. Regression coverage injects a transient first-dispatch failure, verifies the next run is still submitted, and confirms both persisted run IDs are recoverable. `uv run pytest tests/unit/test_schedules.py -q` passed (19); Ruff, formatting, and Pyright passed. No live model inference was used.

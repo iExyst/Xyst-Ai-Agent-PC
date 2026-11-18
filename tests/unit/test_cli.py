@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from typing import Self
@@ -177,6 +178,7 @@ def test_cli_requires_explicit_confirmation_before_deleting_a_session(monkeypatc
 def test_cli_chat_carries_context_and_reset_starts_fresh_session(monkeypatch, capsys) -> None:
     objectives: list[str] = []
     answers = ["First answer", "Second answer", "Fresh answer", "Fourth answer"]
+    stream_attempts: dict[str, int] = {}
     session: dict[str, object] | None = None
 
     class Response:
@@ -194,6 +196,20 @@ def test_cli_chat_carries_context_and_reset_starts_fresh_session(monkeypatch, ca
 
         def json(self) -> object:
             return self.body
+
+    class StreamResponse(Response):
+        def __init__(self, lines: list[str]) -> None:
+            super().__init__(None)
+            self.lines = lines
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def iter_lines(self):
+            yield from self.lines
 
     class Client:
         def __init__(self, *, base_url: str, headers: dict[str, str], timeout: int) -> None:
@@ -238,19 +254,67 @@ def test_cli_chat_carries_context_and_reset_starts_fresh_session(monkeypatch, ca
         def get(self, path: str, params: dict[str, object] | None = None) -> Response:
             if path == "/chat/sessions/default":
                 return Response(session, 404) if session is None else Response(session)
-            if path.endswith("/events"):
-                index = int(path.split("/")[2].split("-")[1]) - 1
-                return Response(
+            return Response({"state": "verifying"})
+
+        def stream(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict[str, object],
+            timeout: None,
+        ) -> StreamResponse:
+            assert method == "GET"
+            assert path.endswith("/events/stream")
+            assert timeout is None
+            run_id = path.split("/")[2]
+            index = int(run_id.split("-")[1]) - 1
+            attempt = stream_attempts.get(run_id, 0) + 1
+            stream_attempts[run_id] = attempt
+            cursor = int(params["after"])
+            if index == 0 and attempt == 1:
+                return StreamResponse(
                     [
-                        {
-                            "event_type": "model.message",
-                            "payload": {
-                                "message": {"role": "assistant", "content": answers[index]}
-                            },
-                        }
+                        "id: 1",
+                        "event: run_event",
+                        'data: {"sequence":1,"event_type":"model.delta","payload":{"inference_id":"inference-1","text":"First "}}',
+                        "",
                     ]
                 )
-            return Response({"state": "verifying"})
+            first_sequence = cursor + 1
+            answer = answers[index]
+            delta = answer[len("First ") :] if index == 0 and cursor == 1 else answer
+            events = [
+                {
+                    "sequence": first_sequence,
+                    "event_type": "model.delta",
+                    "payload": {"inference_id": f"inference-{index + 1}", "text": delta},
+                },
+                {
+                    "sequence": first_sequence + 1,
+                    "event_type": "model.message",
+                    "payload": {
+                        "inference_id": f"inference-{index + 1}",
+                        "message": {"role": "assistant", "content": answer},
+                    },
+                },
+                {
+                    "sequence": first_sequence + 2,
+                    "event_type": "run.state_changed",
+                    "payload": {"to": "verifying"},
+                },
+            ]
+            lines: list[str] = []
+            for event in events:
+                lines.extend(
+                    [
+                        f"id: {event['sequence']}",
+                        "event: run_event",
+                        f"data: {json.dumps(event)}",
+                        "",
+                    ]
+                )
+            return StreamResponse(lines)
 
         def delete(self, path: str) -> Response:
             assert path == "/chat/sessions/default"
@@ -274,7 +338,10 @@ def test_cli_chat_carries_context_and_reset_starts_fresh_session(monkeypatch, ca
     assert "Second question" not in objectives[2]
     output = capsys.readouterr().out
     assert "Conversation context cleared" in output
-    assert "agent [verifying]> Fresh answer" in output
+    assert "agent> Fresh answer" in output
+    assert output.count("First answer") == 1
+    assert "First First answer" not in output
+    assert stream_attempts["run-1"] == 2
 
     next_prompts = iter(["Fourth question", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(next_prompts))
@@ -319,17 +386,15 @@ def test_cli_chat_interrupt_requests_run_cancellation(monkeypatch, capsys) -> No
         def get(self, path: str, params: dict[str, object] | None = None) -> Response:
             if path == "/chat/sessions/default":
                 return Response(None, 404)
-            if path.endswith("/events"):
-                return Response([])
             return Response({"state": "running"})
+
+        def stream(self, *_args: object, **_kwargs: object):
+            raise KeyboardInterrupt
 
     monkeypatch.setattr(cli.httpx, "Client", Client)
     monkeypatch.setenv("XAA_API_TOKEN", "c" * 32)
     monkeypatch.setattr(sys, "argv", ["xaa", "chat", "--model", "local/model"])
     monkeypatch.setattr("builtins.input", lambda _prompt: "Interrupt this run")
-    monkeypatch.setattr(
-        cli.time, "sleep", lambda _seconds: (_ for _ in ()).throw(KeyboardInterrupt())
-    )
 
     cli.main()
 

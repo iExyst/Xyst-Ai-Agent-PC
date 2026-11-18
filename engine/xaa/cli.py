@@ -6,6 +6,7 @@ import getpass
 import json
 import os
 import sqlite3
+import sys
 import time
 from pathlib import Path
 from typing import cast
@@ -487,53 +488,8 @@ def _interactive_chat(client: httpx.Client, args: argparse.Namespace) -> None:
             run_id = str(response.json()["id"])
             print(f"run {run_id}: working…", flush=True)
             run_path = f"/runs/{quote(str(run_id), safe='')}"
-            answer = ""
-            cursor = 0
-            last_state = ""
-            while True:
-                state_response = client.get(run_path)
-                state_response.raise_for_status()
-                state = state_response.json()["state"]
-                if state != last_state:
-                    print(f"state: {state}", flush=True)
-                    last_state = state
-                events_response = client.get(f"{run_path}/events", params={"after": cursor})
-                events_response.raise_for_status()
-                raw_events: object = events_response.json()
-                event_list: list[object] = (
-                    cast(list[object], raw_events) if isinstance(raw_events, list) else []
-                )
-                for raw_event in event_list:
-                    if not isinstance(raw_event, dict):
-                        continue
-                    event = cast(dict[str, object], raw_event)
-                    sequence = event.get("sequence")
-                    if isinstance(sequence, int):
-                        cursor = max(cursor, sequence)
-                    if event.get("event_type") != "model.message":
-                        continue
-                    payload = event.get("payload")
-                    if not isinstance(payload, dict):
-                        continue
-                    message = cast(dict[str, object], payload).get("message")
-                    if not isinstance(message, dict):
-                        continue
-                    content = cast(dict[str, object], message).get("content")
-                    if isinstance(content, str) and content.strip():
-                        answer = content.strip()
-                if state in {
-                    "verifying",
-                    "completed",
-                    "blocked",
-                    "failed",
-                    "cancelled",
-                    "waiting_for_approval",
-                    "paused",
-                }:
-                    break
-                time.sleep(0.5)
+            state, answer = _stream_chat_run(client, run_path)
             if answer and state in {"verifying", "completed"}:
-                print(f"agent [{state}]> {answer}\n")
                 session_response = client.post(
                     f"{session_path}/turn",
                     json={
@@ -564,6 +520,113 @@ def _interactive_chat(client: httpx.Client, args: argparse.Namespace) -> None:
             print(f"Engine rejected this turn (HTTP {exc.response.status_code}).")
         except httpx.HTTPError:
             print("Lost connection to the engine; the saved run can be inspected with xaa history.")
+
+
+def _stream_chat_run(client: httpx.Client, run_path: str) -> tuple[str, str]:
+    """Stream durable run events, reconnecting from the last complete event."""
+    cursor = 0
+    answer = ""
+    state = "running"
+    streamed_inferences: set[str] = set()
+    attempts = 0
+    terminal = {
+        "verifying",
+        "completed",
+        "blocked",
+        "failed",
+        "cancelled",
+        "waiting_for_approval",
+        "paused",
+    }
+    while attempts <= 3:
+        try:
+            with client.stream(
+                "GET", f"{run_path}/events/stream", params={"after": cursor}, timeout=None
+            ) as response:
+                response.raise_for_status()
+                event_name = ""
+                data: list[str] = []
+                for line in response.iter_lines():
+                    if line:
+                        if line.startswith("event:"):
+                            event_name = line[6:].strip()
+                        elif line.startswith("data:"):
+                            data.append(line[5:].lstrip())
+                        continue
+                    if event_name == "done":
+                        saved = client.get(run_path)
+                        saved.raise_for_status()
+                        state = str(saved.json().get("state", state))
+                        return state, answer
+                    if event_name == "run_event" and data:
+                        raw: object = json.loads("\n".join(data))
+                        if not isinstance(raw, dict):
+                            raise ValueError("Engine returned a malformed run event.")
+                        event = cast(dict[str, object], raw)
+                        sequence = event.get("sequence")
+                        if not isinstance(sequence, int) or sequence <= 0:
+                            raise ValueError(
+                                "Engine returned a run event without a valid sequence."
+                            )
+                        if sequence > cursor:
+                            if sequence != cursor + 1:
+                                raise ValueError(
+                                    "Engine event sequence has a gap; reconnect from the last saved cursor."
+                                )
+                            cursor = sequence
+                            payload_value = event.get("payload")
+                            payload = (
+                                cast(dict[str, object], payload_value)
+                                if isinstance(payload_value, dict)
+                                else {}
+                            )
+                            event_type = event.get("event_type")
+                            inference_id = payload.get("inference_id")
+                            if event_type == "model.delta":
+                                chunk = payload.get("text")
+                                if isinstance(chunk, str) and chunk:
+                                    identity = str(inference_id or "unknown")
+                                    if identity not in streamed_inferences:
+                                        sys.stdout.write("agent> ")
+                                        streamed_inferences.add(identity)
+                                    sys.stdout.write(chunk)
+                                    sys.stdout.flush()
+                            elif event_type == "model.message":
+                                message_value = payload.get("message")
+                                if isinstance(message_value, dict):
+                                    message = cast(dict[str, object], message_value)
+                                    content = message.get("content")
+                                    identity = str(inference_id or "unknown")
+                                    if (
+                                        isinstance(content, str)
+                                        and content.strip()
+                                        and not message.get("tool_calls")
+                                    ):
+                                        answer = content.strip()
+                                        if identity not in streamed_inferences:
+                                            print(f"agent> {answer}", flush=True)
+                                            streamed_inferences.add(identity)
+                                        else:
+                                            print(flush=True)
+                            elif event_type == "run.state_changed":
+                                destination = payload.get("to")
+                                if isinstance(destination, str):
+                                    state = destination
+                                    print(f"state: {state}", flush=True)
+                                    if state in terminal:
+                                        return state, answer
+                    event_name = ""
+                    data.clear()
+            if attempts == 3:
+                raise httpx.RemoteProtocolError("Run event stream ended before completion.")
+        except httpx.HTTPStatusError:
+            raise
+        except httpx.HTTPError:
+            if attempts == 3:
+                raise
+        attempts += 1
+        time.sleep(min(0.25 * (2**attempts), 2.0))
+    return state, answer
 
 
 def _chat_transcript(value: object) -> list[tuple[str, str]]:
