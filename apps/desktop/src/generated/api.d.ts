@@ -1239,6 +1239,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/lm-studio/model-estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Estimate Lm Studio Model Load */
+        post: operations["estimate_lm_studio_model_load_providers_lm_studio_model_estimate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/lm-studio/selection": {
         parameters: {
             query?: never;
@@ -3483,6 +3500,29 @@ export interface components {
             context_length?: number | null;
             /** Model */
             model: string;
+        };
+        /** ModelResourceEstimateResponse */
+        ModelResourceEstimateResponse: {
+            /** Context Length */
+            context_length: number | null;
+            /** Estimated Gpu Memory Bytes */
+            estimated_gpu_memory_bytes?: number | null;
+            /** Estimated Total Memory Bytes */
+            estimated_total_memory_bytes?: number | null;
+            /**
+             * Guardrail
+             * @enum {string}
+             */
+            guardrail: "may_load" | "warning" | "unknown";
+            /** Message */
+            message: string;
+            /** Model */
+            model: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "estimated" | "unavailable" | "failed";
         };
         /** NpmDependencyLockList */
         NpmDependencyLockList: {
@@ -7695,6 +7735,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+        };
+    };
+    estimate_lm_studio_model_load_providers_lm_studio_model_estimate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelResourceEstimateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -11,6 +11,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   let diagnostics=0;
   let loadedInstances:{id:string;context_length:number}[]=[];
   const modelLoads:{model:string;context_length?:number}[]=[];
+  const modelEstimates:{model:string;context_length?:number}[]=[];
   const modelUnloads:string[]=[];
   let releaseInitialConfig!:()=>void;
   let holdInitialConfig=true;
@@ -25,6 +26,10 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
     if(path==='/models/load'&&req.method()==='POST'){
       const data=req.postDataJSON();modelLoads.push(data);loadedInstances=[{id:'fixture-instance-1',context_length:data.context_length??4096}];
       return route.fulfill({json:{instance_id:'fixture-instance-1',status:'loaded'},headers});
+    }
+    if(path==='/providers/lm-studio/model-estimate'&&req.method()==='POST'){
+      const data=req.postDataJSON();modelEstimates.push(data);
+      return route.fulfill({json:{model:data.model,context_length:data.context_length??null,status:'estimated',estimated_gpu_memory_bytes:2500000000,estimated_total_memory_bytes:4000000000,guardrail:'may_load',message:'Estimate only; no model was loaded or downloaded.'},headers});
     }
     if(path==='/models/unload'&&req.method()==='POST'){
       const id=req.postDataJSON().instance_id;modelUnloads.push(id);loadedInstances=loadedInstances.filter(instance=>instance.id!==id);
@@ -104,6 +109,11 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await expect(localCapabilities).toContainText('Reported');
   await expect(localCapabilities).toContainText('Tool use still requires the harmless diagnostic below before workspace tools are enabled.');
   await expect(page.getByLabel('LM Studio model lifecycle')).toBeVisible();
+  await page.getByRole('button',{name:'Estimate model memory'}).click();
+  await expect.poll(()=>modelEstimates).toEqual([{model:'fixture/model'}]);
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('GPU memory: 2.5 GB · Total memory: 4.0 GB');
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('No model was loaded or downloaded.');
+  expect(modelLoads).toEqual([]);
   await page.getByLabel('Context length for new instance (optional)').fill('65536');
   await page.getByRole('button',{name:'Load model',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('exceeds the discovered model maximum');

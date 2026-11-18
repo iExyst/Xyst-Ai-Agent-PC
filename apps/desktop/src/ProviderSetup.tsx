@@ -1,5 +1,6 @@
 import {useEffect, useState} from 'react';
 import type {EngineClient} from './api/client.ts';
+import type {ModelResourceEstimate} from './api/client.ts';
 import type {components} from './generated/api.js';
 
 type ModelInfo = components['schemas']['ModelInfo'];
@@ -23,6 +24,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [credentialConfigured,setCredentialConfigured]=useState(false);
   const [modelDetails,setModelDetails]=useState<ModelInfo[]>([]);
   const [contextLength,setContextLength]=useState('');
+  const [resourceEstimate,setResourceEstimate]=useState<ModelResourceEstimate|null>(null);
   const [compatibleEndpoint,setCompatibleEndpoint]=useState('');
   const [compatibleCredential,setCompatibleCredential]=useState('');
   const [compatibleCredentialConfigured,setCompatibleCredentialConfigured]=useState(false);
@@ -132,6 +134,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   async function select(value:string) {
     onModelChanged(value);
     onDiagnosticPassed(false);
+    setResourceEstimate(null);
     setDiagnostic('unknown');setError('');
     try {
       if(value.startsWith('openai-compatible::'))await client.selectCompatibleProviderModel(value||null);
@@ -157,6 +160,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   }
 
   async function refreshModelDetails() {
+    setResourceEstimate(null);
     const available=await client.models();
     setModelDetails(available);
     onModelsChanged(available.map(item=>item.id));
@@ -184,12 +188,34 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     } finally {setBusy(false);}
   }
 
+  async function estimateSelectedModel() {
+    if(!model||model.startsWith('openai-compatible::'))return;
+    const requested=contextLength.trim()?Number(contextLength):undefined;
+    if(requested!==undefined&&(!Number.isInteger(requested)||requested<512||requested>10_000_000)){
+      setError('Context length must be a whole number from 512 to 10,000,000 tokens.');return;
+    }
+    if(requested!==undefined&&selectedDetails?.context_length&&requested>selectedDetails.context_length){
+      setError(`Context length exceeds the discovered model maximum of ${selectedDetails.context_length.toLocaleString()} tokens.`);return;
+    }
+    setBusy(true);setError('');setResourceEstimate(null);
+    try {
+      const estimate=await client.estimateModelResources(model,requested);
+      setResourceEstimate(estimate);
+    } catch(failure) {
+      setError(failure instanceof Error?failure.message:'Could not estimate model memory.');
+    } finally {setBusy(false);}
+  }
+
+  function formatMemory(bytes:number|undefined|null) {
+    return bytes===null||bytes===undefined?'Not reported':`${(bytes/1_000_000_000).toFixed(1)} GB`;
+  }
+
   async function unloadModelInstance(instanceId:string) {
     setBusy(true);setError('');setDiagnostic('unknown');
     setStatus(`Unloading model instance ${instanceId}…`);
     try {
       await client.unloadModel(instanceId);
-      onDiagnosticPassed(false);
+    onDiagnosticPassed(false);setResourceEstimate(null);
       await refreshModelDetails();
       setStatus(`Unloaded model instance ${instanceId}.`);
     } catch(failure) {
@@ -233,8 +259,17 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
             <h3>Model lifecycle</h3>
             <p>Load uses model files already installed in LM Studio. X.A.A. does not download models. Leave context length blank to use the server default. Unloading an instance may prevent the next turn of an active run using that model.</p>
             <label htmlFor="model-context-length">Context length for new instance (optional)</label>
-            <input id="model-context-length" type="number" min={512} max={10_000_000} step={512} value={contextLength} disabled={busy} onChange={event=>setContextLength(event.target.value)}/>
+            <input id="model-context-length" type="number" min={512} max={10_000_000} step={512} value={contextLength} disabled={busy} onChange={event=>{setContextLength(event.target.value);setResourceEstimate(null);}}/>
             {selectedDetails.context_length&&<p className="model-context-limit">Discovered model maximum: {selectedDetails.context_length.toLocaleString()} tokens.</p>}
+            <button type="button" className="secondary-button" disabled={busy} onClick={()=>void estimateSelectedModel()}>Estimate model memory</button>
+            {resourceEstimate&&<div className="model-resource-estimate" role={resourceEstimate.status==='failed'?'alert':'status'}>
+              {resourceEstimate.status==='estimated'?<>
+                <strong>LM Studio estimate · advisory only</strong>
+                <p>GPU memory: {formatMemory(resourceEstimate.estimated_gpu_memory_bytes)} · Total memory: {formatMemory(resourceEstimate.estimated_total_memory_bytes)}</p>
+                <p>{resourceEstimate.guardrail==='may_load'?'LM Studio reports this may load within its resource guardrails.':resourceEstimate.guardrail==='warning'?'LM Studio reports this may exceed resource guardrails.':'LM Studio did not report a guardrail result.'}</p>
+              </>:<p>{resourceEstimate.message}</p>}
+              <p>This estimate is not a guarantee. No model was loaded or downloaded.</p>
+            </div>}
             <button type="button" disabled={busy} onClick={()=>void loadSelectedModel()}>{selectedDetails.loaded?'Load another instance':'Load model'}</button>
             {loadedInstances.length>0
               ? <ul className="model-instance-list" aria-label="Loaded model instances">{loadedInstances.map(instance=><li key={instance.id}>
@@ -261,7 +296,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
         const saved=await client.setCompatibleProviderEndpoint(compatibleEndpoint);
         setCompatibleEndpoint(saved.endpoint??'');
         if(model.startsWith('openai-compatible::'))onModelChanged('');
-        onDiagnosticPassed(false);
+        onDiagnosticPassed(false);setResourceEstimate(null);
         const providers=await client.providers();
         const configured=providers.find(item=>item.id==='openai-compatible');
         if(configured?.status!=='connected')throw new Error(configured?.error??'The configured provider is unavailable.');

@@ -17,4 +17,6 @@ uv run python scripts/live_timeout_diagnostic.py
 
 The diagnostic does not download models and unloads only the instance it starts.
 
-This is a process-local single-server scheduler, not a GPU memory manager. It has no priority classes or model-size/VRAM telemetry, and external clients that call LM Studio directly bypass it. The configured weight budget and server serialization do not establish a hard aggregate context or memory ceiling. Multi-server routing, hardware-aware capacity discovery, and broad model-by-model cancellation/timeout acceptance remain open.
+Model setup can ask LM Studio's `lms load --estimate-only` mode for advisory GPU and total memory estimates for a discovered model and optional context length. This does not load or download the model and is not connected to queue admission. Estimates can be unavailable when the CLI is missing or fail when the installed CLI does not support the request; they do not guarantee a successful load.
+
+This is a process-local single-server scheduler, not a GPU memory manager. It has no priority classes or queue-integrated VRAM capacity enforcement, and external clients that call LM Studio directly bypass it. The configured weight budget and server serialization do not establish a hard aggregate context or memory ceiling. Multi-server routing, hardware-aware queue scheduling, and broad model-by-model cancellation/timeout acceptance remain open.

@@ -1291,6 +1291,10 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 .model-instance-controls label{color:#c4d2ca;font-size:12px}
 .model-instance-controls input{max-width:260px}
 .model-instance-controls .model-context-limit{color:#8fa29a;font-variant-numeric:tabular-nums}
+.model-resource-estimate{display:grid;gap:5px;padding:12px 14px;border:1px solid #365548;border-radius:9px;background:linear-gradient(145deg,#14231c,#12191a);color:#d5e8dc}
+.model-resource-estimate strong{font-size:12px;color:#b9e7cb}
+.model-resource-estimate p{margin:0;color:#a9bdb2;font-size:12px;line-height:1.5}
+.model-resource-estimate[role=alert]{border-color:#714844;background:linear-gradient(145deg,#281a19,#191717)}
 .model-instance-list{display:grid;gap:8px;margin:4px 0 0;padding:0;list-style:none}
 .model-instance-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;padding:9px 10px;border:1px solid #2c3b35;border-radius:8px;background:#111817;color:#aebdb5;font-size:11px}
 .model-instance-list li>span{min-width:0;overflow-wrap:anywhere}

@@ -16,6 +16,7 @@ import time
 import zipfile
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -249,6 +250,17 @@ class ModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str = Field(min_length=1, max_length=256)
     context_length: int | None = Field(default=None, ge=512, le=10_000_000)
+
+
+class ModelResourceEstimateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    model: str = Field(min_length=1, max_length=256)
+    context_length: int | None = Field(ge=512, le=10_000_000)
+    status: Literal["estimated", "unavailable", "failed"]
+    estimated_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    estimated_total_memory_bytes: int | None = Field(default=None, ge=0)
+    guardrail: Literal["may_load", "warning", "unknown"]
+    message: str = Field(max_length=512)
 
 
 class GPUResourceSnapshot(BaseModel):
@@ -3712,6 +3724,28 @@ def create_app(
             return {"instance_id": instance, "status": "loaded"}
         except ProviderError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.post(
+        "/providers/lm-studio/model-estimate",
+        response_model=ModelResourceEstimateResponse,
+    )
+    async def estimate_lm_studio_model_load(
+        payload: ModelRequest, _: None = Depends(authenticate)
+    ) -> ModelResourceEstimateResponse:
+        if payload.model.startswith(OPENAI_MODEL_PREFIX):
+            raise HTTPException(
+                status_code=422,
+                detail="Resource estimates are available only for discovered LM Studio models.",
+            )
+        try:
+            estimate = await provider.lm_studio.estimate_model_load(
+                payload.model, context_length=payload.context_length
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except ProviderError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return ModelResourceEstimateResponse.model_validate(asdict(estimate))
 
     @app.post("/models/unload")
     async def unload_model(

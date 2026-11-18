@@ -2924,6 +2924,86 @@
         "title": "ModelRequest",
         "type": "object"
       },
+      "ModelResourceEstimateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "context_length": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 512.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Length"
+          },
+          "estimated_gpu_memory_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Gpu Memory Bytes"
+          },
+          "estimated_total_memory_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Total Memory Bytes"
+          },
+          "guardrail": {
+            "enum": [
+              "may_load",
+              "warning",
+              "unknown"
+            ],
+            "title": "Guardrail",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 512,
+            "title": "Message",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "estimated",
+              "unavailable",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "context_length",
+          "status",
+          "guardrail",
+          "message"
+        ],
+        "title": "ModelResourceEstimateResponse",
+        "type": "object"
+      },
       "NpmDependencyLockList": {
         "additionalProperties": false,
         "properties": {
@@ -11382,6 +11462,49 @@
           }
         ],
         "summary": "Set Lm Studio Credential"
+      }
+    },
+    "/providers/lm-studio/model-estimate": {
+      "post": {
+        "operationId": "estimate_lm_studio_model_load_providers_lm_studio_model_estimate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelResourceEstimateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Estimate Lm Studio Model Load"
       }
     },
     "/providers/lm-studio/selection": {

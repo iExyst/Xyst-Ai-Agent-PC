@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Estimate model memory during LM Studio setup (2026-11-18)
+
+The authenticated LM Studio API and dark setup panel expose LM Studio's estimate-only GPU/total memory output for a discovered local model and optional context length. The result is advisory and does not load or download the model. Deterministic endpoint/provider tests and the focused setup browser scenario pass; the browser proves estimating does not invoke model load. Local frontend build, API contract generation, Ruff and strict Pyright pass. Hosted verification is pending. The estimate is not queue admission, VRAM enforcement, or live LM Studio interoperability, so hardware-aware inference scheduling remains partial and live provider testing stays deferred. See [`inference-queue.md`](../architecture/inference-queue.md) and [`progress.md`](../progress.md#estimate-local-model-memory-before-loading-2026-11-18).
+
 ## Improve compact onboarding layout and model connection feedback (2026-11-18)
 
 Visual inspection found that toolbar labels wrapped and the onboarding card stayed in two columns when the main content area was narrow. The toolbar now wraps as a group and the connection card uses one column based on available app width. A stable model callback prevents rerenders from overwriting model-discovery feedback. The browser flow verifies both 1280 px and 1014 px layouts, horizontal overflow, and persistent discovery status after saving an endpoint. Exact-source run [44290281527](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44290281527) passed; exact-revision installer run [44291057210](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44291057210) passed packaged onboarding and lifecycle checks. This is desktop usability and onboarding evidence, not a Hermes parity claim. See [`progress.md`](../progress.md#improve-compact-desktop-layout-and-model-connection-feedback-2026-11-18).

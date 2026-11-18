@@ -53,6 +53,7 @@ export type ChatSession = components['schemas']['CLIChatSessionRecord'];
 export type ChatSessionSummary = components['schemas']['CLIChatSessionSummary'];
 export type ChatSessionSettings = components['schemas']['CLIChatSessionSettings'];
 export type SystemResourceSnapshot = components['schemas']['SystemResourceSnapshot'];
+export type ModelResourceEstimate = components['schemas']['ModelResourceEstimateResponse'];
 
 export class EngineRequestError extends Error {
   readonly status: number;
@@ -140,6 +141,9 @@ export class EngineClient {
   models(): Promise<components['schemas']['ModelInfo'][]> { return this.#request('/models'); }
   loadModel(model:string,context_length?:number):Promise<{instance_id:string;status:'loaded'}>{
     return this.#request('/models/load',{method:'POST',body:JSON.stringify({model,...(context_length===undefined?{}:{context_length})})});
+  }
+  estimateModelResources(model:string,context_length?:number):Promise<ModelResourceEstimate>{
+    return this.#request('/providers/lm-studio/model-estimate',{method:'POST',body:JSON.stringify({model,...(context_length===undefined?{}:{context_length})})});
   }
   unloadModel(instance_id:string):Promise<{instance_id:string;status:'unloaded'}>{
     return this.#request('/models/unload',{method:'POST',body:JSON.stringify({instance_id})});

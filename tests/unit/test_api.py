@@ -975,6 +975,55 @@ def test_model_lifecycle_endpoints_require_auth_and_target_one_instance(workspac
     assert provider.unloaded == "fixture:instance-1"
 
 
+def test_model_estimate_endpoint_is_authenticated_and_never_loads(workspace_tmp_path):
+    from xaa.providers.model_estimator import ModelResourceEstimate
+
+    class EstimatorProvider(FakeProvider):
+        def __init__(self):
+            super().__init__()
+            self.estimated: tuple[str, int | None] | None = None
+            self.loaded = False
+
+        async def estimate_model_load(self, model: str, *, context_length: int | None = None):
+            self.estimated = (model, context_length)
+            return ModelResourceEstimate(
+                model=model,
+                context_length=context_length,
+                status="estimated",
+                estimated_gpu_memory_bytes=1_000_000_000,
+                estimated_total_memory_bytes=2_000_000_000,
+                guardrail="may_load",
+                message="Estimate only.",
+            )
+
+        async def load_model(self, model: str, *, context_length: int | None = None) -> str:
+            self.loaded = True
+            return "unexpected"
+
+    provider = EstimatorProvider()
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(provider, SecretStr(TOKEN), store=RunStore(workspace_tmp_path / "estimate.sqlite3"))
+    ) as client:
+        assert client.post("/providers/lm-studio/model-estimate", json={"model": "fixture/model"}).status_code == 401
+        response = client.post(
+            "/providers/lm-studio/model-estimate",
+            headers=headers,
+            json={"model": "fixture/model", "context_length": 8192},
+        )
+        compatible = client.post(
+            "/providers/lm-studio/model-estimate",
+            headers=headers,
+            json={"model": "openai-compatible::remote"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["estimated_gpu_memory_bytes"] == 1_000_000_000
+    assert provider.estimated == ("fixture/model", 8192)
+    assert compatible.status_code == 422
+    assert not provider.loaded
+
+
 def test_authenticated_backup_endpoint_returns_verified_artifact_bundle(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "backup.sqlite3")
     headers = {"Authorization": f"Bearer {TOKEN}"}

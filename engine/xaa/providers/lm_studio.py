@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from xaa.providers.contracts import TokenUsage, public_assistant_message, validate_completion
 from xaa.providers.inference_queue import InferenceQueue, InferenceQueueError
+from xaa.providers.model_estimator import ModelResourceEstimate, estimate_model_resources
 from xaa.providers.streaming import CompletionAssembler
 from xaa.providers.tool_schemas import prepare_tools
 
@@ -545,6 +546,30 @@ class LMStudioProvider:
             await self._unload_model(instance_id)
             self._diagnosed_models.clear()
             self._context_limits.clear()
+
+    async def estimate_model_load(
+        self, model: str, *, context_length: int | None = None
+    ) -> ModelResourceEstimate:
+        """Estimate a discovered local model without loading or downloading it."""
+        async with self._inference_queue.slot(0):
+            available = await self.models()
+            details = next((item for item in available if item.id == model), None)
+            if details is None:
+                raise ValueError("Select a currently discovered LM Studio model to estimate.")
+            if (
+                context_length is not None
+                and details.context_length is not None
+                and context_length > details.context_length
+            ):
+                raise ValueError(
+                    "Context length exceeds the discovered model maximum of "
+                    f"{details.context_length:,} tokens."
+                )
+            return await estimate_model_resources(
+                model,
+                host=self.base_url,
+                context_length=context_length,
+            )
 
     async def _unload_model(self, instance_id: str) -> None:
         """Unload the specified instance through LM Studio's native API."""
