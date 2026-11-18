@@ -120,6 +120,37 @@ async def test_estimator_timeout_kills_cli(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_estimator_timeout_tolerates_process_exit_racing_with_kill(monkeypatch):
+    class Process:
+        returncode = None
+
+        async def communicate(self):
+            await asyncio.sleep(1)
+
+        def kill(self):
+            raise ProcessLookupError("process exited just before the kill")
+
+        async def wait(self):
+            self.returncode = 0
+            return self.returncode
+
+    process = Process()
+
+    async def create_subprocess_exec(*args, **kwargs):
+        return process
+
+    monkeypatch.setattr(model_estimator, "_find_lms_executable", lambda: "lms")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_subprocess_exec)
+
+    result = await model_estimator.estimate_model_resources(
+        "fixture/model", host="http://127.0.0.1:1234", timeout_seconds=0.001
+    )
+
+    assert result.status == "failed"
+    assert process.returncode == 0
+
+
+@pytest.mark.asyncio
 async def test_provider_estimate_requires_discovered_model_and_respects_context(monkeypatch):
     calls: list[tuple[str, str, int | None]] = []
 

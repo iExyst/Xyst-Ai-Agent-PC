@@ -102,6 +102,16 @@ def _child_environment() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if key.upper() in allowed}
 
 
+async def _stop_process(process: asyncio.subprocess.Process) -> None:
+    """Stop the estimator if it is still running, tolerating a process exit race."""
+    if process.returncode is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+    await process.wait()
+
+
 async def estimate_model_resources(
     model: str,
     *,
@@ -137,9 +147,8 @@ async def estimate_model_resources(
         )
         stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout_seconds)
     except TimeoutError:
-        if process is not None and process.returncode is None:
-            process.kill()
-            await process.wait()
+        if process is not None:
+            await _stop_process(process)
         return ModelResourceEstimate(
             model=model,
             context_length=context_length,
@@ -147,9 +156,8 @@ async def estimate_model_resources(
             message="LM Studio's resource estimate timed out. No model was loaded.",
         )
     except asyncio.CancelledError:
-        if process is not None and process.returncode is None:
-            process.kill()
-            await process.wait()
+        if process is not None:
+            await _stop_process(process)
         raise
     except OSError:
         return ModelResourceEstimate(
