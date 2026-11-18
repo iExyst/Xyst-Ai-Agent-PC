@@ -2,7 +2,7 @@
 
 ## Keep model connection status visible on mobile (2026-11-18)
 
-The responsive header keeps model readiness visible below 640px and wraps actions at narrow widths. The objective browser flow checks the visible status and absence of horizontal overflow at 390px. Exact-source workflow [44235361106](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44235361106) passed its desktop/browser and configured recovery checks; its Python/static checks were skipped because only UI inputs changed. Exact-commit installer workflow [44235379357](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44235379357) is in progress. No live model inference was used. See [`progress.md`](../progress.md#keep-model-connection-status-visible-on-mobile-2026-11-18).
+The responsive header keeps model readiness visible below 640px and wraps actions at narrow widths. The objective browser flow checks the visible status and absence of horizontal overflow at 390px. Exact-source workflow [44235361106](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44235361106) and installer workflow [44235379357](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44235379357) passed. The package acceptance verified native onboarding/recovery, specialist review, frozen workers and install/upgrade/uninstall on the packaged revision. No live model inference was used. See [`progress.md`](../progress.md#keep-model-connection-status-visible-on-mobile-2026-11-18).
 
 ## Make mobile section navigation easier to read and tap (2026-11-18)
 
