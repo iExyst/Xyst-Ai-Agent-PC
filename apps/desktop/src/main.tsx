@@ -1,5 +1,5 @@
 import {ResourceLimits, parseLimits, type LimitInputs} from './ResourceLimits.tsx';
-import { lazy, Suspense, useState, useRef, useEffect } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, type FocusEvent as ReactFocusEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { EngineClient, EngineRequestError, type Run, type RunEvent, type Artifact, type Plan, type ChatSession } from './api/client.ts';
 import './style.css';
@@ -36,6 +36,15 @@ const RECENT_WORKSPACE_LIMIT=8;
 type DesktopCloseBehavior='keep_running'|'exit_on_close';
 type DesktopPage='home'|'runs'|'chats'|'integrations'|'memory'|'skills'|'automations'|'models'|'monitor'|'settings';
 type DesktopNavTarget='new-objective'|'active-run'|'saved-runs'|'chats'|'integrations'|'memory'|'skills'|'automations'|'model-setup'|'system-monitor'|'app-settings';
+
+function keepSideNavigationFocusVisible(event: ReactFocusEvent<HTMLElement>) {
+  const target = event.target;
+  if (!(target instanceof HTMLAnchorElement)) return;
+  const viewport = event.currentTarget.getBoundingClientRect();
+  const bounds = target.getBoundingClientRect();
+  if (bounds.left < viewport.left) event.currentTarget.scrollLeft -= viewport.left - bounds.left;
+  else if (bounds.right > viewport.right) event.currentTarget.scrollLeft += bounds.right - viewport.right;
+}
 
 function recentWorkspaceStorageKey(dataRoot:string|null):string {
   return `xaa.recent-workspaces.v1:${dataRoot??'default'}`;
@@ -541,7 +550,7 @@ function App() {
     <aside className="app-sidebar" aria-label="Application navigation">
       <div className="brand-lockup"><div className="brand-mark">X</div><div><strong>Xyst</strong><span>AI Agent</span></div></div>
       <p className="sidebar-label">YOUR WORKSPACE</p>
-      <nav className="side-nav" aria-label="Main sections">
+      <nav className="side-nav" aria-label="Main sections" onFocusCapture={keepSideNavigationFocusVisible}>
         <a href="#new-objective" className={activeSection==='new-objective'?'active':''} aria-current={activeSection==='new-objective'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('home','new-objective');}}><SidebarIcon name="spark"/>New objective</a>
         {run&&<a href="#active-run" className={activeSection==='active-run'?'active':''} aria-current={activeSection==='active-run'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('runs','active-run');}}><SidebarIcon name="activity"/>Active run<i className={`run-dot ${run.state}`}/></a>}
         <a href="#saved-runs" className={activeSection==='saved-runs'?'active':''} aria-current={activeSection==='saved-runs'?'page':undefined} onClick={event=>{event.preventDefault();navigateTo('runs','saved-runs');}}><SidebarIcon name="archive"/>Saved runs</a>

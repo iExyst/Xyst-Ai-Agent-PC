@@ -25,6 +25,21 @@ test('mobile navigation shows destination labels and scrolls through every secti
   const dimensions=await navigation.evaluate(element=>({clientWidth:element.clientWidth,scrollWidth:element.scrollWidth}));
   expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
 
-  await navigation.getByRole('link',{name:/Settings/}).click();
+  await page.evaluate(()=>{document.body.setAttribute('tabindex','-1');document.body.focus();});
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link',{name:'Skip to main content'})).toBeFocused();
+  const labels=['New objective','Saved runs','Chats','Memory','Skills','Automations','Tools & integrations','Model setup','System monitor','Settings'];
+  for(const label of labels){
+    const link=navigation.getByRole('link',{name:new RegExp(label)});
+    await page.keyboard.press('Tab');
+    await expect(link,`${label} should be reachable with Tab`).toBeFocused();
+    await expect.poll(()=>link.evaluate(element=>{
+      const parent=element.parentElement!.getBoundingClientRect();
+      const bounds=element.getBoundingClientRect();
+      const style=getComputedStyle(element);
+      return bounds.left>=parent.left&&bounds.right<=parent.right&&style.outlineStyle!=='none'&&parseFloat(style.outlineWidth)>=3;
+    }),{message:`${label} keyboard focus should scroll fully into view with a visible indicator`}).toBe(true);
+  }
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('heading',{level:1})).toHaveText('Settings');
 });

@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Keep keyboard focus visible across mobile navigation (2026-11-18)
+
+The mobile navigation retains a horizontal scroll row after the tablet layout rule, and keyboard focus scrolls the selected link fully into view. Browser acceptance tabs through all ten section links, checks the visible 3px focus ring, and opens Settings with Enter. The mobile navigation and objective flows and production build pass locally; hosted verification is pending. This improves mobile keyboard navigation without closing the broader accessibility audit. See [`progress.md`](../progress.md#keep-keyboard-focus-visible-across-mobile-navigation-2026-11-18).
+
 ## Keep model connection status visible on mobile (2026-11-18)
 
 The responsive header keeps model readiness visible below 640px and wraps actions at narrow widths. The objective browser flow checks the visible status and absence of horizontal overflow at 390px. Exact-source workflow [44235361106](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44235361106) and installer workflow [44235379357](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44235379357) passed. The package acceptance verified native onboarding/recovery, specialist review, frozen workers and install/upgrade/uninstall on the packaged revision. No live model inference was used. See [`progress.md`](../progress.md#keep-model-connection-status-visible-on-mobile-2026-11-18).
