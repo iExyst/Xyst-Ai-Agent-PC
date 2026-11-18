@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Keep model connection status visible on mobile (2026-11-18)
+
+The responsive header keeps model readiness visible below 640px and wraps actions at narrow widths. The objective browser flow checks the visible status and absence of horizontal overflow at 390px. Focused objective/mobile-navigation Playwright flows and production desktop build pass locally; hosted verification is pending. No live model inference was used. See [`progress.md`](../progress.md#keep-model-connection-status-visible-on-mobile-2026-11-18).
+
 ## Make mobile section navigation easier to read and tap (2026-11-18)
 
 Mobile section links use 12px labels and 76×60px targets while retaining horizontal scrolling. The browser acceptance checks that labels fit, every section is reachable, and targets meet the 44px minimum. Exact-source workflow [44233197768](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44233197768) and installer workflow [44233233716](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44233233716) passed. The installed package also passed onboarding, recovery, frozen worker, upgrade, standard-user installation, boot and uninstall checks; deterministic fixtures were used without real model inference. This is one responsive accessibility improvement, not a complete keyboard, contrast or screen-reader audit. See [`progress.md`](../progress.md#make-mobile-section-navigation-easier-to-read-and-tap-2026-11-18).

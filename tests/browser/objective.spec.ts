@@ -104,6 +104,12 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.locator('summary').filter({hasText:'Web search'}).click();
   await selectLocalModel(page,'fixture/model');
   await expect(page.getByRole('status').filter({hasText:'Model ready'})).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  const mobileModelStatus=page.getByRole('status').filter({hasText:'Model ready'});
+  await expect(mobileModelStatus).toBeVisible();
+  const mobileHeader=await page.locator('.app-topbar').evaluate(element=>({width:element.clientWidth,scrollWidth:element.scrollWidth}));
+  expect(mobileHeader.scrollWidth).toBeLessThanOrEqual(mobileHeader.width);
+  await page.setViewportSize({width:1280,height:900});
   await navigateMainSection(page,'Memory');
   await page.getByLabel('Preference', {exact:true}).fill('Use concise examples');
   await page.getByRole('button',{name:'Save preference',exact:true}).click();
