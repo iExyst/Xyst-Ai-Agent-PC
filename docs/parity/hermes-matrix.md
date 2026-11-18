@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Verify the current-source unsigned Windows installer (2026-11-18)
+
+The 0.1.1 package rebuilt from commit `80c8e062` passed the hosted frozen-engine, installed-AppContainer, native desktop, specialist/workspace recovery, upgrade, standard-user install, and uninstall/data-retention acceptance in [run 44260973472](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44260973472). The installer and manifest are retained in [`.acceptance/hosted-installer-44260973472/`](../.acceptance/hosted-installer-44260973472/); exact installer, desktop, and engine hashes are recorded in [`progress.md`](../progress.md#verify-the-current-source-unsigned-windows-installer-and-lifecycle-2026-11-18). This is current package evidence, not proof of signing, publication, clean-consumer-machine behavior, live provider interoperability, or complete parity.
+
 ## Extend safe Git inspection for workspace diagnosis (2026-11-18)
 
 The existing read-only Git tool now exposes status, unstaged diff, staged diff, current branch, and up to 20 recent commit subjects. Output is retained as untrusted bounded artifacts, and interrupted-read recovery covers all five operations. Focused engine/recovery tests (32), Ruff, and Pyright pass. This improves repository context for Phase 3; Git writes and the broader coding-workflow gate remain separate. See [`progress.md`](../progress.md#extend-safe-git-inspection-for-workspace-diagnosis-2026-11-18).
