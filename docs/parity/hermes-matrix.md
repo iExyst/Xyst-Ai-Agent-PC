@@ -2,7 +2,7 @@
 
 ## Search and jump between desktop sections with the keyboard (2026-11-18)
 
-The dark desktop provides a Ctrl+K/Cmd+K searchable section palette with arrow/Enter navigation, Escape dismissal, and contained/restored focus. The focused browser acceptance covers the interaction and the complete desktop browser suite passes (45 passed, 3 live/dependency-gated skipped); the production TypeScript/Vite build passes. This improves X.A.A.'s desktop workflow without claiming an upstream parity capability. No model inference was used. See [`progress.md`](../progress.md#add-keyboard-quick-navigation-across-desktop-sections-2026-11-18).
+The dark desktop provides a Ctrl+K/Cmd+K searchable section palette with arrow/Enter navigation, Escape dismissal, and contained/restored focus. The focused browser acceptance covers the interaction and the complete desktop browser suite passes (45 passed, 3 live/dependency-gated skipped); the production TypeScript/Vite build passes. Exact-source Windows run [44282759054](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44282759054) passed its objective browser flow, including the palette, along with configured browser security, contracts, TypeScript/client, other desktop and recovery checks. Python, WSL and installer checks were skipped because Python inputs were unchanged and by feature-branch filters, respectively. This improves X.A.A.'s desktop workflow without claiming an upstream parity capability. No model inference was used. See [`progress.md`](../progress.md#add-keyboard-quick-navigation-across-desktop-sections-2026-11-18).
 
 ## Help first-run users reach model setup when LM Studio is offline (2026-11-18)
 

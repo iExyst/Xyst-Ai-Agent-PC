@@ -2,7 +2,7 @@
 
 ## Add keyboard quick navigation across desktop sections (2026-11-18)
 
-The dark desktop now has a searchable **Go to…** palette on Ctrl+K/Cmd+K, with arrow-key selection, Enter to open a destination, Escape to close, and focus kept inside the dialog and restored on close. The native navigation links remain available. The focused flow verifies filtering, selection, navigation, Escape, and focus cycling; `npm run build:desktop` passes. The full desktop browser suite passes (45 passed, 3 live/dependency-gated skipped at four workers). No model inference was used.
+The dark desktop now has a searchable **Go to…** palette on Ctrl+K/Cmd+K, with arrow-key selection, Enter to open a destination, Escape to close, and focus kept inside the dialog and restored on close. The native navigation links remain available. The focused flow verifies filtering, selection, navigation, Escape, and focus cycling; `npm run build:desktop` passes. The full desktop browser suite passes (45 passed, 3 live/dependency-gated skipped at four workers). Exact-source Windows run [44282759054](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44282759054) passed its configured Microsoft Edge checks, contracts, TypeScript/client checks, objective browser flow (including the palette), other desktop flows, and recovery diagnostics. Python tests were skipped because Python inputs were unchanged; WSL and installer jobs were skipped by branch filters. No model inference was used.
 
 ## Route the offline first-run state to model setup (2026-11-18)
 
