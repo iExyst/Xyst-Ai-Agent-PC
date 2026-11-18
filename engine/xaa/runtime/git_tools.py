@@ -16,7 +16,7 @@ from xaa.storage.runs import RunStore
 
 class GitArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    operation: Literal["status", "diff", "branch", "log"]
+    operation: Literal["status", "diff", "staged_diff", "branch", "log"]
 
 
 class GitOutput(BaseModel):
@@ -32,7 +32,7 @@ class GitOutput(BaseModel):
 GIT_TOOL: dict[str, Any] = {
     "name": "workspace_git_inspect",
     "version": "2",
-    "description": "Inspect Git status, working-tree diff, current branch, or the 20 most recent commit subjects without modifying files. Output is untrusted; full bounded output is saved as an artifact.",
+    "description": "Inspect Git status, unstaged or staged diff, current branch, or the 20 most recent commit subjects without modifying files. Output is untrusted; full bounded output is saved as an artifact.",
     "input_schema": GitArguments.model_json_schema(),
     "output_schema": GitOutput.model_json_schema(),
     "permission": "workspace.read",
@@ -88,7 +88,7 @@ async def inspect_git(
     run_id: str,
     token: str,
     call_id: str,
-    operation: Literal["status", "diff", "branch", "log"],
+    operation: Literal["status", "diff", "staged_diff", "branch", "log"],
     *,
     timeout_seconds: float = GIT_TOOL["timeout_seconds"],
 ) -> dict[str, Any]:
@@ -97,7 +97,7 @@ async def inspect_git(
         raise PermissionError("Git inspection requires a selected workspace.")
     if run["mode"] not in {"observe", "workspace", "authorized_automation"}:
         raise PermissionError("Run does not permit workspace inspection.")
-    if operation not in {"status", "diff", "branch", "log"}:
+    if operation not in {"status", "diff", "staged_diff", "branch", "log"}:
         raise ValueError("Unsupported Git inspection operation.")
     root = Path(run["workspace"]).resolve(strict=True)
     executable = git_executable(root)
@@ -117,6 +117,14 @@ async def inspect_git(
         "status": ["status", "--short", "--ignore-submodules=all"],
         "diff": [
             "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules=all",
+            "--no-color",
+        ],
+        "staged_diff": [
+            "diff",
+            "--cached",
             "--no-ext-diff",
             "--no-textconv",
             "--ignore-submodules=all",

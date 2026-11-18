@@ -2,7 +2,7 @@
 
 ## Extend safe Git inspection for workspace diagnosis (2026-11-18)
 
-The existing `workspace_git_inspect` tool now supports four read-only views: status, working-tree diff, current branch, and the 20 most recent commit subjects. All output remains untrusted, is saved in the bounded artifact path, and interrupted reads discard only their own artifact. Git color and pager behavior are disabled without invoking a project shell, external diff, or text conversion. Focused Git and read-recovery tests pass (30); Ruff and engine/storage Pyright pass. This expands Phase 3 repository inspection without adding write or publish operations.
+The existing `workspace_git_inspect` tool now supports five read-only views: status, unstaged diff, staged diff, current branch, and the 20 most recent commit subjects. All output remains untrusted, is saved in the bounded artifact path, and interrupted reads discard only their own artifact. Git color and pager behavior are disabled without invoking a project shell, external diff, or text conversion. Focused Git and read-recovery tests pass (32); Ruff and engine/storage Pyright pass. This expands Phase 3 repository inspection without adding write or publish operations.
 
 ## Keep the desktop browser acceptance stable with multiple status regions (2026-11-18)
 

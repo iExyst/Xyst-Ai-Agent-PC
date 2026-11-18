@@ -2,7 +2,7 @@
 
 ## Extend safe Git inspection for workspace diagnosis (2026-11-18)
 
-The existing read-only Git tool now exposes status, diff, current branch, and up to 20 recent commit subjects. Output is retained as untrusted bounded artifacts, and interrupted-read recovery covers all four operations. Focused engine/recovery tests (30), Ruff, and Pyright pass. This improves repository context for Phase 3; Git writes and the broader coding-workflow gate remain separate. See [`progress.md`](../progress.md#extend-safe-git-inspection-for-workspace-diagnosis-2026-11-18).
+The existing read-only Git tool now exposes status, unstaged diff, staged diff, current branch, and up to 20 recent commit subjects. Output is retained as untrusted bounded artifacts, and interrupted-read recovery covers all five operations. Focused engine/recovery tests (32), Ruff, and Pyright pass. This improves repository context for Phase 3; Git writes and the broader coding-workflow gate remain separate. See [`progress.md`](../progress.md#extend-safe-git-inspection-for-workspace-diagnosis-2026-11-18).
 
 ## Keep the desktop browser acceptance stable with multiple status regions (2026-11-18)
 

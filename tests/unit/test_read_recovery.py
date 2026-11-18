@@ -114,7 +114,7 @@ def test_abandoned_local_read_requeues_and_is_sealed(workspace_tmp_path, tool, f
 
 
 @pytest.mark.parametrize("registered", [False, True])
-@pytest.mark.parametrize("operation", ["status", "diff", "branch", "log"])
+@pytest.mark.parametrize("operation", ["status", "diff", "staged_diff", "branch", "log"])
 def test_interrupted_git_read_discards_only_its_owned_artifact(
     workspace_tmp_path, registered, operation
 ):
