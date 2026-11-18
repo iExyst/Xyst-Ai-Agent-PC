@@ -5,6 +5,10 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
   const task={id:'review-run:inspect',local_id:'inspect',objective:'Inspect evidence',acceptance_criteria:['Reports actual file evidence'],input_artifacts:[],expected_outputs:['Concise findings'],dependencies:[],assigned_role:'researcher',model_route:'fixture/model',workspace:'C:\\fixture',permission_scope:['workspace.read'],budgets:{max_iterations:2,max_seconds:60},status:'verifying'};
   let reviewed=false;
   let dispatched=false;
+  let candidateRequestStarted!:()=>void;
+  let releaseCandidate!:()=>void;
+  const candidateStarted=new Promise<void>(resolve=>{candidateRequestStarted=resolve;});
+  const candidateGate=new Promise<void>(resolve=>{releaseCandidate=resolve;});
   const graph=()=>({tasks:[{...task,status:reviewed?'completed':'verifying'},{...task,id:'review-run:review',local_id:'review',objective:'Inspect prerequisite evidence independently',dependencies:['inspect'],assigned_role:'reviewer',status:dispatched?'verifying':'queued'}],ready:reviewed&&!dispatched?['review']:[],blocked:[]});
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const request=route.request();
@@ -15,7 +19,7 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
     if(path.startsWith('/memory'))return route.fulfill({json:[],headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/runs'&&request.method()==='POST')return route.fulfill({json:run,headers});
-    if(path.endsWith('/candidate')){await new Promise(resolve=>setTimeout(resolve,200));return route.fulfill({json:{task_id:'inspect',status:'verifying',candidate:'Found <script>window.reviewExecuted=true</script>',expected_outputs:task.expected_outputs,acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'evidence-1',path:'evidence.txt',sha256:'a'.repeat(64),excerpt:'Actual file evidence',excerpt_truncated:false}]},headers});}
+    if(path.endsWith('/candidate')){candidateRequestStarted();await candidateGate;return route.fulfill({json:{task_id:'inspect',status:'verifying',candidate:'Found <script>window.reviewExecuted=true</script>',expected_outputs:task.expected_outputs,acceptance_criteria:task.acceptance_criteria,evidence:[{call_id:'evidence-1',path:'evidence.txt',sha256:'a'.repeat(64),excerpt:'Actual file evidence',excerpt_truncated:false}]},headers});}
     if(path.endsWith('/review')){
       expect(request.postDataJSON()).toEqual({decision:'accept',rationale:'Compared the actual file with the criterion.',confirmed_criteria:[0],evidence_call_ids:['evidence-1'],changes_confirmed:false});
       reviewed=true;
@@ -40,8 +44,10 @@ test('inspect evidence and explicitly accept a specialist candidate',async({page
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
   await page.getByRole('button',{name:'Review candidate',exact:true}).click();
+  await candidateStarted;
   await expect(page.getByRole('button',{name:'Loading candidate…',exact:true})).toBeDisabled();
   await expect(page.getByRole('status').filter({hasText:'Loading saved candidate and file evidence…'})).toBeVisible();
+  releaseCandidate();
   await expect(page.getByRole('group',{name:'Expected outputs'})).toContainText('Concise findings');
   await expect(page.getByText('Candidate result',{exact:true})).toBeVisible();
   const accept=page.getByRole('button',{name:'Accept task result',exact:true});
