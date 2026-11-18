@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Verify batch trajectory validation in the unsigned Windows package (2026-11-18)
+
+Exact-source checks for commit `5efe8819` passed in [run 44267400726](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44267400726), including 1,490 Python tests, configured browser, static, contract and recovery checks. Exact-package workflow [44270170758](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44270170758) passed on attempt 2: all 55 installer steps succeeded, including upgrade from the 0.1.0 baseline with user data preserved, standard-user installation, boot and uninstall. The unsigned 0.1.1 package manifest and acceptance reports are retained in [`.acceptance/hosted-installer-44270170758-attempt2/`](../.acceptance/hosted-installer-44270170758-attempt2/). This is packaged acceptance evidence for the current source, not evidence of signing, publication, live LM Studio interoperability, or full Hermes parity.
+
 ## Verify the current-source unsigned Windows installer (2026-11-18)
 
 The 0.1.1 package rebuilt from commit `80c8e062` passed the hosted frozen-engine, installed-AppContainer, native desktop, specialist/workspace recovery, upgrade, standard-user install, and uninstall/data-retention acceptance in [run 44260973472](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44260973472). The installer and manifest are retained in [`.acceptance/hosted-installer-44260973472/`](../.acceptance/hosted-installer-44260973472/); exact installer, desktop, and engine hashes are recorded in [`progress.md`](../progress.md#verify-the-current-source-unsigned-windows-installer-and-lifecycle-2026-11-18). This is current package evidence, not proof of signing, publication, clean-consumer-machine behavior, live provider interoperability, or complete parity.
