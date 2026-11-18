@@ -10,6 +10,8 @@ Extended the offline WSL acceptance for imported Python procedure dependencies. 
 
 ## Verify Python installer process recovery in WSL (2026-11-17)
 
+Exact-source Windows workflow [44205905351](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44205905351) passed on `62ff8aa3`: 1,469 Python tests passed, 20 skipped, with Ruff, formatting, Pyright, API contracts, desktop browser flows, and process-recovery checks green.
+
 Extended the offline WSL acceptance to deliberately send SIGKILL to the live Python installer service, confirm no partial environment remains, and retry the same install. The full local Ubuntu 24.04 acceptance passed, including immutable revision rollback, environment isolation, and unchanged system Python; Ruff and strict Pyright also pass. Local report: [`.acceptance/wsl-python-installer-kill-20261117/report.json`](../.acceptance/wsl-python-installer-kill-20261117/report.json). The formatted commit also passed on the hosted Windows runner in [workflow 44205938272](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44205938272); its report confirms SIGKILL recovery, no network use, and unchanged system Python at [`.acceptance/hosted-wsl-python-sigkill-44205938272/`](../.acceptance/hosted-wsl-python-sigkill-44205938272/). LM Studio imported-procedure testing remains deferred until the end per the user's preference.
 
 ## Verify dynamic delegation in the current frozen Windows engine (2026-11-17)
