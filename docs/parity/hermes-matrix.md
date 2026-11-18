@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Improve keyboard submission in the desktop objective flow (2026-11-18)
+
+The desktop objective and conversation composer supports Ctrl+Enter/Cmd+Enter submission while preserving Enter for multiline text, and it applies the existing run readiness guards. The objective browser flow verifies both behaviors, and `npm run build:desktop` passes. This is a desktop usability improvement; it does not close the broader keyboard, accessibility or real-provider acceptance gates. See [`progress.md`](../progress.md#submit-objectives-from-the-desktop-keyboard-2026-11-18).
+
 ## Verify batch trajectory validation in the unsigned Windows package (2026-11-18)
 
 Exact-source checks for commit `5efe8819` passed in [run 44267400726](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44267400726), including 1,490 Python tests, configured browser, static, contract and recovery checks. Exact-package workflow [44270170758](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44270170758) passed on attempt 2: all 55 installer steps succeeded, including upgrade from the 0.1.0 baseline with user data preserved, standard-user installation, boot and uninstall. The unsigned 0.1.1 package manifest and acceptance reports are retained in [`.acceptance/hosted-installer-44270170758-attempt2/`](../.acceptance/hosted-installer-44270170758-attempt2/). This is packaged acceptance evidence for the current source, not evidence of signing, publication, live LM Studio interoperability, or full Hermes parity.

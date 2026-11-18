@@ -165,7 +165,11 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByLabel('File to verify').fill('input.txt');
   await page.getByLabel('Expected file contents').fill('fixture\n');
-  await page.getByLabel('Objective', { exact: true }).fill('Read input.txt');
+  const objectiveField=page.getByLabel('Objective',{exact:true});
+  await objectiveField.fill('Draft a multiline objective');
+  await objectiveField.press('Enter');
+  await expect(objectiveField).toHaveValue('Draft a multiline objective\n');
+  await objectiveField.fill('Read input.txt');
   await page.getByLabel(/Text document/).setInputFiles({name:'notes.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('XLSX fixture bytes')});
   await expect(page.getByText('Attached: notes.xlsx.',{exact:false})).toBeVisible();
   await page.locator('details.advanced-options details').evaluate(element => { (element as HTMLDetailsElement).open=true; });
@@ -178,7 +182,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();
   await page.getByLabel('Output tokens per request (optional)',{exact:true}).fill('256');
   await page.getByLabel('Reserve prompt and output tokens before each inference',{exact:true}).check();
-  await page.getByRole('button', { name: 'Start objective' }).click();
+  await page.getByLabel('Objective',{exact:true}).press('Control+Enter');
   await expect(page.getByLabel('Allow this run to save a reusable procedure candidate')).not.toBeChecked();
   await page.getByLabel('Allow this run to save a reusable procedure candidate').check();
   await page.getByRole('button', { name: 'Start objective' }).click();
