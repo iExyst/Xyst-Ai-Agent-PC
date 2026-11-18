@@ -2,7 +2,7 @@
 
 ## Improve keyboard submission in the desktop objective flow (2026-11-18)
 
-The desktop objective and conversation composer supports Ctrl+Enter/Cmd+Enter submission while preserving Enter for multiline text, and it applies the existing run readiness guards. The objective browser flow verifies both behaviors, and `npm run build:desktop` passes. This is a desktop usability improvement; it does not close the broader keyboard, accessibility or real-provider acceptance gates. See [`progress.md`](../progress.md#submit-objectives-from-the-desktop-keyboard-2026-11-18).
+The desktop objective and conversation composer supports Ctrl+Enter/Cmd+Enter submission while preserving Enter for multiline text, and it applies the existing run readiness guards. The objective browser flow verifies both behaviors, and `npm run build:desktop` passes. Exact-source Windows workflow [44277088681](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44277088681) passed its configured browser, TypeScript/client, API-contract and desktop process-recovery checks on `27dd02a8`; Python, WSL and installer checks were skipped by the desktop-only change. This is a desktop usability improvement; it does not close the broader keyboard, accessibility or real-provider acceptance gates. See [`progress.md`](../progress.md#submit-objectives-from-the-desktop-keyboard-2026-11-18).
 
 ## Verify batch trajectory validation in the unsigned Windows package (2026-11-18)
 

@@ -2,7 +2,7 @@
 
 ## Submit objectives from the desktop keyboard (2026-11-18)
 
-The objective/conversation composer now starts a valid run with Ctrl+Enter (or Cmd+Enter on macOS); plain Enter still inserts a newline. The shortcut ignores IME composition and respects the same busy, voice-capture, model, workspace, objective, and resource-limit guards as the button. The focused browser workflow verifies multiline input and keyboard submission (`npx playwright test tests/browser/objective.spec.ts --workers=4`: 1 passed); `npm run build:desktop` passes typecheck and the production build. No model inference was used.
+The objective/conversation composer now starts a valid run with Ctrl+Enter (or Cmd+Enter on macOS); plain Enter still inserts a newline. The shortcut ignores IME composition and respects the same busy, voice-capture, model, workspace, objective, and resource-limit guards as the button. The focused browser workflow verifies multiline input and keyboard submission (`npx playwright test tests/browser/objective.spec.ts --workers=4`: 1 passed); `npm run build:desktop` passes typecheck and the production build. Exact-source Windows workflow [44277088681](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44277088681) passed its configured browser, TypeScript/client, API-contract, and desktop process-recovery checks on `27dd02a8`; Python checks were skipped because their inputs were unchanged, as were WSL and installer jobs for this desktop-only change. No model inference was used.
 
 ## Require a supported trajectory version before batch scoring (2026-11-18)
 
