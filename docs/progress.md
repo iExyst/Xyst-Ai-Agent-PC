@@ -1,5 +1,9 @@
 # Progress
 
+## Recheck locked dependency notice references (2026-11-17)
+
+Ran `uv run python scripts/verify_release_notice_coverage.py` against the current lockfiles. All scoped package/version pairs have both inventory rows and explicit notice references: 87 Python, 5 production npm, and 247 Windows-target Cargo packages. This gate checks reference coverage only; license-text accuracy, copyright completeness, compatibility, and legal approval remain open. No dependencies or notice text were changed.
+
 ## Verify current hosted 0.1.1 installer and recovery flow (2026-11-17)
 
 Hosted installer run [44197868809](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44197868809) passed 55 executed Windows checks with no failures. It built commit `76470014` and verified frozen and installed AppContainer execution, native onboarding/recovery and conflict review, frozen dynamic delegation and workspace/browser/filesystem/ACP checks, upgrade from 0.1.0, standard-user install, boot, uninstall, and explicit data removal. Downloaded artifact [14381421224](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44197868809/artifacts/14381421224) is retained at [`.acceptance/hosted-installer-44197868809/build/installer/`](../.acceptance/hosted-installer-44197868809/build/installer/). Its manifest installer hash `497fe2ca217044447c4f16a6400463bd49c5be6b77a8ad21bcc9fb7591e327db` matches the 78,261,894-byte executable; desktop hash is `ff8808dab3f1811c6306d375e086a00de172910c48269d0c30758014214805f3` and engine hash is `2de06292015cd4ce07ddf76e08ec9787361809d09376d315b9d96b3f7fb6577e`. This is unsigned 0.1.1 evaluation packaging, not a general release.
