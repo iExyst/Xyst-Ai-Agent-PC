@@ -20,7 +20,7 @@ The desktop and authenticated API expose the owner install and exact-digest remo
 
 ## Preparation and installation boundaries
 
-The local WSL recovery acceptance also sends SIGKILL to the active systemd installer service, confirms the incomplete environment is absent, and retries the same immutable installation successfully. It uses a local wheelhouse without network access or model inference.
+The local and hosted WSL recovery acceptances send SIGKILL to the active systemd installer service, confirm the incomplete environment is absent, and retry the same immutable installation successfully. The hosted Windows-runner acceptance passed in [workflow 44205241546](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44205241546); its report is preserved at [`.acceptance/hosted-wsl-python-sigkill-44205241546/`](../../.acceptance/hosted-wsl-python-sigkill-44205241546/). Both use a local wheelhouse without model inference.
 
 1. The production resolver obtains binary wheels from public PyPI only, using normal TLS verification. Metadata parsing, solving, and exact-wheel acquisition run in unprivileged, no-network AppContainer workers; the engine acts as a narrow, bounded PyPI network broker. Source distributions are refused so package build hooks never run during resolution.
 2. The resolver records every wheel's normalized project name, version, compatible tag, size, SHA-256, and normalized `Requires-Dist` entries parsed from its wheel metadata. The owner reviews this exact lock before installation. The installer must independently compare recorded metadata to the bytes whose hash matches the lock.
