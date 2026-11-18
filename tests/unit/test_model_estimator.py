@@ -41,7 +41,9 @@ def test_parse_estimate_rejects_unrecognized_output():
 async def test_estimator_reports_unavailable_without_lms(monkeypatch):
     monkeypatch.setattr(model_estimator, "_find_lms_executable", lambda: None)
 
-    result = await model_estimator.estimate_model_resources("fixture/model", host="http://127.0.0.1:1234")
+    result = await model_estimator.estimate_model_resources(
+        "fixture/model", host="http://127.0.0.1:1234"
+    )
 
     assert result.status == "unavailable"
     assert "did not start a model" in result.message
@@ -70,7 +72,16 @@ async def test_estimator_uses_estimate_only_without_loading(monkeypatch):
     )
 
     assert calls == [
-        ("lms", "load", "--estimate-only", "fixture/model", "--host", "http://127.0.0.1:1234", "--context-length", "8192")
+        (
+            "lms",
+            "load",
+            "--estimate-only",
+            "fixture/model",
+            "--host",
+            "http://127.0.0.1:1234",
+            "--context-length",
+            "8192",
+        )
     ]
     assert result.status == "estimated"
     assert result.estimated_gpu_memory_bytes == 1_250_000_000

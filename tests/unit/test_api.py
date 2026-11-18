@@ -1003,9 +1003,16 @@ def test_model_estimate_endpoint_is_authenticated_and_never_loads(workspace_tmp_
     provider = EstimatorProvider()
     headers = {"Authorization": f"Bearer {TOKEN}"}
     with TestClient(
-        create_app(provider, SecretStr(TOKEN), store=RunStore(workspace_tmp_path / "estimate.sqlite3"))
+        create_app(
+            provider, SecretStr(TOKEN), store=RunStore(workspace_tmp_path / "estimate.sqlite3")
+        )
     ) as client:
-        assert client.post("/providers/lm-studio/model-estimate", json={"model": "fixture/model"}).status_code == 401
+        assert (
+            client.post(
+                "/providers/lm-studio/model-estimate", json={"model": "fixture/model"}
+            ).status_code
+            == 401
+        )
         response = client.post(
             "/providers/lm-studio/model-estimate",
             headers=headers,
