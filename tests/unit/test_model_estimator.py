@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 from xaa.providers import model_estimator
-from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
+from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 
 
 def test_parse_estimate_reads_memory_units_and_guardrail():
@@ -209,8 +210,87 @@ async def test_provider_estimate_requires_discovered_model_and_respects_context(
         with pytest.raises(ValueError, match="maximum"):
             await provider.estimate_model_load("fixture/model", context_length=32768)
         result = await provider.estimate_model_load("fixture/model", context_length=8192)
+        cached = await provider.estimate_model_load("fixture/model", context_length=8192)
     finally:
         await provider.close()
 
     assert result.status == "unavailable"
+    assert cached == result
     assert calls == [("fixture/model", "http://127.0.0.1:1234", 8192)]
+
+
+@pytest.mark.asyncio
+async def test_resource_warning_prevents_model_load(monkeypatch):
+    loaded: list[str] = []
+
+    class Provider(LMStudioProvider):
+        async def models(self):
+            return [ModelInfo(id="fixture/model", loaded=False, context_length=8192)]
+
+        async def _load_model(self, model: str, *, context_length: int | None = None):
+            loaded.append(model)
+            return "instance"
+
+    async def estimate(model: str, *, host: str, context_length: int | None = None):
+        return model_estimator.ModelResourceEstimate(
+            model=model,
+            context_length=context_length,
+            status="estimated",
+            guardrail="warning",
+        )
+
+    monkeypatch.setattr("xaa.providers.lm_studio.estimate_model_resources", estimate)
+    provider = Provider()
+    try:
+        with pytest.raises(ProviderError, match="resource estimate warns"):
+            await provider.load_model("fixture/model", context_length=4096)
+    finally:
+        await provider.close()
+
+    assert loaded == []
+
+
+@pytest.mark.asyncio
+async def test_resource_warning_prevents_chat_and_loaded_model_skips_estimate(monkeypatch):
+    estimates: list[str] = []
+    requests: list[str] = []
+
+    class Provider(LMStudioProvider):
+        is_loaded = False
+
+        async def models(self):
+            return [ModelInfo(id="fixture/model", loaded=self.is_loaded, context_length=8192)]
+
+        async def _chat(self, *, model: str, **kwargs):
+            requests.append(model)
+            return {"choices": []}
+
+    async def estimate(model: str, *, host: str, context_length: int | None = None):
+        estimates.append(model)
+        return model_estimator.ModelResourceEstimate(
+            model=model,
+            context_length=context_length,
+            status="estimated",
+            guardrail="warning",
+        )
+
+    monkeypatch.setattr("xaa.providers.lm_studio.estimate_model_resources", estimate)
+    provider = Provider()
+    provider._model_catalog = (
+        time.monotonic(),
+        {"fixture/model": ModelInfo(id="fixture/model", loaded=False, context_length=8192)},
+    )
+    try:
+        with pytest.raises(ProviderError, match="resource estimate warns"):
+            await provider.chat(model="fixture/model", messages=[])
+        provider.is_loaded = True
+        provider._model_catalog = (
+            time.monotonic(),
+            {"fixture/model": ModelInfo(id="fixture/model", loaded=True, context_length=8192)},
+        )
+        await provider.chat(model="fixture/model", messages=[])
+    finally:
+        await provider.close()
+
+    assert estimates == ["fixture/model"]
+    assert requests == ["fixture/model"]

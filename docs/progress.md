@@ -1,5 +1,9 @@
 # Progress
 
+## Apply LM Studio resource warnings before queued model work (2026-11-18)
+
+The serialized provider queue now honors an explicit LM Studio estimate-only resource warning before a model load or an unloaded model's chat/stream request reaches LM Studio. Model estimates are cached by model/context for 60 seconds with a 128-entry bound. Inference uses only a model catalog refreshed within 30 seconds, so the common already-loaded path does not add discovery HTTP calls; known loaded instances skip preflight. Missing/failed/unknown estimate results preserve server-side handling. Deterministic coverage confirms warning rejection before load/chat, loaded-model bypass, estimate caching, and queue/context compatibility. Focused estimator, exact-context, and inference-queue suites pass (44); Ruff check/format, provider Pyright, and `git diff --check` pass. No real model inference was run. Independent VRAM accounting and resource pooling remain open.
+
 ## Verify the model-estimate build in the packaged Windows app (2026-11-18)
 
 Exact-revision installer workflow [44304719705](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44304719705) passed all executed package checks on `ee7e5c94`: frozen/installed AppContainer workers, workspace and browser recovery, native desktop process recovery, upgrade from 0.1.0, current-user install, standard-user install, boot, uninstall and explicit application-data removal. The unsigned 0.1.1 installer is 78,275,151 bytes with SHA-256 `369e7065fd33d82d5bc0c96cdfce73c1ba9110802b8f4d6661dfff4ec09bcddb`; the computed download hash matches the manifest. Retained installer, manifest and reports: [`.acceptance/hosted-installer-44304719705/`](../.acceptance/hosted-installer-44304719705/). The local model-estimate feature itself remains fixture-tested because this runner has no live LM Studio acceptance; no live inference was run.

@@ -6,6 +6,7 @@ import asyncio
 import base64
 import ipaddress
 import json
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
@@ -115,6 +116,10 @@ class LMStudioProvider:
         self._inference_lock = self._inference_queue.lock
         self._diagnosed_models: set[str] = set()
         self._context_limits: dict[str, int] = {}
+        self._model_catalog: tuple[float, dict[str, ModelInfo]] | None = None
+        self._resource_estimate_cache: dict[
+            tuple[str, int | None], tuple[float, ModelResourceEstimate]
+        ] = {}
         self._provider_label = "LM Studio"
         self._output_token_parameter = "max_tokens"
         self._client = httpx.AsyncClient(
@@ -504,6 +509,7 @@ class LMStudioProvider:
             except (httpx.HTTPError, ValueError, KeyError):
                 # Older LM Studio servers may only expose the OpenAI-compatible endpoint.
                 pass
+            self._model_catalog = (time.monotonic(), {item.id: item for item in result})
             return result
         except (httpx.HTTPError, ValueError) as exc:
             raise ProviderError(
@@ -512,6 +518,9 @@ class LMStudioProvider:
 
     async def load_model(self, model: str, *, context_length: int | None = None) -> str:
         async with self._inference_queue.slot(0):
+            await self._ensure_model_resource_admissible(
+                model, context_length=context_length, refresh=True
+            )
             instance = await self._load_model(model, context_length=context_length)
             self._diagnosed_models.discard(model)
             if context_length is not None:
@@ -552,23 +561,82 @@ class LMStudioProvider:
     ) -> ModelResourceEstimate:
         """Estimate a discovered local model without loading or downloading it."""
         async with self._inference_queue.slot(0):
+            return await self._estimate_model_load_unlocked(model, context_length=context_length)
+
+    async def _estimate_model_load_unlocked(
+        self,
+        model: str,
+        *,
+        context_length: int | None = None,
+        details: ModelInfo | None = None,
+    ) -> ModelResourceEstimate:
+        """Estimate a discovered model while the caller owns the inference queue."""
+        if details is None:
             available = await self.models()
             details = next((item for item in available if item.id == model), None)
-            if details is None:
-                raise ValueError("Select a currently discovered LM Studio model to estimate.")
-            if (
-                context_length is not None
-                and details.context_length is not None
-                and context_length > details.context_length
-            ):
-                raise ValueError(
-                    "Context length exceeds the discovered model maximum of "
-                    f"{details.context_length:,} tokens."
-                )
-            return await estimate_model_resources(
-                model,
-                host=self.base_url,
-                context_length=context_length,
+        if details is None:
+            raise ValueError("Select a currently discovered LM Studio model to estimate.")
+        if (
+            context_length is not None
+            and details.context_length is not None
+            and context_length > details.context_length
+        ):
+            raise ValueError(
+                "Context length exceeds the discovered model maximum of "
+                f"{details.context_length:,} tokens."
+            )
+        key = (model, context_length)
+        cached = self._resource_estimate_cache.get(key)
+        now = time.monotonic()
+        if cached is not None and now - cached[0] < 60:
+            return cached[1]
+        estimate = await estimate_model_resources(
+            model, host=self.base_url, context_length=context_length
+        )
+        if len(self._resource_estimate_cache) >= 128:
+            oldest = min(
+                self._resource_estimate_cache,
+                key=lambda item: self._resource_estimate_cache[item][0],
+            )
+            del self._resource_estimate_cache[oldest]
+        self._resource_estimate_cache[key] = (now, estimate)
+        return estimate
+
+    async def _ensure_model_resource_admissible(
+        self,
+        model: str,
+        *,
+        context_length: int | None = None,
+        refresh: bool = False,
+    ) -> None:
+        """Honor LM Studio's explicit resource warning before starting model work."""
+        # A known context limit comes only from an observed loaded instance, so
+        # preflight would duplicate model discovery without improving admission.
+        if model in self._context_limits and not refresh:
+            return
+        now = time.monotonic()
+        catalog = self._model_catalog
+        if refresh:
+            try:
+                available = await self.models()
+                catalog = (time.monotonic(), {item.id: item for item in available})
+                self._model_catalog = catalog
+            except ProviderError:
+                # Keep the server-side admission path when model discovery is unavailable.
+                return
+        elif catalog is None or now - catalog[0] >= 30:
+            return
+        details = catalog[1].get(model)
+        if details is None or details.loaded is True:
+            return
+        estimate = await self._estimate_model_load_unlocked(
+            model, context_length=context_length, details=details
+        )
+        if estimate.status == "estimated" and estimate.guardrail == "warning":
+            raise ProviderError(
+                f"LM Studio's resource estimate warns that {model} may exceed its "
+                "current resource guardrails. The model was not loaded and the request "
+                "was not sent. Reduce the context length or adjust LM Studio's resource settings."
             )
 
     async def _unload_model(self, instance_id: str) -> None:
@@ -628,6 +696,7 @@ class LMStudioProvider:
         async with self._inference_queue.slot(
             self._queue_weight(model, messages, prepared, max_output_tokens)
         ):
+            await self._ensure_model_resource_admissible(model)
             counted = await self._admit_context(
                 model,
                 messages,
@@ -1018,6 +1087,7 @@ class LMStudioProvider:
         async with self._inference_queue.slot(
             self._queue_weight(model, messages, prepared, max_output_tokens)
         ):
+            await self._ensure_model_resource_admissible(model)
             counted = await self._admit_context(
                 model,
                 messages,
