@@ -176,6 +176,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model'}],headers});
     if(path==='/providers/lm-studio/config'&&request.method()==='GET')return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:null},headers});
+    if(path==='/providers/lm-studio/config'&&request.method()==='PUT')return route.fulfill({json:{endpoint:request.postDataJSON().endpoint,selected_model:null},headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/selection')return route.fulfill({json:{model:request.postDataJSON().model},headers});
     if(path==='/providers/diagnostics')return route.fulfill({json:{model:'fixture/model',tool_round_trip_verified:true},headers});
@@ -280,6 +281,9 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
   await expect(page.getByRole('heading',{name:'Model setup'})).toBeVisible();
   await expect(page.getByRole('heading',{level:1})).toBeFocused();
   await expect(page.getByLabel('Local model')).toBeVisible();
+  await page.getByLabel('LM Studio server address').fill('http://127.0.0.1:1234');
+  await page.getByRole('button',{name:'Save address and connect',exact:true}).click();
+  await expect(page.getByRole('status').filter({hasText:'Connected. Found 1 model.'})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   expect(await interactiveNameFailures(page)).toEqual([]);
   await expectKeyboardCoverageWithExpandedDisclosures(page);

@@ -1,5 +1,5 @@
 import {ResourceLimits, parseLimits, type LimitInputs} from './ResourceLimits.tsx';
-import { lazy, Suspense, useState, useRef, useEffect, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback, type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { EngineClient, EngineRequestError, type Run, type RunEvent, type Artifact, type Plan, type ChatSession } from './api/client.ts';
 import './style.css';
@@ -235,12 +235,12 @@ function App() {
       setRecentWorkspaceStatus('Project folder removed from the recent list.');
     } catch { setRecentWorkspaceStatus('This project folder could not be removed from the recent list.'); }
   }
-  function updateDiscoveredModels(next:string[]){
+  const updateDiscoveredModels=useCallback((next:string[])=>{
     setModels(next);
     if(next.some(id=>!id.startsWith('openai-compatible::'))){
       setError(current=>current.startsWith('The engine is connected, but LM Studio models are unavailable.')?'':current);
     }
-  }
+  },[]);
   async function updateCloseBehavior(behavior:DesktopCloseBehavior){
     setCloseBehaviorStatus('Saving close behavior…');
     try{const saved=await invoke<DesktopCloseBehavior>('set_close_behavior',{behavior});setCloseBehavior(saved);setCloseBehaviorStatus('Close behavior saved.');}
