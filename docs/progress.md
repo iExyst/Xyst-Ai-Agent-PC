@@ -2,7 +2,7 @@
 
 ## Reject cycles that combine delegation and dependencies (2026-11-18)
 
-The Phase 4 graph regression now covers a cycle formed when a child depends on its parent while the parent waits for that child. This checks the combined dependency/delegation graph; pure dependency cycles and pure hierarchy cycles already had coverage. The focused task-graph suite passes (11 tests). Hosted verification is pending; no model inference was used.
+The Phase 4 graph regression now covers a cycle formed when a child depends on its parent while the parent waits for that child. This checks the combined dependency/delegation graph; pure dependency cycles and pure hierarchy cycles already had coverage. The focused task-graph suite passes (11 tests). Exact-source Windows workflow [44248137893](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44248137893) passed on `422e3c95`: 1,484 Python tests passed, 20 skipped, plus configured Ruff, format, strict Pyright, API contract, browser, and process-recovery checks. Installer and WSL acceptance were skipped by the source-push filters. No model inference was used.
 
 ## Extend safe Git inspection for workspace diagnosis (2026-11-18)
 
