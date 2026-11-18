@@ -1283,3 +1283,7 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 
 /* Keep the compact mobile navigation horizontal after tablet navigation rules. */
 @media(max-width:640px){.side-nav{display:flex;grid-template-columns:none;flex:1 1 auto;min-width:0;max-width:calc(100vw - 72px);overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}}
+.app-alert-action{display:flex;align-items:center;gap:14px}
+.app-alert-action>p{flex:1;margin:0}
+.app-alert-action .alert-action{flex:none;white-space:nowrap}
+@media(max-width:520px){.app-alert-action{align-items:flex-start;flex-direction:column}}

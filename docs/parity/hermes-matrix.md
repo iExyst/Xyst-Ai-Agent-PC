@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Help first-run users reach model setup when LM Studio is offline (2026-11-18)
+
+The home screen's engine-connected/model-unavailable alert now links directly to Model setup. After local discovery recovers, the stale connection warning clears; other errors and compatible-provider-only discovery remain distinct. A model-free browser flow covers the failed discovery, navigation, and recovery. This improves Phase 6 onboarding guidance without completing LM Studio interoperability or the real-model onboarding gate. See [`progress.md`](../progress.md#route-the-offline-first-run-state-to-model-setup-2026-11-18).
+
 ## Improve keyboard submission in the desktop objective flow (2026-11-18)
 
 The desktop objective and conversation composer supports Ctrl+Enter/Cmd+Enter submission while preserving Enter for multiline text, and it applies the existing run readiness guards. The objective browser flow verifies both behaviors, and `npm run build:desktop` passes. Exact-source Windows workflow [44277088681](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44277088681) passed its configured browser, TypeScript/client, API-contract and desktop process-recovery checks on `27dd02a8`; Python, WSL and installer checks were skipped by the desktop-only change. This is a desktop usability improvement; it does not close the broader keyboard, accessibility or real-provider acceptance gates. See [`progress.md`](../progress.md#submit-objectives-from-the-desktop-keyboard-2026-11-18).
