@@ -2,7 +2,7 @@
 
 ## Require a supported trajectory version before batch scoring (2026-11-18)
 
-Batch scoring and training export now require `format_version: 1` in every native trajectory. Missing or unsupported versions fail schema validation instead of being interpreted as the current format. Regression coverage verifies both cases; `uv run pytest tests/unit/test_batch.py -q` passes (13 tests). No model inference was used.
+Batch scoring and training export now require `format_version: 1` in every native trajectory. Missing or unsupported versions fail schema validation instead of being interpreted as the current format. Regression coverage verifies both cases; `uv run pytest tests/unit/test_batch.py -q` passes (15 tests), covering both scoring and training export. No model inference was used.
 
 ## Reconfirm installed desktop backup restore in the current installer (2026-11-18)
 

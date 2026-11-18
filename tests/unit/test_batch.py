@@ -405,6 +405,34 @@ def test_training_export_rejects_trajectory_integrity_mismatch(workspace_tmp_pat
         export_training_jsonl(batch_dir, workspace_tmp_path / "out.jsonl")
 
 
+@pytest.mark.parametrize("format_version", [None, 2])
+def test_training_export_rejects_missing_or_unsupported_trajectory_version(
+    workspace_tmp_path: Path, format_version: int | None
+) -> None:
+    batch_dir = workspace_tmp_path / "batch"
+    _training_fixture(batch_dir)
+    trajectory_path = batch_dir / "trajectories" / "reviewed.json"
+    trajectory = json.loads(trajectory_path.read_bytes())
+    if format_version is None:
+        del trajectory["format_version"]
+    else:
+        trajectory["format_version"] = format_version
+    content = json_bytes(trajectory)
+    trajectory_path.write_bytes(content)
+
+    manifest_path = batch_dir / "batch.json"
+    manifest = BatchManifest.model_validate_json(manifest_path.read_bytes())
+    manifest.cases[0].trajectory = TrajectoryInfo(
+        path="trajectories/reviewed.json",
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+    )
+    manifest_path.write_text(manifest.model_dump_json(), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        export_training_jsonl(batch_dir, workspace_tmp_path / "out.jsonl")
+
+
 def test_training_export_cli_is_local_and_does_not_need_api_token(
     workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
