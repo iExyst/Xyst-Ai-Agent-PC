@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Keep the desktop browser acceptance stable with multiple status regions (2026-11-18)
+
+The system-monitor acceptance now selects its own update announcement while the top bar separately exposes model readiness. The full model-free browser suite passes at four workers (45 passed, three live/dependency-gated skipped); the production desktop build and onboarding keyboard/contrast/name audit pass. A high-parallelism objective timeout passed when rerun alone and with four workers. This is current desktop acceptance evidence, not a complete screen-reader audit. See [`progress.md`](../progress.md#keep-the-desktop-browser-acceptance-stable-with-multiple-status-regions-2026-11-18).
+
 ## Keep keyboard focus visible across mobile navigation (2026-11-18)
 
 The mobile navigation retains a horizontal scroll row after the tablet layout rule, and keyboard focus scrolls the selected link fully into view. Browser acceptance tabs through all ten section links, checks the visible 3px focus ring, and opens Settings with Enter. Exact-source workflow [44239054780](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44239054780) and installer workflow [44239075061](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44239075061) passed. Installed package acceptance also covered recovery, workspace changes, frozen browser/filesystem workers, upgrade, standard-user install, boot and uninstall. This improves mobile keyboard navigation without closing the broader accessibility audit. See [`progress.md`](../progress.md#keep-keyboard-focus-visible-across-mobile-navigation-2026-11-18).
