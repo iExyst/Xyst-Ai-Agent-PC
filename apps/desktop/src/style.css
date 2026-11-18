@@ -1171,7 +1171,7 @@ body{min-height:100vh;color:var(--text);background:radial-gradient(ellipse at 78
 @media(max-width:640px){
   .side-nav{min-width:0;max-width:calc(100vw - 72px);overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}
   .side-nav::-webkit-scrollbar{display:none}
-  .side-nav a{flex:0 0 64px;min-width:64px;height:52px;flex-direction:column;justify-content:center;gap:3px;padding:3px 2px;font-size:9px;line-height:1.1;text-align:center;white-space:normal;text-wrap:balance;scroll-snap-align:start}
+  .side-nav a{flex:0 0 76px;min-width:76px;height:60px;flex-direction:column;justify-content:center;gap:3px;padding:3px 4px;font-size:12px;line-height:1.12;text-align:center;white-space:normal;text-wrap:balance;scroll-snap-align:start}
   .side-nav .side-icon{width:17px;height:17px}
   .side-nav .run-dot{position:absolute;top:5px;right:10px}
 }

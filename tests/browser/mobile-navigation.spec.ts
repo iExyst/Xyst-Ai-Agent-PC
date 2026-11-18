@@ -9,7 +9,10 @@ test('mobile navigation shows destination labels and scrolls through every secti
   for(const label of ['New objective','Saved runs','Chats','Memory','Skills','Automations','Tools & integrations','Model setup','System monitor','Settings']){
     const link=navigation.getByRole('link',{name:new RegExp(label)});
     await expect(link).toBeVisible({timeout:10000});
-    await expect(link).toHaveCSS('font-size','9px');
+    await expect(link).toHaveCSS('font-size','12px');
+    const target=await link.evaluate(element=>({width:element.getBoundingClientRect().width,height:element.getBoundingClientRect().height}));
+    expect(target.width,`${label} should have a readable touch target`).toBeGreaterThanOrEqual(44);
+    expect(target.height,`${label} should have a readable touch target`).toBeGreaterThanOrEqual(44);
     const labelFits=await link.evaluate(element=>{
       const textNode=[...element.childNodes].find(child=>child.nodeType===Node.TEXT_NODE&&child.textContent?.trim());
       if(!textNode)return false;
