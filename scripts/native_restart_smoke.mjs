@@ -363,7 +363,9 @@ async function startDesktop(label) {
     const connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
     launchCredentials.push(connection);
     const headers = { Authorization: `Bearer ${connection.token}` };
-    const apiDeadline = Date.now() + 30000;
+    // On a clean Windows profile the frozen engine can use the desktop's
+    // complete 60-second startup retry window while extracting its payload.
+    const apiDeadline = Date.now() + 75000;
     while (Date.now() < apiDeadline) {
       try {
         const response = await fetch(`${connection.base_url}/runs`, { headers, signal: AbortSignal.timeout(750) });
