@@ -76,8 +76,8 @@ try{
   if(!elapsedMatch||Number(elapsedMatch[1])>=60)throw new Error('The native elapsed display did not start at planning.');
   const resources=page.getByRole('region',{name:'Run resources'});
   await expect(resources).toContainText('8 iterations · 120 seconds');
-  await expect(resources).toContainText('Inference iterations remaining: 7 of 8');
-  await expect(resources).toContainText(/Wall-clock allowance remaining: 1m \d+s/);
+  await expect(resources.locator('.run-resource-summary')).toContainText(/Iterations remaining7 of 8/);
+  await expect(resources.locator('.run-resource-summary')).toContainText(/Time remaining1m \d+s/);
   const usageResponse=await fetch(`${connection.base_url}/runs/${run.id}/usage`,{headers:{Authorization:`Bearer ${connection.token}`}});
   if(!usageResponse.ok||(await usageResponse.json()).inference_attempts!==1)throw new Error('Native resource API did not report the saved inference attempt.');
   const plan=page.getByRole('region',{name:'Task plan'});
