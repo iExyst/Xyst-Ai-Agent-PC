@@ -24,13 +24,18 @@ from xaa.extensions.procedure_dependencies import (
 )
 from xaa.extensions.wheelhouse_storage import ProcedureWheelhouseStore
 from xaa.runtime.command_contracts import CommandIntent
-from xaa.runtime.owned_transport import EnvironmentInUseError
+from xaa.runtime.owned_transport import EnvironmentInUseError, TransportError
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
 from xaa.runtime.wsl_transport import WSLTransport
 
 
 def build_wheel(
-    name: str, value: str, requires_dist: str | None = None, *, version: str = "1.0"
+    name: str,
+    value: str,
+    requires_dist: str | None = None,
+    *,
+    version: str = "1.0",
+    extra_file_count: int = 0,
 ) -> tuple[str, bytes]:
     normalized = name.replace("-", "_")
     dist_info = f"{normalized}-{version}.dist-info"
@@ -46,6 +51,8 @@ def build_wheel(
             b"Root-Is-Purelib: true\nTag: py3-none-any\n\n"
         ),
     }
+    for index in range(extra_file_count):
+        files[f"{normalized}/recovery-fixture/{index:05d}.txt"] = b"fixture\n"
     record = io.StringIO()
     writer = csv.writer(record, lineterminator="\n")
     for path, content in sorted(files.items()):
@@ -128,6 +135,83 @@ def _system_python_snapshot(distribution: str) -> dict[str, Any]:
     return json.loads(_wsl(distribution, "python3", "-c", script))
 
 
+async def _kill_and_retry_procedure_install(
+    distribution: str,
+    transport: WSLTransport,
+    lock: ProcedurePythonDependencyLock,
+    wheelhouse: Path,
+) -> dict[str, Any]:
+    digest = lock.environment_digest()
+    unit = f"xaa-procenv-{digest[:32]}.service"
+    install_task = asyncio.create_task(
+        transport.install_procedure_environment(
+            lock, wheelhouse, deadline=time.monotonic() + 300
+        )
+    )
+    deadline = time.monotonic() + 90
+    killed = False
+    while time.monotonic() < deadline and not install_task.done():
+        state = await asyncio.to_thread(
+            _wsl,
+            distribution,
+            "sudo",
+            "systemctl",
+            "show",
+            unit,
+            "--property=ActiveState",
+            "--value",
+        )
+        if state == "active":
+            await asyncio.sleep(0.2)
+            if not install_task.done():
+                _wsl(
+                    distribution,
+                    "sudo",
+                    "systemctl",
+                    "kill",
+                    "--kill-whom=all",
+                    "--signal=SIGKILL",
+                    unit,
+                )
+                killed = True
+                break
+        await asyncio.sleep(0.05)
+    if not killed:
+        if not install_task.done():
+            await install_task
+        raise RuntimeError("Could not interrupt the live Python installation service.")
+    try:
+        await install_task
+    except TransportError:
+        pass
+    else:
+        raise RuntimeError("The Python installer completed despite the requested process kill.")
+    status = await transport.procedure_environment_status(
+        digest, deadline=time.monotonic() + 30
+    )
+    root = PurePosixPath("/var/lib/xaa-procedure-environments") / digest
+    target_state = _wsl(
+        distribution,
+        "sudo",
+        "bash",
+        "-lc",
+        'if test -e "$1"; then echo present; else echo absent; fi',
+        "xaa",
+        str(root),
+    )
+    if status.get("installed") is not False or target_state != "absent":
+        raise RuntimeError("Killed Python install left a published or partial environment.")
+    recovered = await transport.install_procedure_environment(
+        lock, wheelhouse, deadline=time.monotonic() + 300
+    )
+    if (
+        recovered.get("installed") is not True
+        or recovered.get("environment_digest") != digest
+    ):
+        raise RuntimeError("Retry after killing Python install did not recover the environment.")
+    return recovered
+
+
 def make_lock(
     distribution: str,
     artifacts: dict[str, bytes],
@@ -175,7 +259,9 @@ def make_lock(
 
 async def run(distribution: str) -> dict[str, Any]:
     leaf_name, leaf_bytes = build_wheel("xaa-leaf", "leaf-ready")
-    top_name, top_bytes = build_wheel("xaa-top", "top-ready", "xaa-leaf==1.0")
+    top_name, top_bytes = build_wheel(
+        "xaa-top", "top-ready", "xaa-leaf==1.0", extra_file_count=4096
+    )
     artifacts = {leaf_name: leaf_bytes, top_name: top_bytes}
     lock = make_lock(distribution, artifacts)
     isolated_name, isolated_bytes = build_wheel("xaa-isolation-probe", "other-environment-only")
@@ -290,6 +376,13 @@ async def run(distribution: str) -> dict[str, Any]:
         active_run_receipt = await lease_run
         if not active_removal_refused or active_run_receipt.get("succeeded") is not True:
             raise RuntimeError("Environment removal was not fenced by the active execution lease.")
+        if not await transport.remove_procedure_environment(
+            lock.environment_digest(), deadline=time.monotonic() + 30
+        ):
+            raise RuntimeError("Could not remove the first Python fixture before crash recovery.")
+        installed = await _kill_and_retry_procedure_install(
+            distribution, transport, lock, store.root / lock.environment_digest()
+        )
         isolation = await transport.run(
             CommandIntent(
                 argv=[
@@ -491,6 +584,7 @@ async def run(distribution: str) -> dict[str, Any]:
             "interrupted_install_recovered": True,
             "interrupted_install_unit_stopped": interrupted_unit_state == "inactive",
             "interrupted_staging_removed": interrupted_partial_state == "absent",
+            "installer_service_sigkill_recovered": True,
             "integrity_status": True,
             "procedure_imports_from_read_only_mount": True,
             "other_environment_path_hidden": "other-environment-visible False" in isolation_output,
