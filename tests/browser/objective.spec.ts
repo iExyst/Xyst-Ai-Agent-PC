@@ -103,6 +103,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   expect(braveSearchSecret).toBe('');
   await page.locator('summary').filter({hasText:'Web search'}).click();
   await selectLocalModel(page,'fixture/model');
+  await expect(page.getByRole('status').filter({hasText:'Model ready'})).toBeVisible();
   await navigateMainSection(page,'Memory');
   await page.getByLabel('Preference', {exact:true}).fill('Use concise examples');
   await page.getByRole('button',{name:'Save preference',exact:true}).click();
