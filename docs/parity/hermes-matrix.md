@@ -2,7 +2,7 @@
 
 ## Keep keyboard focus visible across mobile navigation (2026-11-18)
 
-The mobile navigation retains a horizontal scroll row after the tablet layout rule, and keyboard focus scrolls the selected link fully into view. Browser acceptance tabs through all ten section links, checks the visible 3px focus ring, and opens Settings with Enter. The mobile navigation and objective flows and production build pass locally; hosted verification is pending. This improves mobile keyboard navigation without closing the broader accessibility audit. See [`progress.md`](../progress.md#keep-keyboard-focus-visible-across-mobile-navigation-2026-11-18).
+The mobile navigation retains a horizontal scroll row after the tablet layout rule, and keyboard focus scrolls the selected link fully into view. Browser acceptance tabs through all ten section links, checks the visible 3px focus ring, and opens Settings with Enter. Exact-source workflow [44239054780](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44239054780) passed its desktop/browser and recovery checks; Python/static checks were skipped because only UI inputs changed. Exact-commit installer workflow [44239075061](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44239075061) is in progress. This improves mobile keyboard navigation without closing the broader accessibility audit. See [`progress.md`](../progress.md#keep-keyboard-focus-visible-across-mobile-navigation-2026-11-18).
 
 ## Keep model connection status visible on mobile (2026-11-18)
 
