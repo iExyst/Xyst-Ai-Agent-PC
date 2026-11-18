@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -91,7 +90,7 @@ class ScheduleService:
         while True:
             try:
                 self.tick()
-            except (sqlite3.Error, ValueError, TypeError, KeyError, OSError) as exc:
+            except Exception as exc:  # noqa: BLE001 - keep durable polling alive after a bad tick.
                 logger.error("Schedule poll failed (%s)", type(exc).__name__)
             await asyncio.sleep(2)
 
@@ -153,5 +152,13 @@ class ScheduleService:
                 if run_id is not None:
                     run_ids.append(run_id)
         for run_id in run_ids:
-            self.submit(run_id)
+            try:
+                self.submit(run_id)
+            except Exception as exc:  # noqa: BLE001 - later IDs and future polls must continue.
+                logger.error(
+                    "Scheduled run dispatch failed for %s (%s); the queued run remains durable "
+                    "for supervisor recovery.",
+                    run_id,
+                    type(exc).__name__,
+                )
         return run_ids

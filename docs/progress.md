@@ -1,5 +1,9 @@
 # Progress
 
+## Keep scheduled execution polling after dispatch failures (2026-11-18)
+
+The scheduler persists each occurrence and queued run before handing it to the supervisor. A dispatch exception previously escaped the tick and could terminate the background polling task. Dispatch failures are now isolated per queued run, logged without request contents, and do not stop later dispatches; the durable queued runs remain eligible for supervisor recovery. Regression coverage injects a transient first-dispatch failure, verifies the next run is still submitted, and confirms both persisted run IDs are recoverable. `uv run pytest tests/unit/test_schedules.py -q` passed (19); Ruff, formatting, and Pyright passed. No live model inference was used.
+
 ## Trace final-review workspace changes to saved activity (2026-11-18)
 
 Final review now shows the durable run-event sequence for each completed workspace change. Direct edits display their `tool.completed` sequence and provider call ID; accepted specialist edits display the owner-review sequence and task ID. The authenticated API contract and generated desktop types include this provenance, and the UI rejects malformed sequence metadata. `uv run pytest tests/unit/test_coordinator.py -q` passed (13); `npx playwright test tests/browser/run-review.spec.ts --workers=4` passed (4); TypeScript typecheck, generated-contract check, Ruff, Pyright, and `git diff --check` passed. This strengthens traceability for final review; it does not close the broader parity row. No live model inference was used.

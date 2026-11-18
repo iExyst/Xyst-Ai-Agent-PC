@@ -60,6 +60,32 @@ def test_local_timezone_resolves_dst_gap_and_ambiguous_time() -> None:
     )
 
 
+def test_dispatch_failure_does_not_drop_other_durable_schedule_occurrences(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "schedule-dispatch-failure.sqlite3")
+    first = create_schedule(store, start_at="2025-01-01T11:00", policy="run_once")
+    second = create_schedule(store, start_at="2025-01-01T11:00", policy="run_once")
+    dispatch_attempts: list[str] = []
+
+    def submit(run_id: str) -> None:
+        dispatch_attempts.append(run_id)
+        if len(dispatch_attempts) == 1:
+            raise RuntimeError("transient supervisor failure")
+
+    service = ScheduleService(store, submit)
+    queued = service.tick(datetime(2025, 1, 1, 12, 0, tzinfo=UTC))
+
+    assert len(queued) == 2
+    assert len(dispatch_attempts) == 2
+    assert set(dispatch_attempts) == set(queued)
+    assert set(store.recover_abandoned_runs()) == set(queued)
+    assert all(
+        ScheduleStore(store).get(schedule["id"])["executions"][0]["state"] == "queued"
+        for schedule in (first, second)
+    )
+
+
 def test_daily_ambiguous_wall_time_runs_once_at_earlier_fall_back_instant(
     workspace_tmp_path: Path,
 ) -> None:
