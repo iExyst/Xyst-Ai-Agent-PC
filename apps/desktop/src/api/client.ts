@@ -49,6 +49,7 @@ export type PluginRemovalResult = components['schemas']['PluginRemovalResult'];
 export type PluginDataListing = components['schemas']['PluginDataListing'];
 export type PluginDataRemovalResult = components['schemas']['PluginDataRemovalResult'];
 export type SpecialistProfile = components['schemas']['SpecialistProfileResponse'];
+export type SpecialistProcedure = { id: string; name: string; version: number };
 export type ChatSession = components['schemas']['CLIChatSessionRecord'];
 export type ChatSessionSummary = components['schemas']['CLIChatSessionSummary'];
 export type ChatSessionSettings = components['schemas']['CLIChatSessionSettings'];
@@ -249,6 +250,14 @@ export class EngineClient {
   providers(): Promise<{id:string;status:string;error?:string}[]> { return this.#request('/providers'); }
 
   specialistProfiles(): Promise<SpecialistProfile[]> { return this.#request('/specialists/profiles'); }
+
+  specialistProcedures(): Promise<SpecialistProcedure[]> { return this.#request('/specialists/procedures'); }
+
+  setSpecialistProcedure(role: string, skill_id: string | null): Promise<SpecialistProfile> {
+    return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/procedure`, {
+      method: 'PUT', body: JSON.stringify({skill_id}),
+    });
+  }
 
   setSpecialistRoute(role: string, model_route: string | null): Promise<SpecialistProfile> {
     return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/route`, {

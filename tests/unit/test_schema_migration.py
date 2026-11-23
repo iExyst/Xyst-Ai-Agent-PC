@@ -759,3 +759,24 @@ def test_schema_thirty_four_adds_empty_mcp_roots_without_disclosing_paths(worksp
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(mcp_servers)")}
         assert "roots" in columns
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
+def test_schema_thirty_eight_adds_specialist_procedure_selection_and_task_snapshot(
+    workspace_tmp_path,
+):
+    database = workspace_tmp_path / "schema-thirty-eight-specialist-procedure.sqlite3"
+    store = RunStore(database)
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE specialist_profiles DROP COLUMN procedure_skill_id")
+        connection.execute("ALTER TABLE tasks DROP COLUMN procedure_snapshot")
+        connection.execute("PRAGMA user_version=38")
+
+    migrated = RunStore(database)
+    with migrated.connection() as connection:
+        profile_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(specialist_profiles)")
+        }
+        task_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
+        assert "procedure_skill_id" in profile_columns
+        assert "procedure_snapshot" in task_columns
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

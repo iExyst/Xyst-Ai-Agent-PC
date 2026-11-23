@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 38
+DATABASE_SCHEMA_VERSION = 39
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -369,6 +369,7 @@ class RunStore:
                     identity_name TEXT NOT NULL DEFAULT '',
                     model_route TEXT,
                     identity_instructions TEXT NOT NULL DEFAULT '',
+                    procedure_snapshot TEXT,
                     workspace TEXT,
                     permission_scope TEXT NOT NULL,
                     budgets TEXT NOT NULL,
@@ -390,6 +391,7 @@ class RunStore:
                     display_name TEXT NOT NULL,
                     model_route TEXT,
                     system_instructions TEXT NOT NULL DEFAULT '',
+                    procedure_skill_id TEXT,
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS task_leases (
@@ -792,6 +794,10 @@ class RunStore:
             profile_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(specialist_profiles)")
             }
+            if "procedure_skill_id" not in profile_columns:
+                connection.execute(
+                    "ALTER TABLE specialist_profiles ADD COLUMN procedure_skill_id TEXT"
+                )
             if "system_instructions" not in profile_columns:
                 connection.execute(
                     "ALTER TABLE specialist_profiles ADD COLUMN system_instructions TEXT NOT NULL DEFAULT ''"
@@ -807,6 +813,8 @@ class RunStore:
                     (role, display_name, instructions, utc_now()),
                 )
             task_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
+            if "procedure_snapshot" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN procedure_snapshot TEXT")
             if "input_artifacts" not in task_columns:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN input_artifacts TEXT NOT NULL DEFAULT '[]'"

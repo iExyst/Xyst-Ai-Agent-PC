@@ -12,6 +12,7 @@ from xaa.runtime.permissions import workspace_write_authorized
 from xaa.runtime.task_graph import TaskDefinition, TaskGraph, TaskStatus
 from xaa.storage.mcp import MCPRegistry
 from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
+from xaa.storage.skills import snapshot_digest
 
 
 class TaskTokenBudgetExceeded(TokenBudgetExceeded):
@@ -21,6 +22,44 @@ class TaskTokenBudgetExceeded(TokenBudgetExceeded):
 class TaskStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
+
+    @staticmethod
+    def _procedure_snapshot(connection: Any, skill_id: str | None) -> dict[str, Any] | None:
+        if skill_id is None:
+            return None
+        row = connection.execute(
+            "SELECT s.name,s.active_version,v.content,v.required_tools,v.required_permissions,"
+            "v.evaluation_evidence FROM skills s JOIN skill_versions v "
+            "ON v.skill_id=s.id AND v.version=s.active_version "
+            "WHERE s.id=? AND s.lifecycle_state='active'",
+            (skill_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(
+                "A specialist procedure is no longer active; update its profile first."
+            )
+        content = str(row["content"])
+        if len(content.encode("utf-8")) > 16 * 1024:
+            raise ValueError("A specialist procedure exceeds the 16 KiB context limit.")
+        if connection.execute(
+            "SELECT 1 FROM skill_version_assets WHERE skill_id=? AND version=? LIMIT 1",
+            (skill_id, row["active_version"]),
+        ).fetchone():
+            raise ValueError("A specialist procedure now contains linked resources.")
+        evidence = json.loads(row["evaluation_evidence"])
+        snapshot: dict[str, Any] = {
+            "skill_id": skill_id,
+            "version": row["active_version"],
+            "name": row["name"],
+            "content": content,
+            "required_tools": json.loads(row["required_tools"]),
+            "required_permissions": sorted(json.loads(row["required_permissions"])),
+        }
+        for key in ("description", "category"):
+            if evidence.get(key):
+                snapshot[key] = evidence[key]
+        snapshot["snapshot_sha256"] = snapshot_digest(snapshot)
+        return snapshot
 
     def remaining_run_seconds(self, run_id: str) -> int:
         run = self.runs.get_run(run_id)
@@ -548,7 +587,7 @@ class TaskStore:
             specialist_profiles = {
                 str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,display_name,model_route,system_instructions FROM specialist_profiles"
+                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id FROM specialist_profiles"
                 ).fetchall()
             }
             profile_instructions = {
@@ -577,7 +616,7 @@ class TaskStore:
                         else inherited.get("max_output_tokens"),
                     }
                     connection.execute(
-                        "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
+                        "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,procedure_snapshot,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
                         (
                             f"{run_id}:{task.id}",
                             run_id,
@@ -591,6 +630,17 @@ class TaskStore:
                             specialist_profiles.get(task.role, {}).get("model_route")
                             or run["model"],
                             profile_instructions.get(task.role, ""),
+                            json.dumps(procedure_snapshot, ensure_ascii=False)
+                            if (
+                                procedure_snapshot := self._procedure_snapshot(
+                                    connection,
+                                    specialist_profiles.get(task.role, {}).get(
+                                        "procedure_skill_id"
+                                    ),
+                                )
+                            )
+                            is not None
+                            else None,
                             run["workspace"],
                             json.dumps(task.permissions),
                             json.dumps(
@@ -796,7 +846,7 @@ class TaskStore:
             profiles = {
                 str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,display_name,model_route,system_instructions FROM specialist_profiles"
+                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id FROM specialist_profiles"
                 ).fetchall()
             }
             inserted: set[str] = set()
@@ -814,8 +864,11 @@ class TaskStore:
                     identity_name = profiles.get(item.role, {}).get("display_name") or item.role
                     model_route = profiles.get(item.role, {}).get("model_route") or run["model"]
                     instructions = profiles.get(item.role, {}).get("system_instructions", "")
+                    procedure_snapshot = self._procedure_snapshot(
+                        connection, profiles.get(item.role, {}).get("procedure_skill_id")
+                    )
                     connection.execute(
-                        "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
+                        "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,procedure_snapshot,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",
                         (
                             f"{run_id}:{item.id}",
                             run_id,
@@ -828,6 +881,9 @@ class TaskStore:
                             identity_name,
                             model_route,
                             instructions,
+                            json.dumps(procedure_snapshot, ensure_ascii=False)
+                            if procedure_snapshot is not None
+                            else None,
                             run["workspace"],
                             json.dumps(item.permissions),
                             json.dumps(
@@ -965,6 +1021,11 @@ class TaskStore:
                     "budgets",
                 ):
                     record[field] = json.loads(record[field])
+                record["procedure_snapshot"] = (
+                    json.loads(record["procedure_snapshot"])
+                    if record.get("procedure_snapshot")
+                    else None
+                )
                 records.append(record)
         run_events = self.runs.list_events(run_id)
         events_by_task: dict[str, list[dict[str, Any]]] = {}

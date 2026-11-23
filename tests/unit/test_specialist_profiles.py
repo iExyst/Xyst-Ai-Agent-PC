@@ -11,6 +11,19 @@ TOKEN = "a-specialist-profile-test-token-long-enough"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 
 
+def _active_procedure(store: RunStore, *, identity: str = "procedure-a", version: int = 1) -> None:
+    now = "2026-01-01T00:00:00+00:00"
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) VALUES(?,?,'active',?,?,?)",
+            (identity, identity, version, now, now),
+        )
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES(?,?,?,'[]','[]','{}',?)",
+            (identity, version, f"Procedure body version {version}.", now),
+        )
+
+
 class ProfileProvider(LMStudioProvider):
     async def models(self) -> list[ModelInfo]:
         return [ModelInfo(id="parent/model"), ModelInfo(id="research/model")]
@@ -62,6 +75,71 @@ def test_specialist_route_is_persisted_and_snapshotted_into_saved_task(workspace
     assert TaskStore(reopened).records(run_id)[0]["identity_instructions"] == (
         "Cite sources and label uncertainty."
     )
+
+
+def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure.sqlite3")
+    _active_procedure(store)
+    profiles = SpecialistProfileStore(store)
+    saved_profile = profiles.set_procedure("researcher", "procedure-a")
+    assert saved_profile["procedure_skill_id"] == "procedure-a"
+    assert saved_profile["procedure_name"] == "procedure-a"
+    run_id = store.create_run(
+        objective="Research with a saved procedure",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id, owner, [TaskDefinition(id="research", objective="Research", role="researcher")]
+    )
+    saved = tasks.records(run_id)[0]["procedure_snapshot"]
+    assert saved["content"] == "Procedure body version 1."
+    assert saved["version"] == 1
+    assert len(saved["snapshot_sha256"]) == 64
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES('procedure-a',2,'Procedure body version 2.','[]','[]','{}','2026-01-02T00:00:00+00:00')"
+        )
+        connection.execute("UPDATE skills SET active_version=2 WHERE id='procedure-a'")
+    profiles.set_procedure("researcher", None)
+    assert TaskStore(store).records(run_id)[0]["procedure_snapshot"] == saved
+
+
+def test_specialist_procedure_api_lists_only_active_small_resource_free_choices(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-api.sqlite3")
+    _active_procedure(store)
+    _active_procedure(store, identity="inactive-procedure")
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skills SET lifecycle_state='candidate' WHERE id='inactive-procedure'"
+        )
+    with TestClient(create_app(ProfileProvider(), SecretStr(TOKEN), store=store)) as client:
+        choices = client.get("/specialists/procedures", headers=HEADERS)
+        assert choices.status_code == 200
+        assert [item["id"] for item in choices.json()] == ["procedure-a"]
+        selected = client.put(
+            "/specialists/profiles/researcher/procedure",
+            headers=HEADERS,
+            json={"skill_id": "procedure-a"},
+        )
+        assert selected.status_code == 200
+        assert selected.json()["procedure_skill_id"] == "procedure-a"
+        rejected = client.put(
+            "/specialists/profiles/researcher/procedure",
+            headers=HEADERS,
+            json={"skill_id": "inactive-procedure"},
+        )
+        assert rejected.status_code == 422
+        researcher = next(
+            item
+            for item in client.get("/specialists/profiles", headers=HEADERS).json()
+            if item["role"] == "researcher"
+        )
+        assert researcher["procedure_skill_id"] == "procedure-a"
 
 
 def test_specialist_profile_api_authenticates_and_only_accepts_discovered_models(

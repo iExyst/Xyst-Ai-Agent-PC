@@ -6595,6 +6595,27 @@
         "title": "SpecialistInstructionsRequest",
         "type": "object"
       },
+      "SpecialistProcedureRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          }
+        },
+        "required": [
+          "skill_id"
+        ],
+        "title": "SpecialistProcedureRequest",
+        "type": "object"
+      },
       "SpecialistProfileResponse": {
         "additionalProperties": false,
         "properties": {
@@ -6612,6 +6633,39 @@
               }
             ],
             "title": "Model Route"
+          },
+          "procedure_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure Name"
+          },
+          "procedure_skill_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure Skill Id"
+          },
+          "procedure_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure Version"
           },
           "role": {
             "title": "Role",
@@ -15414,6 +15468,34 @@
         "summary": "Eligible Skill Trials"
       }
     },
+    "/specialists/procedures": {
+      "get": {
+        "operationId": "list_specialist_procedures_specialists_procedures_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Specialist Procedures Specialists Procedures Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Specialist Procedures"
+      }
+    },
     "/specialists/profiles": {
       "get": {
         "operationId": "list_specialist_profiles_specialists_profiles_get",
@@ -15693,6 +15775,60 @@
           }
         ],
         "summary": "Delete Specialist Memory"
+      }
+    },
+    "/specialists/profiles/{role}/procedure": {
+      "put": {
+        "operationId": "set_specialist_procedure_specialists_profiles__role__procedure_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialistProcedureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpecialistProfileResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Specialist Procedure"
       }
     },
     "/specialists/profiles/{role}/route": {

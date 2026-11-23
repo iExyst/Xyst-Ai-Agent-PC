@@ -864,7 +864,15 @@ class SpecialistProfileResponse(BaseModel):
     display_name: str
     model_route: str | None
     system_instructions: str
+    procedure_skill_id: str | None = None
+    procedure_name: str | None = None
+    procedure_version: int | None = None
     updated_at: str
+
+
+class SpecialistProcedureRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    skill_id: str | None
 
 
 class SkillPythonDependencyCheck(BaseModel):
@@ -3777,6 +3785,38 @@ def create_app(
     @app.get("/specialists/profiles", response_model=list[SpecialistProfileResponse])
     def list_specialist_profiles(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
         return specialist_profiles.list()
+
+    @app.get("/specialists/procedures")
+    def list_specialist_procedures(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
+        with run_store.connection() as connection:
+            rows = connection.execute(
+                "SELECT s.id,s.name,s.active_version,v.content FROM skills s "
+                "JOIN skill_versions v ON v.skill_id=s.id AND v.version=s.active_version "
+                "WHERE s.lifecycle_state='active' ORDER BY s.name COLLATE NOCASE,s.id LIMIT 100"
+            ).fetchall()
+            return [
+                {"id": row["id"], "name": row["name"], "version": row["active_version"]}
+                for row in rows
+                if len(str(row["content"]).encode("utf-8")) <= 16 * 1024
+                and connection.execute(
+                    "SELECT 1 FROM skill_version_assets WHERE skill_id=? AND version=? LIMIT 1",
+                    (row["id"], row["active_version"]),
+                ).fetchone()
+                is None
+            ]
+
+    @app.put("/specialists/profiles/{role}/procedure", response_model=SpecialistProfileResponse)
+    def set_specialist_procedure(
+        role: str,
+        payload: SpecialistProcedureRequest,
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            return specialist_profiles.set_procedure(role, payload.skill_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Specialist role not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.put("/specialists/profiles/{role}/route", response_model=SpecialistProfileResponse)
     async def set_specialist_route(

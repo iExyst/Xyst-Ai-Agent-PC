@@ -2290,6 +2290,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/specialists/procedures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Specialist Procedures */
+        get: operations["list_specialist_procedures_specialists_procedures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/specialists/profiles": {
         parameters: {
             query?: never;
@@ -2371,6 +2388,23 @@ export interface paths {
         post?: never;
         /** Delete Specialist Memory */
         delete: operations["delete_specialist_memory_specialists_profiles__role__memory__memory_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/specialists/profiles/{role}/procedure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Specialist Procedure */
+        put: operations["set_specialist_procedure_specialists_profiles__role__procedure_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4749,12 +4783,23 @@ export interface components {
             /** System Instructions */
             system_instructions: string;
         };
+        /** SpecialistProcedureRequest */
+        SpecialistProcedureRequest: {
+            /** Skill Id */
+            skill_id: string | null;
+        };
         /** SpecialistProfileResponse */
         SpecialistProfileResponse: {
             /** Display Name */
             display_name: string;
             /** Model Route */
             model_route: string | null;
+            /** Procedure Name */
+            procedure_name?: string | null;
+            /** Procedure Skill Id */
+            procedure_skill_id?: string | null;
+            /** Procedure Version */
+            procedure_version?: number | null;
             /** Role */
             role: string;
             /** System Instructions */
@@ -10152,6 +10197,28 @@ export interface operations {
             };
         };
     };
+    list_specialist_procedures_specialists_procedures_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
     list_specialist_profiles_specialists_profiles_get: {
         parameters: {
             query?: never;
@@ -10326,6 +10393,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_specialist_procedure_specialists_profiles__role__procedure_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                role: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecialistProcedureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecialistProfileResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

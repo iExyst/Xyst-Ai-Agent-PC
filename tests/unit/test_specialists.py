@@ -1158,6 +1158,16 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
         "researcher", "Prefer primary sources and cite file paths."
     )
     SpecialistProfileStore(store).set_display_name("researcher", "Source Analyst")
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) VALUES('research-procedure','Research procedure','active',1,?,?)",
+            ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES('research-procedure',1,'Use primary sources.','[]','[]','{}',?)",
+            ("2026-01-01T00:00:00+00:00",),
+        )
+    SpecialistProfileStore(store).set_procedure("researcher", "research-procedure")
     MemoryStore(store).save_preference(
         "specialist:researcher", "Use the checked-in API contract as the source of truth."
     )
@@ -1188,6 +1198,14 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
                 assert (
                     "Use the checked-in API contract as the source of truth."
                     in messages[1]["content"]
+                )
+                assignment = json.loads(messages[2]["content"])
+                assert assignment["specialist_procedure_untrusted"]["content"] == (
+                    "Use primary sources."
+                )
+                assert (
+                    "untrusted reference material"
+                    in assignment["specialist_procedure_trust_notice"]
                 )
                 message = {"role": "assistant", "content": "Specialist candidate awaiting review"}
             elif messages[-1]["role"] == "user":
@@ -1253,6 +1271,16 @@ async def test_running_specialist_can_delegate_then_resume_after_child_review(
     )["id"]
     parent = store.acquire_lease(run_id, "coordinator")
     store.transition(run_id, RunState.PLANNING, owner=parent)
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) VALUES('child-procedure','Child procedure','active',1,?,?)",
+            ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES('child-procedure',1,'Report exact source lines.','[]','[]','{}',?)",
+            ("2026-01-01T00:00:00+00:00",),
+        )
+    SpecialistProfileStore(store).set_procedure("researcher", "child-procedure")
     tasks = TaskStore(store)
     tasks.save_plan(
         run_id,
@@ -1408,6 +1436,8 @@ async def test_running_specialist_can_delegate_then_resume_after_child_review(
             {"task_id": "lead", "status": "queued"},
             {"task_id": "source-check", "status": "queued"},
         ]
+        child = next(item for item in tasks.records(run_id) if item["local_id"] == "source-check")
+        assert child["procedure_snapshot"]["content"] == "Report exact source lines."
         second = await SpecialistRunner(store, provider).run_ready(
             run_id, parent, deadline=time.monotonic() + 120
         )

@@ -24,7 +24,9 @@ class SpecialistProfileStore:
     def list(self) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:
             rows = connection.execute(
-                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles ORDER BY role"
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,"
+                "s.name AS procedure_name,s.active_version AS procedure_version "
+                "FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id ORDER BY p.role"
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -39,7 +41,7 @@ class SpecialistProfileStore:
                 (model_route, utc_now(), role),
             )
             row = connection.execute(
-                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles WHERE role=?",
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
                 (role,),
             ).fetchone()
         if row is None:
@@ -57,7 +59,7 @@ class SpecialistProfileStore:
                 (instructions.strip(), utc_now(), role),
             )
             row = connection.execute(
-                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles WHERE role=?",
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
                 (role,),
             ).fetchone()
         if row is None:
@@ -85,11 +87,47 @@ class SpecialistProfileStore:
             if changed != 1:
                 raise KeyError(role)
             row = connection.execute(
-                "SELECT role,display_name,model_route,system_instructions,updated_at FROM specialist_profiles WHERE role=?",
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
                 (role,),
             ).fetchone()
         assert row is not None
         return dict(row)
+
+    def set_procedure(self, role: str, skill_id: str | None) -> dict[str, Any]:
+        if role not in ROLES:
+            raise KeyError(role)
+        with self.runs.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if skill_id is not None:
+                row = connection.execute(
+                    "SELECT s.name,s.active_version,v.content FROM skills s "
+                    "JOIN skill_versions v ON v.skill_id=s.id AND v.version=s.active_version "
+                    "WHERE s.id=? AND s.lifecycle_state='active'",
+                    (skill_id,),
+                ).fetchone()
+                if row is None:
+                    raise ValueError("Choose a currently active procedure.")
+                if len(str(row["content"]).encode("utf-8")) > 16 * 1024:
+                    raise ValueError("Specialist procedures must be 16 KiB or smaller.")
+                if connection.execute(
+                    "SELECT 1 FROM skill_version_assets WHERE skill_id=? AND version=? LIMIT 1",
+                    (skill_id, row["active_version"]),
+                ).fetchone():
+                    raise ValueError("Specialist procedures cannot contain linked resources.")
+            changed = connection.execute(
+                "UPDATE specialist_profiles SET procedure_skill_id=?,updated_at=? WHERE role=?",
+                (skill_id, utc_now(), role),
+            ).rowcount
+            if changed != 1:
+                raise KeyError(role)
+            result = connection.execute(
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,"
+                "s.name AS procedure_name,s.active_version AS procedure_version "
+                "FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
+                (role,),
+            ).fetchone()
+        assert result is not None
+        return dict(result)
 
     def route_for(self, role: str, fallback: str | None) -> str | None:
         with self.runs.connection() as connection:

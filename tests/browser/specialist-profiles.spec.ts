@@ -8,11 +8,15 @@ test('configure persistent specialist model routes from discovered local models'
     display_name: role[0]!.toUpperCase() + role.slice(1),
     model_route: null as string | null,
     system_instructions: `Default ${role} instructions.`,
+    procedure_skill_id: null as string | null,
+    procedure_name: null as string | null,
+    procedure_version: null as number | null,
     updated_at: '2026-11-05T00:00:00Z',
   }));
   const saved: {role:string;model_route:string|null}[] = [];
   const instructionSaves: {role:string;system_instructions:string}[] = [];
   const identitySaves: {role:string;display_name:string}[] = [];
+  const procedureSaves: {role:string;skill_id:string|null}[] = [];
   const roleMemories: Record<string,{id:string;content:string}[]> = Object.fromEntries(roles.map(role => [role, []]));
   const errors: string[] = [];
   const integrationModuleRequests: string[] = [];
@@ -37,6 +41,7 @@ test('configure persistent specialist model routes from discovered local models'
     if (path === '/providers/lm-studio/config') return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:'parent/model'},headers});
     if (path === '/providers/lm-studio/credential' || path === '/providers/brave-search/credential') return route.fulfill({json:{configured:false},headers});
     if (path === '/specialists/profiles' && request.method() === 'GET') return route.fulfill({json:profiles,headers});
+    if (path === '/specialists/procedures') return route.fulfill({json:[{id:'procedure-1',name:'Evidence procedure',version:3}],headers});
     const memoryMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/memory(?:\/([^/]+))?$/);
     if (memoryMatch) {
       const role = decodeURIComponent(memoryMatch[1]!);
@@ -51,20 +56,25 @@ test('configure persistent specialist model routes from discovered local models'
         return route.fulfill({status:204,headers});
       }
     }
-    const routeMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/(route|instructions|identity)$/);
+    const routeMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/(route|instructions|identity|procedure)$/);
     if (routeMatch && request.method() === 'PUT') {
       const role = decodeURIComponent(routeMatch[1]!);
       const profile = profiles.find(item => item.role === role)!;
-      const body = request.postDataJSON() as {model_route?:string|null;system_instructions?:string;display_name?:string};
+      const body = request.postDataJSON() as {model_route?:string|null;system_instructions?:string;display_name?:string;skill_id?:string|null};
       if (routeMatch[2] === 'route') {
         profile.model_route = body.model_route ?? null;
         saved.push({role,model_route:profile.model_route});
       } else if (routeMatch[2] === 'instructions') {
         profile.system_instructions = body.system_instructions ?? '';
         instructionSaves.push({role,system_instructions:profile.system_instructions});
-      } else {
+      } else if (routeMatch[2] === 'identity') {
         profile.display_name = body.display_name ?? profile.display_name;
         identitySaves.push({role,display_name:profile.display_name});
+      } else {
+        profile.procedure_skill_id = body.skill_id ?? null;
+        profile.procedure_name = profile.procedure_skill_id ? 'Evidence procedure' : null;
+        profile.procedure_version = profile.procedure_skill_id ? 3 : null;
+        procedureSaves.push({role,skill_id:profile.procedure_skill_id});
       }
       return route.fulfill({json:profile,headers});
     }
@@ -94,6 +104,9 @@ test('configure persistent specialist model routes from discovered local models'
   await panel.getByRole('button',{name:'Save route'}).nth(1).click();
   await expect(researcher).toHaveValue('research/model');
   expect(saved).toEqual([{role:'researcher',model_route:'research/model'}]);
+  const procedure = panel.getByLabel('Researcher active procedure');
+  await procedure.selectOption('procedure-1');
+  expect(procedureSaves).toEqual([{role:'researcher',skill_id:'procedure-1'}]);
   const instructions = panel.getByLabel('Researcher role instructions');
   await instructions.fill('Cite evidence and label uncertainty.');
   await panel.getByRole('button',{name:'Save role instructions'}).nth(1).click();
@@ -114,4 +127,5 @@ test('configure persistent specialist model routes from discovered local models'
   await expect.poll(() => integrationModuleRequests.some(url => url.includes('ExecutionSetup'))).toBe(true);
   await expect(page.getByRole('button',{name:'Find installed distributions'})).toBeVisible();
   expect(errors).toEqual([]);
+  expect(procedureSaves).toEqual([{role:'researcher',skill_id:'procedure-1'}]);
 });
