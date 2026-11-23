@@ -45,8 +45,27 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         raise ValueError("Saved specialist procedure failed its snapshot integrity check.")
     content = snapshot.get("content")
     resources_value: Any = snapshot.get("linked_resources", [])
+    unavailable_permissions_value: Any = snapshot.get("unavailable_required_permissions", [])
     if not isinstance(content, str) or not isinstance(resources_value, list):
         raise TypeError("Saved specialist procedure has an invalid text/resource shape.")
+    required_permissions_value: Any = snapshot.get("required_permissions", [])
+    if not isinstance(unavailable_permissions_value, list) or not isinstance(
+        required_permissions_value, list
+    ):
+        raise TypeError("Saved specialist procedure permission requirements are invalid.")
+    unavailable_permissions = cast(list[Any], unavailable_permissions_value)
+    required_permissions = cast(list[Any], required_permissions_value)
+    if any(
+        not isinstance(permission, str) or permission not in {"workspace.read", "workspace.write"}
+        for permission in unavailable_permissions
+    ) or any(not isinstance(permission, str) for permission in required_permissions):
+        raise ValueError("Saved specialist procedure permission requirements are invalid.")
+    unavailable_permission_names = cast(list[str], unavailable_permissions)
+    required_permission_names = cast(list[str], required_permissions)
+    if len(set(unavailable_permission_names)) != len(unavailable_permission_names) or not set(
+        unavailable_permission_names
+    ) <= set(required_permission_names):
+        raise ValueError("Saved specialist procedure permission requirements are invalid.")
     resources = cast(list[Any], resources_value)
     if len(resources) > 32:
         raise ValueError("Saved specialist procedure has too many linked resources.")
@@ -94,7 +113,11 @@ class TaskStore:
         self.runs = runs
 
     @staticmethod
-    def _procedure_snapshot(connection: Any, skill_id: str | None) -> dict[str, Any] | None:
+    def _procedure_snapshot(
+        connection: Any,
+        skill_id: str | None,
+        available_permissions: Sequence[str],
+    ) -> dict[str, Any] | None:
         if skill_id is None:
             return None
         row = connection.execute(
@@ -116,15 +139,19 @@ class TaskStore:
             connection, skill_id, int(row["active_version"]), content_bytes
         )
         evidence = json.loads(row["evaluation_evidence"])
+        required_permissions = sorted(json.loads(row["required_permissions"]))
         snapshot: dict[str, Any] = {
             "skill_id": skill_id,
             "version": row["active_version"],
             "name": row["name"],
             "content": content,
             "required_tools": json.loads(row["required_tools"]),
-            "required_permissions": sorted(json.loads(row["required_permissions"])),
+            "required_permissions": required_permissions,
             "linked_resources": resources,
         }
+        unavailable_permissions = sorted(set(required_permissions) - set(available_permissions))
+        if unavailable_permissions:
+            snapshot["unavailable_required_permissions"] = unavailable_permissions
         for key in ("description", "category"):
             if evidence.get(key):
                 snapshot[key] = evidence[key]
@@ -707,6 +734,7 @@ class TaskStore:
                                     specialist_profiles.get(task.role, {}).get(
                                         "procedure_skill_id"
                                     ),
+                                    task.permissions,
                                 )
                             )
                             is not None
@@ -935,7 +963,9 @@ class TaskStore:
                     model_route = profiles.get(item.role, {}).get("model_route") or run["model"]
                     instructions = profiles.get(item.role, {}).get("system_instructions", "")
                     procedure_snapshot = self._procedure_snapshot(
-                        connection, profiles.get(item.role, {}).get("procedure_skill_id")
+                        connection,
+                        profiles.get(item.role, {}).get("procedure_skill_id"),
+                        item.permissions,
                     )
                     connection.execute(
                         "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,procedure_snapshot,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",

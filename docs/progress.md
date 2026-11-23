@@ -1,5 +1,9 @@
 # Progress
 
+## Warn specialists when declared workspace permissions are unavailable (2026-11-23)
+
+Planned and dynamically delegated specialist tasks now record which active procedure workspace permissions exceed that task's saved permission scope. The unavailable list is integrity-protected with the procedure snapshot, validated against the procedure's declarations, and included in the specialist's untrusted-context notice with an explicit instruction not to attempt those permissions. This is diagnostic context only; it does not expand authority or solve required-tool/version compatibility. The profile and specialist runtime suites pass (31); Ruff, formatting, project Pyright, and `git diff --check` pass. No live model inference was used. Hosted verification is pending.
+
 ## Show declared procedure requirements in specialist settings (2026-11-23)
 
 The authenticated specialist-procedure choices now include each active version's declared tool/version requirements and workspace permissions. The existing profile panel displays those declarations for the selected role procedure and says clearly that selection does not grant tools or permissions. The API regression verifies a populated declaration; the profile browser flow verifies its display; six focused profile tests, desktop typecheck/production build, OpenAPI/client generation, Ruff, Pyright, and `git diff --check` pass. No live model inference was used. Exact-source Windows workflow [45186280652](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45186280652) passed 1,509 Python tests (20 skipped) and all configured browser, static, contract, and recovery checks; installer and hosted WSL jobs were skipped by workflow conditions. This improves owner visibility only; declaration compatibility/readiness checks and permission grants remain separate work.

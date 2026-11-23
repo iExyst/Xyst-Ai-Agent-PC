@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Warn about unavailable specialist procedure permissions (2026-11-23)
+
+Task snapshots identify declared workspace permissions that are absent from the assigned task scope, and the specialist receives that list as untrusted context with an explicit instruction not to attempt them. The snapshot digest and validation cover the list; no authority is granted. Focused profile/runtime suites (31), Ruff, formatting, Pyright, and diff checks pass locally. Hosted verification is pending. This is a narrow guardrail around specialist procedure routing and does not establish dependency compatibility or Hermes skill parity. See [`progress.md`](../progress.md#warn-specialists-when-declared-workspace-permissions-are-unavailable-2026-11-23).
+
 ## Show procedure requirements in specialist settings (2026-11-23)
 
 The specialist procedure catalog returns the active version's declared tools, versions, and workspace permissions. The selected role's existing settings panel displays them and states that declarations do not grant authority. API/browser acceptance, six focused tests, generated contracts, typecheck/build, Ruff, Pyright, and diff checks pass. Exact-source Windows workflow [45186280652](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45186280652) passed 1,509 Python tests (20 skipped) and configured source checks; installer and hosted WSL jobs were skipped by workflow conditions. This improves owner transparency without claiming dependency readiness, automatic permission mapping, or Hermes skill parity. See [`progress.md`](../progress.md#show-declared-procedure-requirements-in-specialist-settings-2026-11-23).

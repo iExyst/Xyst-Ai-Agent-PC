@@ -171,6 +171,46 @@ def test_specialist_procedure_rejects_tampered_resource_snapshot(workspace_tmp_p
         validate_specialist_procedure_snapshot(saved)
 
 
+def test_specialist_task_snapshot_records_unavailable_procedure_permissions(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-permissions.sqlite3")
+    _active_procedure(store)
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skill_versions SET required_permissions=? WHERE skill_id='procedure-a' AND version=1",
+            ('["workspace.read","workspace.write"]',),
+        )
+    SpecialistProfileStore(store).set_procedure("executor", "procedure-a")
+    workspace = workspace_tmp_path / "project"
+    workspace.mkdir()
+    run_id = store.create_run(
+        objective="Use assigned procedure",
+        acceptance_criteria=[],
+        workspace=str(workspace),
+        mode="workspace",
+        model="parent/model",
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [
+            TaskDefinition(id="read-only", objective="Read only", role="executor"),
+            TaskDefinition(
+                id="can-write",
+                objective="Can write",
+                role="executor",
+                permissions=("workspace.read", "workspace.write"),
+            ),
+        ],
+    )
+    saved = {item["local_id"]: item["procedure_snapshot"] for item in tasks.records(run_id)}
+    assert saved["read-only"]["unavailable_required_permissions"] == ["workspace.write"]
+    assert "unavailable_required_permissions" not in saved["can-write"]
+    validate_specialist_procedure_snapshot(saved["read-only"])
+    validate_specialist_procedure_snapshot(saved["can-write"])
+
+
 def test_legacy_resource_free_specialist_snapshot_remains_valid():
     snapshot = {
         "skill_id": "procedure-a",

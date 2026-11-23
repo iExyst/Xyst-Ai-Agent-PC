@@ -1165,7 +1165,7 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
             ("2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
         )
         connection.execute(
-            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES('research-procedure',1,'Use primary sources.','[]','[]','{}',?)",
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES('research-procedure',1,'Use primary sources.','[]','[\"workspace.write\"]','{}',?)",
             ("2026-01-01T00:00:00+00:00",),
         )
     SpecialistProfileStore(store).set_procedure("researcher", "research-procedure")
@@ -1207,6 +1207,10 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
                 assert (
                     "untrusted reference material"
                     in assignment["specialist_procedure_trust_notice"]
+                )
+                assert (
+                    "workspace.write" in assignment["specialist_procedure_trust_notice"]
+                    and "must not be attempted" in assignment["specialist_procedure_trust_notice"]
                 )
                 message = {"role": "assistant", "content": "Specialist candidate awaiting review"}
             elif messages[-1]["role"] == "user":
