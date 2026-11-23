@@ -201,19 +201,27 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
     }
   }
 
-  return <div aria-label="Microphone voice capture">
-    <button type="button" disabled={disabled || recording || processing} onClick={() => void refreshMicrophones()}>List microphones</button>
-    {microphones.length > 0 && <label htmlFor="voice-microphone">Microphone
-      <select id="voice-microphone" value={microphoneId} disabled={disabled || recording || processing} onChange={event => setMicrophoneId(event.target.value)}>
-        <option value="">System default</option>
-        {microphones.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
-      </select>
-    </label>}
-    {microphoneStatus && <p role="status">{microphoneStatus} Choose a device or keep System default. Recordings are created locally.</p>}
-    {!recording
-      ? <button type="button" disabled={disabled || processing} onClick={() => void start()}>{processing ? 'Converting recording…' : 'Record voice'}</button>
-      : <button type="button" disabled={disabled} onClick={stop}>Stop recording</button>}
-    {recording && <p role="status">Recording on this computer. The microphone stops when you finish or reach the 4 MiB recording limit.</p>}
-    {error && <p role="alert">{error}</p>}
-  </div>;
+  return <section className="voice-capture" aria-label="Microphone voice capture">
+    <header className="voice-capture-header">
+      <div><span className="voice-capture-kicker">VOICE INPUT</span><strong>Record from this device</strong><p>Choose a microphone or use the system default. Audio stays on this computer until you submit.</p></div>
+      <span className={`voice-capture-state${recording ? ' is-recording' : ''}`}><i aria-hidden="true" />{recording ? 'Recording' : processing ? 'Preparing audio' : 'Ready'}</span>
+    </header>
+    <div className="voice-capture-controls">
+      <div className="voice-capture-device">
+        <button type="button" className="secondary-button" disabled={disabled || recording || processing} onClick={() => void refreshMicrophones()}>{microphones.length ? 'Refresh devices' : 'List microphones'}</button>
+        {microphones.length > 0 && <label htmlFor="voice-microphone">Microphone
+          <select id="voice-microphone" value={microphoneId} disabled={disabled || recording || processing} onChange={event => setMicrophoneId(event.target.value)}>
+            <option value="">System default</option>
+            {microphones.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
+          </select>
+        </label>}
+      </div>
+      {!recording
+        ? <button type="button" className="voice-capture-record" disabled={disabled || processing} onClick={() => void start()}><span aria-hidden="true">●</span>{processing ? 'Converting recording…' : 'Record voice'}</button>
+        : <button type="button" className="voice-capture-stop" disabled={disabled} onClick={stop}><span aria-hidden="true">■</span>Stop recording</button>}
+    </div>
+    {microphoneStatus && <p className="voice-capture-note" role="status">{microphoneStatus} Choose a device or keep System default.</p>}
+    {recording && <p className="voice-capture-note is-recording" role="status">Recording locally. Stop when you’re done; the 4 MiB limit stops capture automatically.</p>}
+    {error && <p className="voice-capture-error" role="alert">{error}</p>}
+  </section>;
 }

@@ -677,6 +677,31 @@ body:before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;back
   --focus:var(--night-blue);
 }
 html{background:var(--night);color-scheme:dark}
+
+.voice-capture{display:grid;gap:12px;margin:12px 0;padding:15px;background:var(--panel-soft);border:1px solid var(--line);border-radius:12px}
+.voice-capture-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.voice-capture-header>div{min-width:0}
+.voice-capture-kicker{display:block;margin-bottom:5px;color:var(--muted);font-size:9px;font-weight:800;letter-spacing:.13em}
+.voice-capture-header strong{display:block;color:var(--text);font-size:13px;font-weight:700}
+.voice-capture-header p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.5}
+.voice-capture-state{display:inline-flex;align-items:center;gap:7px;flex:none;padding:6px 9px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:10px;font-weight:700}
+.voice-capture-state i{width:7px;height:7px;border-radius:50%;background:#778293}
+.voice-capture-state.is-recording{color:#f0c1c2;border-color:#623d43;background:#2a1d21}
+.voice-capture-state.is-recording i{background:#f07178;box-shadow:0 0 0 3px #f0717828}
+.voice-capture-controls{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.voice-capture-device{display:flex;align-items:flex-end;gap:9px;min-width:0;flex:1}
+.voice-capture-device>label{display:grid;gap:5px;min-width:150px;max-width:360px;flex:1;color:var(--muted);font-size:11px}
+.voice-capture-device select{width:100%;min-height:38px}
+.voice-capture .secondary-button{min-height:38px;white-space:nowrap}
+.voice-capture-record,.voice-capture-stop{min-height:38px;white-space:nowrap}
+.voice-capture-record span,.voice-capture-stop span{margin-right:7px;font-size:10px}
+.voice-capture-record span{color:#b8414d}
+.voice-capture-stop{background:#542a31!important;color:#ffe1e3!important;border:1px solid #784047!important}
+.voice-capture-note,.voice-capture-error{margin:0;padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.5}
+.voice-capture-note{background:var(--panel);border:1px solid var(--line);color:var(--muted)!important}
+.voice-capture-note.is-recording{color:#f0c1c2!important;border-color:#623d43;background:#2a1d21}
+.voice-capture-error{color:#ffd3d3!important;border:1px solid #694146;background:#2b1d21}
+@media(max-width:560px){.voice-capture-controls,.voice-capture-device{align-items:stretch;flex-direction:column}.voice-capture-device>label{max-width:none}.voice-capture-controls>.voice-capture-record,.voice-capture-controls>.voice-capture-stop{width:100%}.voice-capture-header{align-items:flex-start}}
 body{
   background:
     radial-gradient(ellipse at 78% -22%,#17302d 0,transparent 38%),
