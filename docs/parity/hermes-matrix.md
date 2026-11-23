@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Bound local tokenizer worker cancellation (2026-11-23)
+
+The fixed LM Studio prompt-tokenizer worker is terminated directly on timeout or caller cancellation. It does not spawn child processes, so cleanup does not start the Windows process-tree helper. The isolated tokenizer suite passes (20), Ruff and Pyright pass, and the full Python suite passes (1,524 passed, 1 skipped). This verifies bounded worker cleanup only; it does not establish live model inference or provider parity. See [`progress.md`](../progress.md#bound-tokenizer-cancellation-cleanup-on-windows-2026-11-23).
+
 ## Verify estimator and updated desktop in the unsigned Windows package (2026-11-18)
 
 Exact-revision installer workflow [44304719705](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/44304719705) passed all executed package checks for `ee7e5c94`, including frozen/installed execution, recovery, upgrade, current/standard-user install, boot, uninstall and data removal. The downloaded unsigned 0.1.1 installer is 78,275,151 bytes; its SHA-256 `369e7065fd33d82d5bc0c96cdfce73c1ba9110802b8f4d6661dfff4ec09bcddb` matches its manifest. Package reports and binary are retained in [`.acceptance/hosted-installer-44304719705/`](../../.acceptance/hosted-installer-44304719705/). This verifies packaging and lifecycle, not live LM Studio model-estimate interoperability or inference. See [`progress.md`](../progress.md#verify-the-model-estimate-build-in-the-packaged-windows-app-2026-11-18).

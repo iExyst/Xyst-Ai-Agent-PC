@@ -14,9 +14,15 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from xaa.providers.contracts import ToolCall
 from xaa.providers.tool_schemas import ToolSchemaError, prepare_tools
 from xaa.runtime.cleanup import finish_cleanup
-from xaa.runtime.processes import stop_owned_process
 
 SAFE_WORKER_ERROR_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+){0,8}$")
+
+
+async def _stop_tokenizer_worker(process: asyncio.subprocess.Process) -> None:
+    """Stop this fixed, single-process worker without launching a tree-killer helper."""
+    if process.returncode is None:
+        process.kill()
+    await process.wait()
 
 
 class PromptMessage(BaseModel):
@@ -228,4 +234,7 @@ async def count_prompt(
     except (ValueError, TypeError, OSError):
         raise PromptCountError("Prompt counter returned an invalid result.") from None
     finally:
-        await finish_cleanup(stop_owned_process(process))
+        # The worker is a fixed module that never spawns children. Terminate that exact
+        # process directly so cancellation and timeout cleanup do not depend on starting
+        # an additional taskkill.exe process on Windows.
+        await finish_cleanup(_stop_tokenizer_worker(process))
