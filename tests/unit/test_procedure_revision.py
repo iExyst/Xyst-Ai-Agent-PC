@@ -1012,6 +1012,137 @@ async def test_coordinator_exposes_mixed_resource_edit_only_with_both_grants(
     assert not store.unresolved_tool_calls(str(run["id"]))
 
 
+@pytest.mark.asyncio
+async def test_coordinator_commits_parallel_resource_calls_as_one_candidate(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-resource-multi-call.sqlite3")
+    draft = _draft()
+    draft.assets = [
+        SkillAsset(
+            path="references/replace.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"old").hexdigest(),
+            content_base64=base64.b64encode(b"old").decode("ascii"),
+        ),
+        SkillAsset(
+            path="references/remove.md",
+            media_type="text/markdown",
+            sha256=hashlib.sha256(b"obsolete").hexdigest(),
+            content_base64=base64.b64encode(b"obsolete").decode("ascii"),
+        ),
+    ]
+    skills = SkillStore(store)
+    entry = skills.create(draft)
+    run = store.create_run(
+        objective="Batch selected procedure resource edits into one reviewable version.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_resource_revision=True,
+        allow_procedure_resource_removal=True,
+    )
+    calls = [
+        {
+            "id": "resource-batch-add",
+            "type": "function",
+            "function": {
+                "name": "procedure_resource_revise",
+                "arguments": json.dumps(
+                    SkillResourceRevision(
+                        skill_id=entry["id"],
+                        expected_version=1,
+                        path="references/new.txt",
+                        content="new",
+                    ).model_dump(mode="json")
+                ),
+            },
+        },
+        {
+            "id": "resource-batch-replace",
+            "type": "function",
+            "function": {
+                "name": "procedure_resource_revise",
+                "arguments": json.dumps(
+                    SkillResourceRevision(
+                        skill_id=entry["id"],
+                        expected_version=1,
+                        path="references/replace.md",
+                        content="updated",
+                    ).model_dump(mode="json")
+                ),
+            },
+        },
+        {
+            "id": "resource-batch-add-second",
+            "type": "function",
+            "function": {
+                "name": "procedure_resource_revise",
+                "arguments": json.dumps(
+                    SkillResourceRevision(
+                        skill_id=entry["id"],
+                        expected_version=1,
+                        path="references/second.txt",
+                        content="second",
+                        remove_paths=["references/remove.md"],
+                    ).model_dump(mode="json")
+                ),
+            },
+        },
+    ]
+
+    class ResourceBatchProvider(LMStudioProvider):
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            if not any(message.get("role") == "tool" for message in messages):
+                assert len(tools or []) > 0
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
+            returned_ids = [
+                message["tool_call_id"] for message in messages if message.get("role") == "tool"
+            ]
+            assert returned_ids == [call["id"] for call in calls]
+            return {"choices": [{"message": {"role": "assistant", "content": "Batch saved."}}]}
+
+    provider = ResourceBatchProvider()
+    try:
+        await Coordinator(store, provider).execute(str(run["id"]))
+    finally:
+        await provider.close()
+
+    latest = skills.version(entry["id"], 2)
+    assert [asset["path"] for asset in latest["assets"]] == [
+        "references/new.txt",
+        "references/replace.md",
+        "references/second.txt",
+    ]
+    assert base64.b64decode(latest["assets"][0]["content_base64"]) == b"new"
+    assert base64.b64decode(latest["assets"][1]["content_base64"]) == b"updated"
+    assert base64.b64decode(latest["assets"][2]["content_base64"]) == b"second"
+    assert latest["evaluation_evidence"]["provenance"] == "model_resource_batch_edit"
+    with store.connection() as connection:
+        records = connection.execute(
+            "SELECT provider_call_id,state FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
+            (run["id"],),
+        ).fetchall()
+    assert [(row["provider_call_id"], row["state"]) for row in records] == [
+        ("resource-batch-add", "completed"),
+        ("resource-batch-add-second", "completed"),
+        ("resource-batch-replace", "completed"),
+    ]
+    assert not store.unresolved_tool_calls(str(run["id"]))
+
+
 def test_api_persists_separate_procedure_resource_revision_grant(
     workspace_tmp_path: Path,
 ) -> None:

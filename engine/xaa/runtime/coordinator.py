@@ -100,6 +100,7 @@ from xaa.storage.skills import (
     SkillDraft,
     SkillResourceRemoval,
     SkillResourceRevision,
+    SkillResourceText,
     SkillStore,
     available_toolsets,
     is_text_asset_media_type,
@@ -1363,6 +1364,144 @@ class Coordinator:
                     "content": json.dumps(result),
                 }
                 for call, result in zip(calls, results, strict=True)
+            )
+            return True
+
+        resource_tool_names = {"procedure_resource_revise", "procedure_resource_remove"}
+        if len(calls) > 1 and all(
+            call.get("function", {}).get("name") in resource_tool_names for call in calls
+        ):
+            if any(
+                not any(tool["function"]["name"] == call["function"]["name"] for tool in tools)
+                for call in calls
+            ):
+                raise PermissionError("Tool is not authorized in the current catalog.")
+            batch_calls: list[tuple[str, str, dict[str, Any]]] = []
+            resources: list[SkillResourceText] = []
+            removals: list[str] = []
+            selected_id: str | None = None
+            selected_version: int | None = None
+            try:
+                for call in calls:
+                    name = call["function"]["name"]
+                    raw_arguments = json.loads(call["function"]["arguments"])
+                    if not isinstance(raw_arguments, dict):
+                        raise TypeError("Resource batch arguments must be objects.")
+                    raw_arguments = cast(dict[str, Any], raw_arguments)
+                    if name == "procedure_resource_revise":
+                        revision = SkillResourceRevision.model_validate(raw_arguments)
+                        current_resources = [
+                            SkillResourceText(path=revision.path, content=revision.content),
+                            *revision.additional_resources,
+                        ]
+                        current_removals = revision.remove_paths
+                        skill_id = revision.skill_id
+                        expected_version = revision.expected_version
+                    else:
+                        removal = SkillResourceRemoval.model_validate(raw_arguments)
+                        current_resources = []
+                        current_removals = [removal.path]
+                        skill_id = removal.skill_id
+                        expected_version = removal.expected_version
+                    if selected_id is None:
+                        selected_id = skill_id
+                        selected_version = expected_version
+                    if skill_id != selected_id or expected_version != selected_version:
+                        raise ValueError("All batch calls must target the same selected version.")
+                    resources.extend(current_resources)
+                    removals.extend(current_removals)
+                    batch_calls.append((call["id"], name, raw_arguments))
+                if not resources or len(removals) > 1 or len(resources) + len(removals) > 8:
+                    raise ValueError(
+                        "A resource batch needs a write and permits at most eight total operations and one removal."
+                    )
+                if selected_id is None or selected_version is None:
+                    raise ValueError("Resource batch has no selected procedure identity.")
+                revision = SkillResourceRevision(
+                    skill_id=selected_id,
+                    expected_version=selected_version,
+                    path=resources[0].path,
+                    content=resources[0].content,
+                    additional_resources=resources[1:],
+                    remove_paths=removals,
+                )
+                selected = run.get("procedure_trial")
+                if (
+                    selected is None
+                    or selected.get("skill_id") != selected_id
+                    or selected.get("version") != selected_version
+                ):
+                    raise ValueError("Resource batch must target the selected procedure version.")
+                if not run.get("allow_procedure_resource_revision"):
+                    raise PermissionError("This run has no grant to revise procedure resources.")
+                if removals and not run.get("allow_procedure_resource_removal"):
+                    raise PermissionError("This run has no grant to remove procedure resources.")
+                result = SkillStore(self.store).create_model_resource_revision_from_run(
+                    run_id,
+                    token,
+                    calls[0]["id"],
+                    revision,
+                    batch_calls=batch_calls,
+                )
+            except PermissionError:
+                raise
+            except (
+                json.JSONDecodeError,
+                ValidationError,
+                TypeError,
+                ValueError,
+                SkillConflict,
+            ) as exc:
+                invalid = not isinstance(exc, SkillConflict)
+                code = (
+                    "invalid_procedure_resource_batch"
+                    if invalid
+                    else "procedure_resource_revision_conflict"
+                )
+                message = str(exc) or "The procedure resource batch is invalid."
+                results: list[dict[str, Any]] = []
+                for call in calls:
+                    name = call["function"]["name"]
+                    tool_name = (
+                        "procedure.resource_revise"
+                        if name == "procedure_resource_revise"
+                        else "procedure.resource_remove"
+                    )
+                    if not self.store.record_tool_intent(
+                        run_id,
+                        token,
+                        call_id=call["id"],
+                        tool=tool_name,
+                        version="1",
+                        arguments=call["function"]["arguments"],
+                        idempotency_key=call["id"],
+                    ):
+                        raise ValueError("Resource batch failure requires reconciliation.") from exc
+                    results.append(
+                        self.store.record_tool_failure(
+                            run_id,
+                            token,
+                            call["id"],
+                            code=code,
+                            message=message,
+                        )
+                    )
+                messages.extend(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps(result),
+                    }
+                    for call, result in zip(calls, results, strict=True)
+                )
+                return True
+            messages.extend(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps(result, ensure_ascii=False),
+                }
+                for call in calls
             )
             return True
 

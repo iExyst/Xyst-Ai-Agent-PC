@@ -954,7 +954,13 @@ class SkillStore:
         return result
 
     def create_model_resource_revision_from_run(
-        self, run_id: str, owner: str, call_id: str, revision: SkillResourceRevision
+        self,
+        run_id: str,
+        owner: str,
+        call_id: str,
+        revision: SkillResourceRevision,
+        *,
+        batch_calls: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         """Create a candidate version with an atomic linked-resource edit."""
         if self.runs.task_scope is not None:
@@ -965,8 +971,23 @@ class SkillStore:
             SkillResourceText(path=revision.path, content=revision.content),
             *revision.additional_resources,
         ]
+        calls = batch_calls or [
+            (call_id, "procedure_resource_revise", revision.model_dump(mode="json"))
+        ]
+        call_ids = [item[0] for item in calls]
+        if (
+            call_id not in call_ids
+            or len(call_ids) > 8
+            or len(set(call_ids)) != len(call_ids)
+            or any(
+                not item_id
+                or len(item_id) > 128
+                or name not in {"procedure_resource_revise", "procedure_resource_remove"}
+                for item_id, name, _arguments in calls
+            )
+        ):
+            raise ValueError("Procedure resource batch call identities are invalid.")
         now = utc_now()
-        encoded_arguments = json.dumps(revision.model_dump(mode="json"), sort_keys=True)
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, owner)
@@ -1008,11 +1029,12 @@ class SkillStore:
                     or removal_grant.get("expected_version") != revision.expected_version
                 ):
                     raise PermissionError("Resource removal exceeds the selected run grant.")
-            if connection.execute(
-                "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
-                (run_id, call_id),
-            ).fetchone():
-                raise SkillConflict("The model procedure-resource call was already used.")
+            for item_id in call_ids:
+                if connection.execute(
+                    "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                    (run_id, item_id),
+                ).fetchone():
+                    raise SkillConflict("A model procedure-resource batch call was already used.")
             entry = connection.execute(
                 "SELECT name,lifecycle_state,active_version FROM skills WHERE id=?",
                 (revision.skill_id,),
@@ -1110,6 +1132,7 @@ class SkillStore:
                     },
                     "resource_revision_run_id": run_id,
                     "resource_revision_call_id": call_id,
+                    "resource_revision_call_ids": json.dumps(call_ids),
                     "resource_removal_paths": json.dumps(revision.remove_paths),
                     "parent_version": str(current_version),
                     "parent_provenance": str(prior_evidence.get("provenance", "user")),
@@ -1143,26 +1166,31 @@ class SkillStore:
                 "requires_user_review": True,
                 "notice": "Only the listed linked resources changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
             }
+            if len(call_ids) > 1:
+                cast(dict[str, Any], result)["batch_call_ids"] = call_ids
             ensure_model_procedure_result_bounded(result)
-            connection.execute(
-                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.resource_revise','1',?,?,'completed',?,NULL,?,?,?)",
-                (
-                    str(uuid4()),
+            for item_id, tool_name, arguments in calls:
+                encoded_arguments = json.dumps(arguments, sort_keys=True)
+                connection.execute(
+                    "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,?, '1',?,?,'completed',?,NULL,?,?,?)",
+                    (
+                        str(uuid4()),
+                        run_id,
+                        tool_name.replace("_", ".", 1),
+                        encoded_arguments,
+                        item_id,
+                        json.dumps(result),
+                        now,
+                        now,
+                        item_id,
+                    ),
+                )
+                self.runs.record_event(
+                    connection,
                     run_id,
-                    encoded_arguments,
-                    call_id,
-                    json.dumps(result),
-                    now,
-                    now,
-                    call_id,
-                ),
-            )
-            self.runs.record_event(
-                connection,
-                run_id,
-                "tool.intended",
-                {"call_id": call_id, "tool": "procedure.resource_revise", "internal": False},
-            )
+                    "tool.intended",
+                    {"call_id": item_id, "tool": tool_name.replace("_", ".", 1), "internal": False},
+                )
             self.runs.record_event(
                 connection,
                 run_id,
@@ -1173,11 +1201,16 @@ class SkillStore:
                     "parent_version": current_version,
                     "operations": edit_records,
                     "call_id": call_id,
+                    "call_ids": call_ids,
                 },
             )
-            self.runs.record_event(
-                connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}
-            )
+            for item_id in call_ids:
+                self.runs.record_event(
+                    connection,
+                    run_id,
+                    "tool.completed",
+                    {"call_id": item_id, "internal": False},
+                )
         return result
 
     def create_model_resource_removal_from_run(
