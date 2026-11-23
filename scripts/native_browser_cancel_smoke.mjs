@@ -36,6 +36,7 @@ let browserSubmissionResult;
 let workspaceRunId;
 let workspaceCallId;
 let microphoneCapturePassed = false;
+let microphoneSelectionPassed = false;
 let stdout = '';
 let stderr = '';
 let report;
@@ -343,9 +344,11 @@ try {
 
   await page.evaluate(() => {
     const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    window.__xaaAcceptanceMicrophoneConstraints = [];
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
       configurable: true,
       value: async (constraints) => {
+        window.__xaaAcceptanceMicrophoneConstraints.push(constraints);
         const stream = await getUserMedia(constraints);
         window.__xaaAcceptanceMicrophoneStream = stream;
         return stream;
@@ -353,8 +356,21 @@ try {
     });
   });
   await page.locator('summary').filter({ hasText: 'Permissions, attachments and run limits' }).click();
+  await page.getByRole('button', { name: 'List microphones', exact: true }).click();
+  const microphoneSelect = page.getByRole('combobox', { name: 'Microphone', exact: true });
+  await expect(microphoneSelect).toBeVisible({ timeout: 10000 });
+  const selectedMicrophoneId = await microphoneSelect.locator('option').nth(1).getAttribute('value');
+  if (!selectedMicrophoneId) throw new Error('The installed voice panel did not enumerate a selectable fake microphone.');
+  await microphoneSelect.selectOption(selectedMicrophoneId);
   await page.getByRole('button', { name: 'Record voice', exact: true }).click();
-  await expect(page.getByText(/Recording on this computer/)).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(/Recording locally/)).toBeVisible({ timeout: 10000 });
+  const selectedDeviceConstraintObserved = await page.evaluate(expected =>
+    window.__xaaAcceptanceMicrophoneConstraints.some(request => {
+      if (!request || typeof request !== 'object' || !request.audio || typeof request.audio !== 'object') return false;
+      return request.audio.deviceId?.exact === expected;
+    }), selectedMicrophoneId);
+  if (!selectedDeviceConstraintObserved) throw new Error('The selected installed microphone ID was not used by the recording request.');
+  microphoneSelectionPassed = true;
   await new Promise(resolve => setTimeout(resolve, 750));
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
   await expect(page.getByText(/Attached: Microphone recording\.wav/)).toBeVisible({ timeout: 10000 });
@@ -519,6 +535,7 @@ try {
     model_inference_requested: false,
     installed_microphone_capture: {
       passed: microphoneCapturePassed,
+      microphone_selection_verified: microphoneSelectionPassed,
       fake_device: true,
       local_wav_attachment_created: true,
       microphone_tracks_ended_after_capture: true,
