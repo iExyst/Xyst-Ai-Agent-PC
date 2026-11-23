@@ -133,6 +133,12 @@ def test_specialist_route_is_persisted_and_snapshotted_into_saved_task(workspace
 def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "specialist-procedure.sqlite3")
     _active_procedure(store)
+    large_content = "x" * (20 * 1024)
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skill_versions SET content=? WHERE skill_id='procedure-a' AND version=1",
+            (large_content,),
+        )
     _add_text_resource(store, "procedure-a", "references/guide.md", b"Use primary sources.\n")
     profiles = SpecialistProfileStore(store)
     saved_profile = profiles.set_procedure("researcher", "procedure-a")
@@ -151,7 +157,7 @@ def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_
         run_id, owner, [TaskDefinition(id="research", objective="Research", role="researcher")]
     )
     saved = tasks.records(run_id)[0]["procedure_snapshot"]
-    assert saved["content"] == "Procedure body version 1."
+    assert saved["content"] == large_content
     assert saved["version"] == 1
     assert saved["linked_resources"] == [
         {

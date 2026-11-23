@@ -2,7 +2,7 @@
 
 ## Assign larger pinned skills to specialists (2026-11-23)
 
-Specialist procedure selection and immutable task snapshots now accept up to 80 KiB of combined procedure text and linked UTF-8 resources, matching the skill importer instead of the previous 16 KiB restriction. The API lists eligible larger procedures, and the desktop profile panel documents the bound. Existing exact model context admission still checks the fully assembled prompt plus output allowance before inference. The focused specialist profile suite passes (11); Ruff, formatting, strict Pyright, and `git diff --check` pass. No live-model inference was used. This removes an assignment-size incompatibility for imported skills; it does not prove all 186 pinned packages execute or establish full Hermes skill parity.
+Specialist procedure selection and immutable task snapshots now accept up to 80 KiB of combined procedure text and linked UTF-8 resources, matching the skill importer instead of the previous 16 KiB restriction. The API lists eligible larger procedures, and the desktop profile panel documents the bound. A 20 KiB procedure is now verified through selection and exact task-plan snapshot persistence; the API regression also selects it, while rejecting content above 80 KiB and binary resources. Existing exact model context admission checks the fully assembled prompt plus output allowance before inference. The focused specialist profile suite passes (11); Ruff, formatting, strict Pyright, and `git diff --check` pass. No live-model inference was used. This removes an assignment-size incompatibility for imported skills; it does not prove all 186 pinned packages execute or establish full Hermes skill parity.
 
 ## Check OpenAI-compatible provider credentials (2026-11-23)
 

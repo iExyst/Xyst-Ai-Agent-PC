@@ -2,7 +2,7 @@
 
 ## Assign larger imported skills to specialists (2026-11-23)
 
-Pinned skills may contain up to 80 KiB of procedure text, while specialist assignments previously imposed a 16 KiB ceiling. X.A.A. now allows 80 KiB total across the skill body and linked UTF-8 text resources in profile selection, task snapshots, and snapshot validation. Exact provider-side prompt and output context admission remains required before inference. The API/profile regression accepts a 20 KiB procedure and excludes one above 80 KiB; focused specialist profile tests pass (11), Ruff, formatting, strict Pyright, and `git diff --check` pass. This closes the assignment-size gap only: package execution/import behavior, full inventory parity, and real-model quality remain separate requirements.
+Pinned skills may contain up to 80 KiB of procedure text, while specialist assignments previously imposed a 16 KiB ceiling. X.A.A. now allows 80 KiB total across the skill body and linked UTF-8 text resources in profile selection, task snapshots, and snapshot validation. A 20 KiB procedure is verified through immutable task-plan snapshot persistence; API/profile coverage accepts it and excludes content above 80 KiB. Exact provider-side prompt and output context admission remains required before inference. Focused specialist profile tests pass (11), Ruff, formatting, strict Pyright, and `git diff --check` pass. This closes the assignment-size gap only: package execution/import behavior, full inventory parity, and real-model quality remain separate requirements.
 
 ## Select the microphone for local voice capture (2026-11-23)
 
