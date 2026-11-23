@@ -58,7 +58,7 @@ export function SpecialistCredentialGrantPicker({
   }
 
   if (loading) return <p role="status">Checking specialist procedure credentials…</p>;
-  if (error) return <p role="alert">Could not load specialist credential status: {error}</p>;
+  if (error) return <p role="status">Could not load specialist credential status: {error}</p>;
   if (!roles.length) return null;
 
   return <section className="procedure-credential-grant" aria-label="Specialist credential access">
