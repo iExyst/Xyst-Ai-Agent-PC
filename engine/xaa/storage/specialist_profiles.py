@@ -13,7 +13,7 @@ from xaa.storage.skills import is_text_asset_media_type
 # The provider's exact context admission remains the final guard before inference.
 MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 80 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
-MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES = 2 * 1024 * 1024
+MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES = 1024 * 1024
 
 
 def specialist_procedure_environments(
@@ -83,7 +83,7 @@ def specialist_procedure_resources(
             raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
         total_bytes += len(raw)
         if total_bytes > MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES:
-            raise ValueError("Specialist procedure linked text resources must total 2 MiB or less.")
+            raise ValueError("Specialist procedure linked text resources must total 1 MiB or less.")
         resources.append(
             {
                 "path": path,

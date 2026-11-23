@@ -122,7 +122,7 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
             raise ValueError("Saved specialist procedure resource failed its integrity check.")
         total_resource_bytes += len(raw)
     if total_resource_bytes > MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES:
-        raise ValueError("Saved specialist procedure resources exceed the 2 MiB snapshot limit.")
+        raise ValueError("Saved specialist procedure resources exceed the 1 MiB snapshot limit.")
     required_managers_value: Any = snapshot.get("required_dependency_managers", [])
     required_managers = (
         cast(list[str], required_managers_value)
