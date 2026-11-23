@@ -1367,6 +1367,73 @@ class Coordinator:
             )
             return True
 
+        def record_batch_failure(
+            failed_calls: list[dict[str, Any]], code: str, message: str
+        ) -> list[dict[str, Any]]:
+            results: list[dict[str, Any]] = []
+            for failed_call in failed_calls:
+                name = failed_call["function"]["name"]
+                tool_name = {
+                    "procedure_resource_revise": "procedure.resource_revise",
+                    "procedure_resource_remove": "procedure.resource_remove",
+                    "procedure_revise": "procedure.revise",
+                }[name]
+                if not self.store.record_tool_intent(
+                    run_id,
+                    token,
+                    call_id=failed_call["id"],
+                    tool=tool_name,
+                    version="1",
+                    arguments=failed_call["function"]["arguments"],
+                    idempotency_key=failed_call["id"],
+                ):
+                    raise ValueError("Procedure edit batch failure requires reconciliation.")
+                results.append(
+                    self.store.record_tool_failure(
+                        run_id,
+                        token,
+                        failed_call["id"],
+                        code=code,
+                        message=message,
+                    )
+                )
+            return results
+
+        def append_batch_results(
+            batch_calls: list[dict[str, Any]], results: list[dict[str, Any]]
+        ) -> None:
+            messages.extend(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps(result),
+                }
+                for call, result in zip(batch_calls, results, strict=True)
+            )
+
+        manager_names = {
+            "procedure_resource_revise",
+            "procedure_resource_remove",
+            "procedure_revise",
+        }
+        if (
+            len(calls) > 1
+            and all(call.get("function", {}).get("name") in manager_names for call in calls)
+            and "procedure_revise" in {call["function"]["name"] for call in calls}
+            and any(
+                call["function"]["name"]
+                in {"procedure_resource_revise", "procedure_resource_remove"}
+                for call in calls
+            )
+        ):
+            results = record_batch_failure(
+                calls,
+                "incompatible_procedure_edit_batch",
+                "Main procedure text and linked resources must be edited in separate model batches.",
+            )
+            append_batch_results(calls, results)
+            return True
+
         resource_tool_names = {"procedure_resource_revise", "procedure_resource_remove"}
         if len(calls) > 1 and all(
             call.get("function", {}).get("name") in resource_tool_names for call in calls
@@ -1459,41 +1526,109 @@ class Coordinator:
                     else "procedure_resource_revision_conflict"
                 )
                 message = str(exc) or "The procedure resource batch is invalid."
-                results: list[dict[str, Any]] = []
-                for call in calls:
-                    name = call["function"]["name"]
-                    tool_name = (
-                        "procedure.resource_revise"
-                        if name == "procedure_resource_revise"
-                        else "procedure.resource_remove"
+                try:
+                    results = record_batch_failure(calls, code, message)
+                except ValueError as failure_exc:
+                    raise failure_exc from exc
+                append_batch_results(calls, results)
+                return True
+            messages.extend(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps(result, ensure_ascii=False),
+                }
+                for call in calls
+            )
+            return True
+
+        if len(calls) > 1 and all(
+            call.get("function", {}).get("name") == "procedure_revise" for call in calls
+        ):
+            if not all(
+                any(tool["function"]["name"] == "procedure_revise" for tool in tools)
+                for _call in calls
+            ):
+                raise PermissionError("Tool is not authorized in the current catalog.")
+            content_calls: list[tuple[str, dict[str, Any]]] = []
+            selected_id: str | None = None
+            selected_version: int | None = None
+            try:
+                if not run.get("allow_procedure_revision"):
+                    raise PermissionError(
+                        "This run has no user authorization to revise a procedure."
                     )
-                    if not self.store.record_tool_intent(
-                        run_id,
-                        token,
-                        call_id=call["id"],
-                        tool=tool_name,
-                        version="1",
-                        arguments=call["function"]["arguments"],
-                        idempotency_key=call["id"],
-                    ):
-                        raise ValueError("Resource batch failure requires reconciliation.") from exc
-                    results.append(
-                        self.store.record_tool_failure(
-                            run_id,
-                            token,
-                            call["id"],
-                            code=code,
-                            message=message,
-                        )
-                    )
-                messages.extend(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call["id"],
-                        "content": json.dumps(result),
-                    }
-                    for call, result in zip(calls, results, strict=True)
+                selected = run.get("procedure_trial")
+                if selected is None:
+                    raise ValueError("A selected procedure version is required for revision.")
+                selected_id = str(selected["skill_id"])
+                selected_version = int(selected["version"])
+                current_content = str(
+                    SkillStore(self.store).version(selected_id, selected_version)["content"]
                 )
+                for call in calls:
+                    raw_arguments = json.loads(call["function"]["arguments"])
+                    if not isinstance(raw_arguments, dict):
+                        raise TypeError("Procedure revision arguments must be objects.")
+                    arguments = cast(dict[str, Any], raw_arguments)
+                    revision = SkillContentRevision.model_validate(arguments)
+                    if (
+                        revision.skill_id != selected_id
+                        or revision.expected_version != selected_version
+                    ):
+                        raise ValueError("All revisions must target the same selected version.")
+                    if revision.content is not None:
+                        current_content = revision.content
+                    else:
+                        assert revision.old_string is not None and revision.new_string is not None
+                        count = current_content.count(revision.old_string)
+                        if count == 0:
+                            raise SkillConflict(
+                                "Exact old_string text was not found in the pending revision."
+                            )
+                        if count != 1 and not revision.replace_all:
+                            raise SkillConflict(
+                                "Exact old_string occurs more than once; confirm replace_all to change every occurrence."
+                            )
+                        current_content = current_content.replace(
+                            revision.old_string,
+                            revision.new_string,
+                            -1 if revision.replace_all else 1,
+                        )
+                    revision_arguments = revision.model_dump(mode="json")
+                    content_calls.append((call["id"], revision_arguments))
+                combined = SkillContentRevision(
+                    skill_id=selected_id,
+                    expected_version=selected_version,
+                    content=current_content,
+                )
+                result = SkillStore(self.store).create_model_revision_from_run(
+                    run_id,
+                    token,
+                    calls[0]["id"],
+                    combined,
+                    batch_calls=content_calls,
+                )
+            except PermissionError:
+                raise
+            except (
+                json.JSONDecodeError,
+                ValidationError,
+                TypeError,
+                ValueError,
+                KeyError,
+                SkillConflict,
+            ) as exc:
+                code = (
+                    "procedure_revision_conflict"
+                    if isinstance(exc, SkillConflict)
+                    else "invalid_procedure_revision_batch"
+                )
+                try:
+                    results = record_batch_failure(calls, code, str(exc))
+                except ValueError as failure_exc:
+                    raise failure_exc from exc
+                append_batch_results(calls, results)
                 return True
             messages.extend(
                 {

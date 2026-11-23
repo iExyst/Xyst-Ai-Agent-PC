@@ -756,6 +756,92 @@ async def test_coordinator_exposes_and_executes_revision_only_for_explicit_grant
     assert not store.unresolved_tool_calls(str(run["id"]))
 
 
+@pytest.mark.asyncio
+async def test_coordinator_applies_same_turn_content_revisions_in_order(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-revision-multi-call.sqlite3")
+    skills = SkillStore(store)
+    entry = skills.create(_draft())
+    run = store.create_run(
+        objective="Apply the ordered selected procedure edits in one reviewable version.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_revision=True,
+    )
+    revisions = [
+        SkillContentRevision(
+            skill_id=entry["id"],
+            expected_version=1,
+            old_string="Read requested files",
+            new_string="Read required files",
+        ),
+        SkillContentRevision(
+            skill_id=entry["id"],
+            expected_version=1,
+            old_string="Read required files",
+            new_string="Read approved files",
+        ),
+    ]
+    calls = [
+        {
+            "id": f"content-revision-{index}",
+            "type": "function",
+            "function": {
+                "name": "procedure_revise",
+                "arguments": json.dumps(revision.model_dump(mode="json")),
+            },
+        }
+        for index, revision in enumerate(revisions, start=1)
+    ]
+
+    class ContentRevisionBatchProvider(LMStudioProvider):
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            if not any(message.get("role") == "tool" for message in messages):
+                assert any(tool["function"]["name"] == "procedure_revise" for tool in tools or [])
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
+            assert [
+                message["tool_call_id"] for message in messages if message.get("role") == "tool"
+            ] == [call["id"] for call in calls]
+            return {"choices": [{"message": {"role": "assistant", "content": "Edits saved."}}]}
+
+    provider = ContentRevisionBatchProvider()
+    try:
+        await Coordinator(store, provider).execute(str(run["id"]))
+    finally:
+        await provider.close()
+
+    revised = skills.version(entry["id"], 2)
+    assert revised["content"] == "Read approved files and report observed facts."
+    assert revised["evaluation_evidence"]["source"]["revision_call_ids"] == json.dumps(
+        [call["id"] for call in calls]
+    )
+    assert revised["evaluation_evidence"]["state"] == "candidate"
+    with store.connection() as connection:
+        records = connection.execute(
+            "SELECT provider_call_id,state FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
+            (run["id"],),
+        ).fetchall()
+    assert [(row["provider_call_id"], row["state"]) for row in records] == [
+        ("content-revision-1", "completed"),
+        ("content-revision-2", "completed"),
+    ]
+    assert not store.unresolved_tool_calls(str(run["id"]))
+
+
 def test_api_persists_content_revision_grant_for_selected_latest_version(
     workspace_tmp_path: Path,
 ) -> None:
