@@ -563,7 +563,8 @@
           },
           "status": {
             "enum": [
-              "verified",
+              "reachable",
+              "rejected",
               "unavailable"
             ],
             "title": "Status",

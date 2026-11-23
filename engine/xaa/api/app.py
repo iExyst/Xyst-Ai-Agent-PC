@@ -108,7 +108,7 @@ from xaa.extensions.procedure_dependencies import (
 from xaa.extensions.pypi_resolver import PyPIResolutionError, PyPIWheelResolver
 from xaa.extensions.pypi_wheels import PyPIAcquisitionError, acquire_wheelhouse_in_appcontainer
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
-from xaa.providers.openai_compatible import OpenAICompatibleProvider
+from xaa.providers.openai_compatible import OpenAICompatibleProvider, ProviderAuthenticationError
 from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
 from xaa.runtime.command_contracts import CommandGrant
@@ -383,7 +383,7 @@ class CompatibleProviderConfigRecord(BaseModel):
 
 class CompatibleProviderCredentialDiagnostic(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["verified", "unavailable"]
+    status: Literal["reachable", "rejected", "unavailable"]
     model_count: int | None
     message: str
 
@@ -2982,16 +2982,22 @@ def create_app(
             )
         try:
             models = await provider.openai_compatible.models()
+        except ProviderAuthenticationError:
+            return CompatibleProviderCredentialDiagnostic(
+                status="rejected",
+                model_count=None,
+                message="The provider rejected the saved token with an authentication error.",
+            )
         except ProviderError:
             return CompatibleProviderCredentialDiagnostic(
                 status="unavailable",
                 model_count=None,
-                message="The provider did not accept the saved token or its model endpoint is unavailable.",
+                message="The provider model endpoint could not be checked; token validity is unknown.",
             )
         return CompatibleProviderCredentialDiagnostic(
-            status="verified",
+            status="reachable",
             model_count=len(models),
-            message="The provider accepted the saved token and returned its model list.",
+            message="The provider returned its model list with the saved token configured. Some providers do not require a token.",
         )
 
     @app.put("/providers/openai-compatible/selection")

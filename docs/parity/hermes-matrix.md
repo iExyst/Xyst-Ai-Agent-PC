@@ -2,7 +2,7 @@
 
 ## Verify optional provider credentials (2026-11-23)
 
-The Model setup screen can explicitly check a saved OpenAI-compatible provider token against its configured `/v1/models` endpoint. The engine reads the token from the OS vault, makes no inference request, and returns only verified/unavailable plus a model count or safe generic message. Focused API coverage (19 tests) checks that missing tokens are rejected and token/low-level errors do not appear in responses; the provider setup browser flow, desktop build/typecheck, generated contract, Ruff, formatting, and Pyright pass locally. Hosted exact-source verification is pending. This establishes only authenticated model-list access; inference and provider feature parity remain unverified.
+The Model setup screen can explicitly check a saved OpenAI-compatible provider token against its configured `/v1/models` endpoint. The engine reads the token from the OS vault and makes no inference request. Explicit HTTP 401/403 responses mean rejected; a returned model list means reachable and notes that some compatible services do not require a token; other failures leave validity unknown. Token values and low-level provider errors are not returned. Focused API/adapter coverage (24 tests) checks these cases and missing-token rejection; the provider setup browser flow, desktop build/typecheck, generated contract, Ruff, formatting, and Pyright pass locally. Hosted exact-source verification is pending. Inference and broader provider feature parity remain unverified.
 
 ## Grant procedure credentials to specialist tasks per run (2026-11-23)
 

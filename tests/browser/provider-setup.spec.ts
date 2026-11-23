@@ -50,7 +50,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
       expect(req.postDataJSON().token).toBe('compatible-test-token');compatibleCredentialConfigured=true;
       return route.fulfill({json:{configured:true},headers});
     }
-    if(path==='/providers/openai-compatible/credential/diagnostics'&&req.method()==='POST')return route.fulfill({json:{status:'verified',model_count:1,message:'The provider accepted the saved token and returned its model list.'},headers});
+    if(path==='/providers/openai-compatible/credential/diagnostics'&&req.method()==='POST')return route.fulfill({json:{status:'reachable',model_count:1,message:'The provider returned its model list with the saved token configured. Some providers do not require a token.'},headers});
     if(path==='/providers/openai-compatible/credential'&&req.method()==='DELETE'){
       compatibleCredentialConfigured=false;return route.fulfill({json:{configured:false},headers});
     }
@@ -144,7 +144,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await page.getByRole('button',{name:'Save provider token securely'}).click();
   await expect(page.getByLabel('Optional provider API token')).toHaveValue('');
   await page.getByRole('button',{name:'Check saved token'}).click();
-  await expect(page.getByRole('status').filter({hasText:'The provider accepted the saved token'})).toBeVisible();
+  await expect(page.getByRole('status').filter({hasText:'Some providers do not require a token'})).toBeVisible();
   await page.getByRole('button',{name:'Run harmless tool-use diagnostic'}).click();
   await expect(page.getByText('The selected model completed a validated harmless tool round trip.')).toBeVisible();
   expect(diagnostics).toBe(2);

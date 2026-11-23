@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 from xaa.providers.lm_studio import ProviderError
-from xaa.providers.openai_compatible import OpenAICompatibleProvider
+from xaa.providers.openai_compatible import OpenAICompatibleProvider, ProviderAuthenticationError
 from xaa.providers.tokenization import PromptCountError, PromptCountRequest
 
 
@@ -112,6 +112,23 @@ async def test_model_inventory_and_tool_diagnostic_use_compatible_api() -> None:
             "/v1/chat/completions",
             "/v1/chat/completions",
         ]
+    finally:
+        await provider.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [401, 403])
+async def test_model_discovery_identifies_explicit_authentication_rejection(status: int) -> None:
+    provider = OpenAICompatibleProvider(
+        "https://api.example.test",
+        "fixture-secret",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(status, json={"error": "private provider detail"})
+        ),
+    )
+    try:
+        with pytest.raises(ProviderAuthenticationError, match="rejected the configured credential"):
+            await provider.models()
     finally:
         await provider.close()
 

@@ -2719,7 +2719,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "verified" | "unavailable";
+            status: "reachable" | "rejected" | "unavailable";
         };
         /** CompatibleProviderSelectionRequest */
         CompatibleProviderSelectionRequest: {

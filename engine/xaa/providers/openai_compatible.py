@@ -87,6 +87,12 @@ class OpenAICompatibleProvider(LMStudioProvider):
             response = await self._client.get("/v1/models")
             response.raise_for_status()
             payload: object = response.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in {401, 403}:
+                raise ProviderAuthenticationError(
+                    "OpenAI-compatible provider rejected the configured credential."
+                ) from exc
+            raise ProviderError("OpenAI-compatible model discovery failed at /v1/models.") from exc
         except (httpx.HTTPError, ValueError) as exc:
             raise ProviderError("OpenAI-compatible model discovery failed at /v1/models.") from exc
         if not isinstance(payload, dict):
@@ -137,3 +143,7 @@ class OpenAICompatibleProvider(LMStudioProvider):
         raise ProviderError(
             "Scanned PDF OCR requires LM Studio's native vision endpoint; use a text-based document with this provider."
         )
+
+
+class ProviderAuthenticationError(ProviderError):
+    """The configured provider explicitly rejected the supplied credential."""

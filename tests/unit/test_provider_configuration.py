@@ -8,7 +8,10 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
-from xaa.providers.openai_compatible import OpenAICompatibleProvider
+from xaa.providers.openai_compatible import (
+    OpenAICompatibleProvider,
+    ProviderAuthenticationError,
+)
 from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
 from xaa.storage.runs import RunStore
 
@@ -57,6 +60,11 @@ class FixtureCompatibleProvider(OpenAICompatibleProvider):
 class RejectingCompatibleProvider(FixtureCompatibleProvider):
     async def models(self) -> list[ModelInfo]:
         raise ProviderError("sensitive low-level provider response")
+
+
+class AuthenticationRejectingCompatibleProvider(FixtureCompatibleProvider):
+    async def models(self) -> list[ModelInfo]:
+        raise ProviderAuthenticationError("sensitive provider authentication detail")
 
 
 @pytest.mark.parametrize(
@@ -288,9 +296,9 @@ def test_compatible_provider_credential_diagnostic_checks_saved_token_without_ex
         valid = client.post("/providers/openai-compatible/credential/diagnostics", headers=headers)
         assert valid.status_code == 200
         assert valid.json() == {
-            "status": "verified",
+            "status": "reachable",
             "model_count": 1,
-            "message": "The provider accepted the saved token and returned its model list.",
+            "message": "The provider returned its model list with the saved token configured. Some providers do not require a token.",
         }
         assert "candidate-secret" not in valid.text
         router.openai_compatible = RejectingCompatibleProvider()
@@ -301,9 +309,20 @@ def test_compatible_provider_credential_diagnostic_checks_saved_token_without_ex
         assert invalid.json() == {
             "status": "unavailable",
             "model_count": None,
-            "message": "The provider did not accept the saved token or its model endpoint is unavailable.",
+            "message": "The provider model endpoint could not be checked; token validity is unknown.",
         }
         assert "sensitive low-level" not in invalid.text
+        router.openai_compatible = AuthenticationRejectingCompatibleProvider()
+        rejected = client.post(
+            "/providers/openai-compatible/credential/diagnostics", headers=headers
+        )
+        assert rejected.status_code == 200
+        assert rejected.json() == {
+            "status": "rejected",
+            "model_count": None,
+            "message": "The provider rejected the saved token with an authentication error.",
+        }
+        assert "sensitive provider authentication" not in rejected.text
 
 
 def test_model_selection_is_exclusive_and_run_id_keeps_adapter(workspace_tmp_path):
