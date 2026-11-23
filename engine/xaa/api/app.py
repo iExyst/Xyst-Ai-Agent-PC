@@ -180,6 +180,7 @@ from xaa.storage.skills import (
     SkillVersion,
 )
 from xaa.storage.specialist_profiles import (
+    MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES,
     ROLES,
     SpecialistProfileStore,
     specialist_procedure_environments,
@@ -4096,7 +4097,7 @@ def create_app(
             choices: list[dict[str, Any]] = []
             for row in rows:
                 content_bytes = len(str(row["content"]).encode("utf-8"))
-                if content_bytes > 16 * 1024:
+                if content_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
                     continue
                 try:
                     resources = specialist_procedure_resources(

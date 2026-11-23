@@ -119,7 +119,7 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
             raise ValueError("Saved specialist procedure resource failed its integrity check.")
         total_bytes += len(raw)
     if total_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
-        raise ValueError("Saved specialist procedure exceeds the 16 KiB context limit.")
+        raise ValueError("Saved specialist procedure exceeds the 80 KiB context limit.")
     required_managers_value: Any = snapshot.get("required_dependency_managers", [])
     required_managers = (
         cast(list[str], required_managers_value)
@@ -241,7 +241,7 @@ class TaskStore:
         content = str(row["content"])
         content_bytes = len(content.encode("utf-8"))
         if content_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
-            raise ValueError("A specialist procedure exceeds the 16 KiB context limit.")
+            raise ValueError("A specialist procedure exceeds the 80 KiB context limit.")
         resources = specialist_procedure_resources(
             connection, skill_id, int(row["active_version"]), content_bytes
         )

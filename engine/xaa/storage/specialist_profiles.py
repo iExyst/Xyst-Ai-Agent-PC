@@ -9,7 +9,9 @@ from typing import Any, Literal
 from xaa.storage.runs import RunStore, utc_now
 from xaa.storage.skills import is_text_asset_media_type
 
-MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 16 * 1024
+# Match the skill importer so large, pinned reference procedures can be assigned.
+# The provider's exact context admission remains the final guard before inference.
+MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 80 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
 
 
@@ -78,7 +80,7 @@ def specialist_procedure_resources(
             raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
         total_bytes += len(raw)
         if total_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
-            raise ValueError("Specialist procedure text and resources must total 16 KiB or less.")
+            raise ValueError("Specialist procedure text and resources must total 80 KiB or less.")
         resources.append(
             {
                 "path": path,
@@ -198,8 +200,11 @@ class SpecialistProfileStore:
                 ).fetchone()
                 if row is None:
                     raise ValueError("Choose a currently active procedure.")
-                if len(str(row["content"]).encode("utf-8")) > 16 * 1024:
-                    raise ValueError("Specialist procedures must be 16 KiB or smaller.")
+                if (
+                    len(str(row["content"]).encode("utf-8"))
+                    > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES
+                ):
+                    raise ValueError("Specialist procedures must be 80 KiB or smaller.")
                 specialist_procedure_resources(
                     connection,
                     skill_id,

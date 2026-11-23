@@ -449,12 +449,18 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
             ('[{"name":"workspace.search","version":"1"}]', '["workspace.read"]'),
         )
     _active_procedure(store, identity="large-procedure")
+    _active_procedure(store, identity="expanded-procedure")
     _active_procedure(store, identity="binary-procedure")
     with store.connection() as connection:
         connection.execute(
-            "UPDATE skill_versions SET content='x' WHERE skill_id='large-procedure' AND version=1"
+            "UPDATE skill_versions SET content=? WHERE skill_id='large-procedure' AND version=1",
+            ("x" * (80 * 1024 + 1),),
         )
-    _add_text_resource(store, "large-procedure", "references/large.md", b"x" * (16 * 1024))
+        connection.execute(
+            "UPDATE skill_versions SET content=? WHERE skill_id='expanded-procedure' AND version=1",
+            ("x" * (20 * 1024),),
+        )
+    _add_text_resource(store, "large-procedure", "references/large.md", b"x")
     _add_resource(
         store, "binary-procedure", "references/guide.pdf", b"%PDF-1.7\n", "application/pdf"
     )
@@ -468,6 +474,16 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
         assert choices.status_code == 200
         assert choices.json() == [
             {
+                "id": "expanded-procedure",
+                "name": "expanded-procedure",
+                "version": 1,
+                "linked_resource_count": 0,
+                "required_tools": [],
+                "required_permissions": [],
+                "python_environments": [],
+                "npm_environments": [],
+            },
+            {
                 "id": "procedure-a",
                 "name": "procedure-a",
                 "version": 1,
@@ -476,7 +492,7 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
                 "required_permissions": ["workspace.read"],
                 "python_environments": [],
                 "npm_environments": [],
-            }
+            },
         ]
         selected = client.put(
             "/specialists/profiles/researcher/procedure",
@@ -485,6 +501,13 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
         )
         assert selected.status_code == 200
         assert selected.json()["procedure_skill_id"] == "procedure-a"
+        expanded = client.put(
+            "/specialists/profiles/tester/procedure",
+            headers=HEADERS,
+            json={"skill_id": "expanded-procedure"},
+        )
+        assert expanded.status_code == 200
+        assert expanded.json()["procedure_skill_id"] == "expanded-procedure"
         for unsupported in ("large-procedure", "binary-procedure"):
             rejected_resource = client.put(
                 "/specialists/profiles/tester/procedure",
