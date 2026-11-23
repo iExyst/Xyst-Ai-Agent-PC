@@ -237,6 +237,55 @@ def test_specialist_command_binds_profile_selected_procedure_environment(workspa
         )
 
 
+def test_specialist_command_requires_declared_dependency_environment(workspace_tmp_path):
+    store, run, owner, _project = setup(workspace_tmp_path)
+    now = "2026-01-01T00:00:00+00:00"
+    skill_id = str(uuid4())
+    evidence = json.dumps(
+        {
+            "source": {
+                "declared_requirements": json.dumps({"python_dependency_specs": ["sample>=1"]})
+            }
+        }
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) "
+            "VALUES(?,'Dependency procedure','active',1,?,?)",
+            (skill_id, now, now),
+        )
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) "
+            "VALUES(?,1,'Run the checked Python script.','[]','[]',?,?)",
+            (skill_id, evidence, now),
+        )
+    SpecialistProfileStore(store).set_procedure("executor", skill_id)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run,
+        owner,
+        [
+            TaskDefinition(
+                id="execute",
+                objective="Run the declared Python procedure",
+                role="executor",
+                permissions=("workspace.read", "workspace.write", "workspace.command"),
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run, owner)
+    assert claim is not None
+    journal = CommandJournal(store, task_scope=TaskReadScope(run, owner, "execute", claim["token"]))
+    with pytest.raises(PermissionError, match="requires an approved python environment"):
+        journal.reserve(
+            run,
+            owner,
+            "missing-environment",
+            {"argv": ["python", "procedure.py"]},
+            idempotency_key="missing-environment",
+        )
+
+
 def test_intent_and_events_roll_back_together(workspace_tmp_path, monkeypatch):
     store, run, owner, _ = setup(workspace_tmp_path)
     original = store.record_event

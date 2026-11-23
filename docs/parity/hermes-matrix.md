@@ -2,7 +2,7 @@
 
 ## Persistent specialist procedure dependency environments (2026-11-23)
 
-Specialist profiles can select an approved, installed Python or npm environment for the active procedure version. Planned specialist tasks snapshot the exact environment digest, distribution, and installed tree hash; runtime readiness and command reservation verify availability and approval, and stale installs are rejected. Local evidence: 77 focused unit tests, the specialist profile browser flow, TypeScript and OpenAPI contract checks, Ruff, and Pyright pass. Hosted source and packaged acceptance are pending. This implements dependency-environment selection for persistent specialists; it does not establish general Hermes dependency management or full parity. See [`progress.md`](../progress.md#bind-approved-dependency-environments-to-specialist-profiles-2026-11-23).
+Specialist profiles can select an approved, installed Python or npm environment for the active procedure version. Planned specialist tasks snapshot the exact environment digest, distribution, and installed tree hash; runtime readiness and command reservation verify availability and approval, and missing or stale required installs block commands. Local evidence: 78 focused unit tests, the specialist profile browser flow, TypeScript and OpenAPI contract checks, Ruff, and Pyright pass. Hosted source and packaged acceptance are pending. This implements dependency-environment selection for persistent specialists; it does not establish general Hermes dependency management or full parity. See [`progress.md`](../progress.md#bind-approved-dependency-environments-to-specialist-profiles-2026-11-23).
 
 ## Verify selected specialist procedure scripts in hosted WSL (2026-11-23)
 

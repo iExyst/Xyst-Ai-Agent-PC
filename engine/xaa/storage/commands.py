@@ -391,6 +391,14 @@ class CommandJournal:
                     procedure_identity = (skill_id, version)
                     procedure_environment = None
                     procedure_node_environment = None
+                    required_managers = cast(
+                        list[str], specialist_procedure.get("required_dependency_managers", [])
+                    )
+                    for manager in required_managers:
+                        if specialist_procedure.get(f"{manager}_environment") is None:
+                            raise PermissionError(
+                                f"The specialist procedure requires an approved {manager} environment before commands can run."
+                            )
                     for manager, table, lock_table in (
                         (
                             "python",
