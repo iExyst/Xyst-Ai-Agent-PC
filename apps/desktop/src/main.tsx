@@ -538,8 +538,11 @@ function App() {
   ];
   const filteredNavigationCommands=navigationCommands.filter(([label,, ,keywords])=>`${label} ${keywords}`.toLowerCase().includes(commandPaletteQuery.trim().toLowerCase()));
   function openCommandPalette(){
-    if(navigationFocusTimer.current!==null){window.clearTimeout(navigationFocusTimer.current);navigationFocusTimer.current=null;}
-    commandPaletteReturnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    const navigationFocusPending=navigationFocusTimer.current!==null;
+    if(navigationFocusPending){window.clearTimeout(navigationFocusTimer.current!);navigationFocusTimer.current=null;}
+    commandPaletteReturnFocus.current=navigationFocusPending
+      ? document.querySelector<HTMLElement>('.app-topbar h1')
+      : document.activeElement instanceof HTMLElement?document.activeElement:null;
     commandPaletteOpenRef.current=true;setCommandPaletteQuery('');setCommandPaletteIndex(0);setCommandPaletteOpen(true);
   }
   function closeCommandPalette(){
