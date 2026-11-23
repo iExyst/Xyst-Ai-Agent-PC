@@ -96,6 +96,7 @@ function App() {
   const [commandPaletteIndex,setCommandPaletteIndex]=useState(0);
   const commandPaletteInput=useRef<HTMLInputElement>(null);
   const commandPaletteReturnFocus=useRef<HTMLElement|null>(null);
+  const navigationFocusTimer=useRef<number|null>(null);
   const [visitedPages,setVisitedPages]=useState<Set<DesktopPage>>(()=>new Set(['home']));
   const [visitedIntegrationSections,setVisitedIntegrationSections]=useState<Set<string>>(()=>new Set());
   const [homeConversationsOpen,setHomeConversationsOpen]=useState(false);
@@ -515,7 +516,9 @@ function App() {
   function navigateTo(target:DesktopPage,anchor:DesktopNavTarget){
     setPage(target);
     setActiveSection(anchor);
-    window.setTimeout(()=>{
+    if(navigationFocusTimer.current!==null)window.clearTimeout(navigationFocusTimer.current);
+    navigationFocusTimer.current=window.setTimeout(()=>{
+      navigationFocusTimer.current=null;
       document.getElementById(anchor)?.scrollIntoView({block:'start'});
       document.querySelector<HTMLElement>('.app-topbar h1')?.focus({preventScroll:true});
     },0);
@@ -535,6 +538,7 @@ function App() {
   ];
   const filteredNavigationCommands=navigationCommands.filter(([label,, ,keywords])=>`${label} ${keywords}`.toLowerCase().includes(commandPaletteQuery.trim().toLowerCase()));
   function openCommandPalette(){
+    if(navigationFocusTimer.current!==null){window.clearTimeout(navigationFocusTimer.current);navigationFocusTimer.current=null;}
     commandPaletteReturnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
     commandPaletteOpenRef.current=true;setCommandPaletteQuery('');setCommandPaletteIndex(0);setCommandPaletteOpen(true);
   }
