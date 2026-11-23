@@ -13,6 +13,32 @@ MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 16 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
 
 
+def specialist_procedure_environments(
+    connection: Any, skill_id: str, version: int
+) -> dict[str, list[dict[str, Any]]]:
+    """Return only approved, currently installed dependency environments."""
+    python_rows = connection.execute(
+        "SELECT environment.environment_digest,environment.distribution,environment.tree_sha256,"
+        "environment.installed_bytes,environment.file_count FROM skill_python_dependency_locks AS lock "
+        "JOIN skill_python_dependency_environments AS environment USING(skill_id,skill_version,environment_digest) "
+        "WHERE lock.skill_id=? AND lock.skill_version=? AND lock.decision='approved' "
+        "ORDER BY environment.distribution,environment.environment_digest",
+        (skill_id, version),
+    ).fetchall()
+    npm_rows = connection.execute(
+        "SELECT environment.environment_digest,environment.distribution,environment.tree_sha256,"
+        "environment.installed_bytes,environment.file_count,environment.node_version,environment.npm_version "
+        "FROM skill_npm_dependency_locks AS lock JOIN skill_npm_dependency_environments AS environment "
+        "USING(skill_id,skill_version,environment_digest) WHERE lock.skill_id=? AND lock.skill_version=? "
+        "AND lock.decision='approved' ORDER BY environment.distribution,environment.environment_digest",
+        (skill_id, version),
+    ).fetchall()
+    return {
+        "python": [dict(row) for row in python_rows],
+        "npm": [dict(row) for row in npm_rows],
+    }
+
+
 def specialist_procedure_resources(
     connection: Any, skill_id: str, version: int, content_bytes: int
 ) -> list[dict[str, str]]:
@@ -82,7 +108,8 @@ class SpecialistProfileStore:
     def list(self) -> list[dict[str, Any]]:
         with self.runs.connection() as connection:
             rows = connection.execute(
-                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,"
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,"
+                "p.procedure_python_environment_digest,p.procedure_npm_environment_digest,p.updated_at,"
                 "s.name AS procedure_name,s.active_version AS procedure_version "
                 "FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id ORDER BY p.role"
             ).fetchall()
@@ -99,7 +126,7 @@ class SpecialistProfileStore:
                 (model_route, utc_now(), role),
             )
             row = connection.execute(
-                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.procedure_python_environment_digest,p.procedure_npm_environment_digest,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
                 (role,),
             ).fetchone()
         if row is None:
@@ -117,7 +144,7 @@ class SpecialistProfileStore:
                 (instructions.strip(), utc_now(), role),
             )
             row = connection.execute(
-                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.procedure_python_environment_digest,p.procedure_npm_environment_digest,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
                 (role,),
             ).fetchone()
         if row is None:
@@ -145,13 +172,19 @@ class SpecialistProfileStore:
             if changed != 1:
                 raise KeyError(role)
             row = connection.execute(
-                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.procedure_python_environment_digest,p.procedure_npm_environment_digest,p.updated_at,s.name AS procedure_name,s.active_version AS procedure_version FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
                 (role,),
             ).fetchone()
         assert row is not None
         return dict(row)
 
-    def set_procedure(self, role: str, skill_id: str | None) -> dict[str, Any]:
+    def set_procedure(
+        self,
+        role: str,
+        skill_id: str | None,
+        python_environment_digest: str | None = None,
+        npm_environment_digest: str | None = None,
+    ) -> dict[str, Any]:
         if role not in ROLES:
             raise KeyError(role)
         with self.runs.connection() as connection:
@@ -173,14 +206,48 @@ class SpecialistProfileStore:
                     int(row["active_version"]),
                     len(str(row["content"]).encode("utf-8")),
                 )
+                for manager, digest in (
+                    ("python", python_environment_digest),
+                    ("npm", npm_environment_digest),
+                ):
+                    if digest is None:
+                        continue
+                    if len(digest) != 64 or any(
+                        character not in "0123456789abcdef" for character in digest
+                    ):
+                        raise ValueError(f"Selected {manager} environment identity is invalid.")
+                    table = (
+                        "skill_python_dependency_environments"
+                        if manager == "python"
+                        else "skill_npm_dependency_environments"
+                    )
+                    lock_table = (
+                        "skill_python_dependency_locks"
+                        if manager == "python"
+                        else "skill_npm_dependency_locks"
+                    )
+                    environment = connection.execute(
+                        f"SELECT 1 FROM {lock_table} AS lock JOIN {table} AS environment "
+                        "USING(skill_id,skill_version,environment_digest) WHERE lock.skill_id=? "
+                        "AND lock.skill_version=? AND lock.environment_digest=? AND lock.decision='approved'",
+                        (skill_id, int(row["active_version"]), digest),
+                    ).fetchone()
+                    if environment is None:
+                        raise ValueError(
+                            f"Choose an approved installed {manager} environment for this active procedure version."
+                        )
+            elif python_environment_digest is not None or npm_environment_digest is not None:
+                raise ValueError("Dependency environments require an active specialist procedure.")
             changed = connection.execute(
-                "UPDATE specialist_profiles SET procedure_skill_id=?,updated_at=? WHERE role=?",
-                (skill_id, utc_now(), role),
+                "UPDATE specialist_profiles SET procedure_skill_id=?,procedure_python_environment_digest=?,"
+                "procedure_npm_environment_digest=?,updated_at=? WHERE role=?",
+                (skill_id, python_environment_digest, npm_environment_digest, utc_now(), role),
             ).rowcount
             if changed != 1:
                 raise KeyError(role)
             result = connection.execute(
-                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,p.updated_at,"
+                "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,"
+                "p.procedure_python_environment_digest,p.procedure_npm_environment_digest,p.updated_at,"
                 "s.name AS procedure_name,s.active_version AS procedure_version "
                 "FROM specialist_profiles p LEFT JOIN skills s ON s.id=p.procedure_skill_id WHERE p.role=?",
                 (role,),

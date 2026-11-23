@@ -385,11 +385,12 @@ function App() {
             return typeof item.name === 'string' && typeof item.version === 'string' ? [`${item.name}@${item.version}`] : [];
           }) : [];
           const permissionRequirements = Array.isArray(event.payload.unavailable_required_permissions) ? event.payload.unavailable_required_permissions.filter((value): value is string => typeof value === 'string') : [];
-          const missing = [...toolRequirements, ...permissionRequirements];
+          const dependencyRequirements = Array.isArray(event.payload.unavailable_dependency_managers) ? event.payload.unavailable_dependency_managers.filter((value): value is string => typeof value === 'string') : [];
+          const missing = [...toolRequirements, ...permissionRequirements, ...dependencyRequirements];
           const procedure = typeof event.payload.procedure_id === 'string' ? event.payload.procedure_id : 'selected procedure';
           const version = typeof event.payload.procedure_version === 'number' ? ` v${event.payload.procedure_version}` : '';
           return event.payload.ready === true
-            ? `${procedure}${version}: all declared tool and permission requirements are available to this task.`
+            ? `${procedure}${version}: all declared tool, permission, and dependency environment requirements are available to this task.`
             : `${procedure}${version}: unavailable requirements${missing.length ? `: ${missing.join(', ')}` : ' need review'}.`;
         })() : undefined;
         const description = procedureReadiness ?? (event.event_type === 'run.state_changed' ? `Run is ${String(event.payload.to).replaceAll('_', ' ')}${reason ? `. ${reason}` : ''}` : event.event_type === 'context.admission_failed' ? `${labels[event.event_type]}${counterCode}` : (labels[event.event_type] ?? 'Progress saved'));

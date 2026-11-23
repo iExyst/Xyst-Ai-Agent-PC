@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Persistent specialist procedure dependency environments (2026-11-23)
+
+Specialist profiles can select an approved, installed Python or npm environment for the active procedure version. Planned specialist tasks snapshot the exact environment digest, distribution, and installed tree hash; runtime readiness and command reservation verify availability and approval, and stale installs are rejected. Local evidence: 77 focused unit tests, the specialist profile browser flow, TypeScript and OpenAPI contract checks, Ruff, and Pyright pass. Hosted source and packaged acceptance are pending. This implements dependency-environment selection for persistent specialists; it does not establish general Hermes dependency management or full parity. See [`progress.md`](../progress.md#bind-approved-dependency-environments-to-specialist-profiles-2026-11-23).
+
 ## Verify selected specialist procedure scripts in hosted WSL (2026-11-23)
 
 The hosted manual workflow now provisions Ubuntu 24.04 and runs the existing selected-profile diagnostic against its actual WSL command backend. Exact-source run [45208495477](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45208495477) passed Python, Bash, and Node scripts staged from the persistent executor profile's active procedure. The report confirms matching command evidence, unchanged original workspace bytes, and no unresolved commands ([evidence](../../.acceptance/selected-specialist-profile-script-45208495477/18c3254f-4e66-43e8-a8fd-4913834bf850/report.json)). The accompanying source workflow [45208495686](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45208495686) passed; pytest was skipped by its changed-input filter because only workflow configuration changed. This is deterministic backend acceptance without model inference or dependency setup. See [`progress.md`](../progress.md#add-hosted-wsl-coverage-for-persistent-specialist-procedure-scripts-2026-11-23).

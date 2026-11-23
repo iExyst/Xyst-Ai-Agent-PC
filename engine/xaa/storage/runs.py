@@ -21,7 +21,7 @@ from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 39
+DATABASE_SCHEMA_VERSION = 40
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -392,6 +392,8 @@ class RunStore:
                     model_route TEXT,
                     system_instructions TEXT NOT NULL DEFAULT '',
                     procedure_skill_id TEXT,
+                    procedure_python_environment_digest TEXT,
+                    procedure_npm_environment_digest TEXT,
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS task_leases (
@@ -797,6 +799,14 @@ class RunStore:
             if "procedure_skill_id" not in profile_columns:
                 connection.execute(
                     "ALTER TABLE specialist_profiles ADD COLUMN procedure_skill_id TEXT"
+                )
+            if "procedure_python_environment_digest" not in profile_columns:
+                connection.execute(
+                    "ALTER TABLE specialist_profiles ADD COLUMN procedure_python_environment_digest TEXT"
+                )
+            if "procedure_npm_environment_digest" not in profile_columns:
+                connection.execute(
+                    "ALTER TABLE specialist_profiles ADD COLUMN procedure_npm_environment_digest TEXT"
                 )
             if "system_instructions" not in profile_columns:
                 connection.execute(

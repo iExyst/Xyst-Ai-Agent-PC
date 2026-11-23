@@ -34,11 +34,18 @@ export function SpecialistProfilesPanel({ client }: Props) {
     setMemories(Object.fromEntries(roleMemories));
   };
 
-  const saveProcedure = async (profile: SpecialistProfile, skill_id: string | null) => {
+  const saveProcedure = async (
+    profile: SpecialistProfile,
+    skill_id: string | null,
+    python_environment_digest: string | null = null,
+    npm_environment_digest: string | null = null,
+  ) => {
     setBusyRole(profile.role);
     setError('');
     try {
-      const saved = await client.setSpecialistProcedure(profile.role, skill_id);
+      const saved = await client.setSpecialistProcedure(
+        profile.role, skill_id, python_environment_digest, npm_environment_digest,
+      );
       setProfiles(current => current.map(item => item.role === saved.role ? saved : item));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -121,7 +128,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
 
   return <section aria-label="Specialist profiles">
     <h3>Specialist identities and model routes</h3>
-    <p>Choose a discovered local model and an active saved procedure for each role, or inherit the parent run model and leave procedure routing unset. Role instructions, routes, procedure text, and up to 16 KiB of linked text resources are snapshotted when a task plan is saved. Procedure content is untrusted reference material; tool permissions remain controlled by the application.</p>
+    <p>Choose a discovered model and active saved procedure for each role, or inherit the parent run model and leave procedure routing unset. You can bind an approved installed Python/npm environment to that exact procedure version. Role instructions, routes, procedure text, and up to 16 KiB of linked text resources are snapshotted when a task plan is saved. Procedure content is untrusted reference material; tool permissions remain controlled by the application.</p>
     {error && <p role="alert">{error}</p>}
     {profiles.map(profile => <div key={profile.role} className="specialist-profile">
       <label>{profile.role} specialist name
@@ -175,6 +182,35 @@ export function SpecialistProfilesPanel({ client }: Props) {
         return <p aria-label={`${profile.display_name} procedure requirements`}>
           Declared requirements: {declared.length ? declared.join(', ') : 'none declared'}. Selecting a procedure does not grant any tools or permissions.
         </p>;
+      })()}
+      {profile.procedure_skill_id && (() => {
+        const selectedProcedure = procedures.find(item => item.id === profile.procedure_skill_id);
+        if (!selectedProcedure) return null;
+        const savePython = (value: string) => void saveProcedure(
+          profile, profile.procedure_skill_id ?? null, value || null, profile.procedure_npm_environment_digest ?? null,
+        );
+        const saveNpm = (value: string) => void saveProcedure(
+          profile, profile.procedure_skill_id ?? null, profile.procedure_python_environment_digest ?? null, value || null,
+        );
+        const optionText = (environment: SpecialistProcedure['python_environments'][number]) =>
+          `${environment.distribution} · ${environment.environment_digest.slice(0, 12)} · ${environment.installed_bytes.toLocaleString()} bytes`;
+        return <div aria-label={`${profile.display_name} procedure dependency environments`}>
+          {(selectedProcedure.python_environments.length > 0 || profile.procedure_python_environment_digest) && <label>
+            {profile.display_name} Python environment
+            <select aria-label={`${profile.display_name} Python environment`} value={profile.procedure_python_environment_digest ?? ''} disabled={busyRole === profile.role} onChange={event => savePython(event.target.value)}>
+              <option value="">No Python environment</option>
+              {selectedProcedure.python_environments.map(environment => <option key={environment.environment_digest} value={environment.environment_digest}>{optionText(environment)}</option>)}
+            </select>
+          </label>}
+          {(selectedProcedure.npm_environments.length > 0 || profile.procedure_npm_environment_digest) && <label>
+            {profile.display_name} npm environment
+            <select aria-label={`${profile.display_name} npm environment`} value={profile.procedure_npm_environment_digest ?? ''} disabled={busyRole === profile.role} onChange={event => saveNpm(event.target.value)}>
+              <option value="">No npm environment</option>
+              {selectedProcedure.npm_environments.map(environment => <option key={environment.environment_digest} value={environment.environment_digest}>{optionText(environment)}</option>)}
+            </select>
+          </label>}
+          {(selectedProcedure.python_environments.length === 0 && selectedProcedure.npm_environments.length === 0) && <p>No approved installed dependency environments are available for this procedure version.</p>}
+        </div>;
       })()}
       <label>{profile.display_name} role instructions
         <textarea

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -106,6 +107,36 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         total_bytes += len(raw)
     if total_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
         raise ValueError("Saved specialist procedure exceeds the 16 KiB context limit.")
+    required_managers_value: Any = snapshot.get("required_dependency_managers", [])
+    required_managers = (
+        cast(list[str], required_managers_value)
+        if isinstance(required_managers_value, list)
+        else []
+    )
+    if (
+        not isinstance(required_managers_value, list)
+        or any(item not in {"python", "npm"} for item in required_managers)
+        or len(set(required_managers)) != len(required_managers)
+    ):
+        raise ValueError("Saved specialist procedure dependency declarations are invalid.")
+    for manager in ("python", "npm"):
+        environment_value = snapshot.get(f"{manager}_environment")
+        if environment_value is None:
+            continue
+        if not isinstance(environment_value, dict):
+            raise TypeError("Saved specialist procedure environment metadata is invalid.")
+        environment = cast(dict[str, Any], environment_value)
+        if (
+            set(environment) != {"environment_digest", "distribution", "tree_sha256"}
+            or not isinstance(environment.get("environment_digest"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", cast(str, environment["environment_digest"]))
+            or not isinstance(environment.get("distribution"), str)
+            or not environment["distribution"]
+            or len(cast(str, environment["distribution"])) > 64
+            or not isinstance(environment.get("tree_sha256"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", cast(str, environment["tree_sha256"]))
+        ):
+            raise ValueError("Saved specialist procedure environment metadata is invalid.")
 
 
 class TaskStore:
@@ -117,6 +148,8 @@ class TaskStore:
         connection: Any,
         skill_id: str | None,
         available_permissions: Sequence[str],
+        python_environment_digest: str | None = None,
+        npm_environment_digest: str | None = None,
     ) -> dict[str, Any] | None:
         if skill_id is None:
             return None
@@ -149,6 +182,56 @@ class TaskStore:
             "required_permissions": required_permissions,
             "linked_resources": resources,
         }
+        source_value = evidence.get("source")
+        source = cast(dict[str, Any], source_value) if isinstance(source_value, dict) else {}
+        declarations_value = source.get("declared_requirements")
+        try:
+            declarations = (
+                json.loads(declarations_value)
+                if isinstance(declarations_value, str) and len(declarations_value) <= 8192
+                else None
+            )
+        except json.JSONDecodeError:
+            declarations = None
+        declared = cast(dict[str, Any], declarations) if isinstance(declarations, dict) else {}
+        required_dependency_managers = [
+            manager
+            for manager, key in (
+                ("python", "python_dependency_specs"),
+                ("npm", "npm_dependency_specs"),
+            )
+            if isinstance(declared.get(key), list) and bool(declared.get(key))
+        ]
+        if required_dependency_managers:
+            snapshot["required_dependency_managers"] = required_dependency_managers
+        for manager, digest in (
+            ("python", python_environment_digest),
+            ("npm", npm_environment_digest),
+        ):
+            if digest is None:
+                continue
+            lock_table = (
+                "skill_python_dependency_locks"
+                if manager == "python"
+                else "skill_npm_dependency_locks"
+            )
+            environment_table = (
+                "skill_python_dependency_environments"
+                if manager == "python"
+                else "skill_npm_dependency_environments"
+            )
+            environment = connection.execute(
+                f"SELECT environment.environment_digest,environment.distribution,environment.tree_sha256 "
+                f"FROM {lock_table} AS lock JOIN {environment_table} AS environment "
+                "USING(skill_id,skill_version,environment_digest) WHERE lock.skill_id=? "
+                "AND lock.skill_version=? AND lock.environment_digest=? AND lock.decision='approved'",
+                (skill_id, int(row["active_version"]), digest),
+            ).fetchone()
+            if environment is None:
+                raise ValueError(
+                    f"The selected specialist procedure {manager} environment is no longer approved or installed."
+                )
+            snapshot[f"{manager}_environment"] = dict(environment)
         unavailable_permissions = sorted(set(required_permissions) - set(available_permissions))
         if unavailable_permissions:
             snapshot["unavailable_required_permissions"] = unavailable_permissions
@@ -686,7 +769,8 @@ class TaskStore:
             specialist_profiles = {
                 str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id FROM specialist_profiles"
+                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id,"
+                    "procedure_python_environment_digest,procedure_npm_environment_digest FROM specialist_profiles"
                 ).fetchall()
             }
             profile_instructions = {
@@ -737,6 +821,12 @@ class TaskStore:
                                         "procedure_skill_id"
                                     ),
                                     task.permissions,
+                                    specialist_profiles.get(task.role, {}).get(
+                                        "procedure_python_environment_digest"
+                                    ),
+                                    specialist_profiles.get(task.role, {}).get(
+                                        "procedure_npm_environment_digest"
+                                    ),
                                 )
                             )
                             is not None
@@ -946,7 +1036,8 @@ class TaskStore:
             profiles = {
                 str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id FROM specialist_profiles"
+                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id,"
+                    "procedure_python_environment_digest,procedure_npm_environment_digest FROM specialist_profiles"
                 ).fetchall()
             }
             inserted: set[str] = set()
@@ -968,6 +1059,8 @@ class TaskStore:
                         connection,
                         profiles.get(item.role, {}).get("procedure_skill_id"),
                         item.permissions,
+                        profiles.get(item.role, {}).get("procedure_python_environment_digest"),
+                        profiles.get(item.role, {}).get("procedure_npm_environment_digest"),
                     )
                     connection.execute(
                         "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,procedure_snapshot,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",

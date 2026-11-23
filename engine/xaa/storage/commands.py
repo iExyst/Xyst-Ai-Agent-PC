@@ -308,6 +308,7 @@ class CommandJournal:
             connection.execute("BEGIN IMMEDIATE")
             self.store.require_lease(connection, run_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
+            task_key = self.require_task(connection, run_id, owner)
             procedure_environment: dict[str, Any] | None = None
             procedure_node_environment: dict[str, Any] | None = None
             procedure_identity: tuple[str, int] | None = None
@@ -365,7 +366,80 @@ class CommandJournal:
                                 raise PermissionError(
                                     "Selected procedure Node dependency environment is invalid."
                                 )
-            task_key = self.require_task(connection, run_id, owner)
+            if task_key is not None:
+                task_row = connection.execute(
+                    "SELECT procedure_snapshot FROM tasks WHERE id=? AND run_id=?",
+                    (task_key, run_id),
+                ).fetchone()
+                if task_row is not None and task_row["procedure_snapshot"]:
+                    from xaa.storage.tasks import validate_specialist_procedure_snapshot
+
+                    specialist_procedure_value: Any = json.loads(task_row["procedure_snapshot"])
+                    if not isinstance(specialist_procedure_value, dict):
+                        raise PermissionError("Saved specialist procedure snapshot is invalid.")
+                    specialist_procedure = cast(dict[str, Any], specialist_procedure_value)
+                    validate_specialist_procedure_snapshot(specialist_procedure)
+                    skill_id = specialist_procedure.get("skill_id")
+                    version = specialist_procedure.get("version")
+                    if (
+                        not isinstance(skill_id, str)
+                        or re.fullmatch(r"[a-f0-9-]{36}", skill_id) is None
+                        or type(version) is not int
+                        or not 1 <= version <= 128
+                    ):
+                        raise PermissionError("Saved specialist procedure identity is invalid.")
+                    procedure_identity = (skill_id, version)
+                    procedure_environment = None
+                    procedure_node_environment = None
+                    for manager, table, lock_table in (
+                        (
+                            "python",
+                            "skill_python_dependency_environments",
+                            "skill_python_dependency_locks",
+                        ),
+                        (
+                            "npm",
+                            "skill_npm_dependency_environments",
+                            "skill_npm_dependency_locks",
+                        ),
+                    ):
+                        environment_value = specialist_procedure.get(f"{manager}_environment")
+                        if environment_value is None:
+                            continue
+                        if not isinstance(environment_value, dict):
+                            raise PermissionError(
+                                "Selected specialist dependency environment is invalid."
+                            )
+                        environment_data = cast(dict[str, Any], environment_value)
+                        digest = environment_data.get("environment_digest")
+                        tree_sha256 = environment_data.get("tree_sha256")
+                        distribution = environment_data.get("distribution")
+                        if (
+                            not isinstance(digest, str)
+                            or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                            or not isinstance(tree_sha256, str)
+                            or re.fullmatch(r"[a-f0-9]{64}", tree_sha256) is None
+                            or distribution != grant.distribution
+                            or grant.backend != "wsl-bubblewrap-v1"
+                        ):
+                            raise PermissionError(
+                                f"Selected specialist {manager} environment does not match the command grant."
+                            )
+                        installed = connection.execute(
+                            f"SELECT 1 FROM {lock_table} AS lock JOIN {table} AS environment "
+                            "USING(skill_id,skill_version,environment_digest) WHERE lock.skill_id=? "
+                            "AND lock.skill_version=? AND lock.environment_digest=? AND lock.decision='approved' "
+                            "AND environment.distribution=? AND environment.tree_sha256=?",
+                            (skill_id, version, digest, distribution, tree_sha256),
+                        ).fetchone()
+                        if installed is None:
+                            raise PermissionError(
+                                f"Selected specialist {manager} environment is no longer approved or installed."
+                            )
+                        if manager == "python":
+                            procedure_environment = environment_data
+                        else:
+                            procedure_node_environment = environment_data
             self.require_state(connection, run_id)
             if (
                 self.purpose == "project_validation"

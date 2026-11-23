@@ -1323,6 +1323,7 @@ class SpecialistRunner:
                 "You cannot run commands or grant permissions.", "You cannot grant permissions."
             )
         unavailable_procedure_tools = _unavailable_procedure_tools(procedure_snapshot, tools)
+        unavailable_dependency_managers: list[str] = []
         if procedure_snapshot is not None:
             unavailable_permissions_value: Any = procedure_snapshot.get(
                 "unavailable_required_permissions", []
@@ -1338,6 +1339,56 @@ class SpecialistRunner:
                 if isinstance(required_tools_value, list)
                 else []
             )
+            dependency_managers_value: Any = procedure_snapshot.get(
+                "required_dependency_managers", []
+            )
+            dependency_managers = (
+                cast(list[str], dependency_managers_value)
+                if isinstance(dependency_managers_value, list)
+                else []
+            )
+            for manager in dependency_managers:
+                environment_value: Any = procedure_snapshot.get(f"{manager}_environment")
+                environment_data = (
+                    cast(dict[str, Any], environment_value)
+                    if isinstance(environment_value, dict)
+                    else {}
+                )
+                if (
+                    not isinstance(environment_value, dict)
+                    or not commands
+                    or command_grant is None
+                    or command_grant.backend != "wsl-bubblewrap-v1"
+                    or environment_data.get("distribution") != command_grant.distribution
+                ):
+                    unavailable_dependency_managers.append(manager)
+                    continue
+                table = (
+                    "skill_python_dependency_environments"
+                    if manager == "python"
+                    else "skill_npm_dependency_environments"
+                )
+                lock_table = (
+                    "skill_python_dependency_locks"
+                    if manager == "python"
+                    else "skill_npm_dependency_locks"
+                )
+                with self.store.connection() as connection:
+                    installed = connection.execute(
+                        f"SELECT 1 FROM {lock_table} AS lock JOIN {table} AS environment "
+                        "USING(skill_id,skill_version,environment_digest) WHERE lock.skill_id=? "
+                        "AND lock.skill_version=? AND lock.environment_digest=? AND lock.decision='approved' "
+                        "AND environment.distribution=? AND environment.tree_sha256=?",
+                        (
+                            procedure_snapshot.get("skill_id"),
+                            procedure_snapshot.get("version"),
+                            environment_data.get("environment_digest"),
+                            environment_data.get("distribution"),
+                            environment_data.get("tree_sha256"),
+                        ),
+                    ).fetchone()
+                if installed is None:
+                    unavailable_dependency_managers.append(manager)
             self.tasks.record_read_worker_event(
                 run_id,
                 parent,
@@ -1349,12 +1400,16 @@ class SpecialistRunner:
                     "procedure_id": procedure_snapshot.get("skill_id"),
                     "procedure_version": procedure_snapshot.get("version"),
                     "required_tool_count": len(required_tools),
+                    "required_dependency_managers": dependency_managers,
                     "unavailable_required_tools": unavailable_procedure_tools,
+                    "unavailable_dependency_managers": unavailable_dependency_managers,
                     "unavailable_required_permissions": unavailable_permissions,
-                    "ready": not unavailable_procedure_tools and not unavailable_permissions,
+                    "ready": not unavailable_procedure_tools
+                    and not unavailable_dependency_managers
+                    and not unavailable_permissions,
                 },
             )
-        if unavailable_procedure_tools:
+        if unavailable_procedure_tools or unavailable_dependency_managers:
             assignment_index: int | None = None
             assignment_images: list[dict[str, Any]] = []
             assignment: dict[str, Any] | None = None
@@ -1386,15 +1441,23 @@ class SpecialistRunner:
                 raise ValueError("Saved specialist assignment context is unavailable.")
             assignment["unavailable_required_tools"] = unavailable_procedure_tools
             notice = cast(str, assignment["specialist_procedure_trust_notice"])
-            required_labels = ", ".join(
-                f"{item['name']}@{item['version']}" for item in unavailable_procedure_tools
-            )
-            assignment["specialist_procedure_trust_notice"] = (
-                notice
-                + " The following declared tool/version requirements are not available to this task and must not be assumed or attempted: "
-                + required_labels
-                + "."
-            )
+            assignment["unavailable_dependency_managers"] = unavailable_dependency_managers
+            if unavailable_procedure_tools:
+                required_labels = ", ".join(
+                    f"{item['name']}@{item['version']}" for item in unavailable_procedure_tools
+                )
+                notice += (
+                    " The following declared tool/version requirements are not available to this task and must not be assumed or attempted: "
+                    + required_labels
+                    + "."
+                )
+            if unavailable_dependency_managers:
+                notice += (
+                    " The following declared procedure dependency environments are unavailable to this task and must not be assumed or installed: "
+                    + ", ".join(unavailable_dependency_managers)
+                    + "."
+                )
+            assignment["specialist_procedure_trust_notice"] = notice
             updated_assignment_text = json.dumps(assignment, ensure_ascii=False)
             messages[assignment_index]["content"] = (
                 updated_assignment_text

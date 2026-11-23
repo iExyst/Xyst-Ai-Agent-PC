@@ -253,9 +253,14 @@ export class EngineClient {
 
   specialistProcedures(): Promise<SpecialistProcedure[]> { return this.#request('/specialists/procedures'); }
 
-  setSpecialistProcedure(role: string, skill_id: string | null): Promise<SpecialistProfile> {
+  setSpecialistProcedure(
+    role: string,
+    skill_id: string | null,
+    python_environment_digest?: string | null,
+    npm_environment_digest?: string | null,
+  ): Promise<SpecialistProfile> {
     return this.#request(`/specialists/profiles/${encodeURIComponent(role)}/procedure`, {
-      method: 'PUT', body: JSON.stringify({skill_id}),
+      method: 'PUT', body: JSON.stringify({skill_id, python_environment_digest, npm_environment_digest}),
     });
   }
 

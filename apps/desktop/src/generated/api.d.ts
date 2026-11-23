@@ -4791,6 +4791,10 @@ export interface components {
             linked_resource_count: number;
             /** Name */
             name: string;
+            /** Npm Environments */
+            npm_environments: components["schemas"]["SpecialistProcedureEnvironment"][];
+            /** Python Environments */
+            python_environments: components["schemas"]["SpecialistProcedureEnvironment"][];
             /** Required Permissions */
             required_permissions: ("workspace.read" | "workspace.write")[];
             /** Required Tools */
@@ -4798,8 +4802,29 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** SpecialistProcedureEnvironment */
+        SpecialistProcedureEnvironment: {
+            /** Distribution */
+            distribution: string;
+            /** Environment Digest */
+            environment_digest: string;
+            /** File Count */
+            file_count: number;
+            /** Installed Bytes */
+            installed_bytes: number;
+            /** Node Version */
+            node_version?: string | null;
+            /** Npm Version */
+            npm_version?: string | null;
+            /** Tree Sha256 */
+            tree_sha256: string;
+        };
         /** SpecialistProcedureRequest */
         SpecialistProcedureRequest: {
+            /** Npm Environment Digest */
+            npm_environment_digest?: string | null;
+            /** Python Environment Digest */
+            python_environment_digest?: string | null;
             /** Skill Id */
             skill_id: string | null;
         };
@@ -4811,6 +4836,10 @@ export interface components {
             model_route: string | null;
             /** Procedure Name */
             procedure_name?: string | null;
+            /** Procedure Npm Environment Digest */
+            procedure_npm_environment_digest?: string | null;
+            /** Procedure Python Environment Digest */
+            procedure_python_environment_digest?: string | null;
             /** Procedure Skill Id */
             procedure_skill_id?: string | null;
             /** Procedure Version */

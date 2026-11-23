@@ -181,6 +181,7 @@ from xaa.storage.skills import (
 from xaa.storage.specialist_profiles import (
     ROLES,
     SpecialistProfileStore,
+    specialist_procedure_environments,
     specialist_procedure_resources,
 )
 from xaa.storage.tasks import TaskStore
@@ -869,6 +870,8 @@ class SpecialistProfileResponse(BaseModel):
     model_route: str | None
     system_instructions: str
     procedure_skill_id: str | None = None
+    procedure_python_environment_digest: str | None = None
+    procedure_npm_environment_digest: str | None = None
     procedure_name: str | None = None
     procedure_version: int | None = None
     updated_at: str
@@ -877,6 +880,19 @@ class SpecialistProfileResponse(BaseModel):
 class SpecialistProcedureRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     skill_id: str | None
+    python_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    npm_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class SpecialistProcedureEnvironment(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    environment_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    distribution: str = Field(min_length=1, max_length=64)
+    tree_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    installed_bytes: int = Field(ge=1, le=1_610_612_736)
+    file_count: int = Field(ge=1, le=50000)
+    node_version: str | None = Field(default=None, max_length=64)
+    npm_version: str | None = Field(default=None, max_length=64)
 
 
 class SpecialistProcedureChoice(BaseModel):
@@ -887,6 +903,8 @@ class SpecialistProcedureChoice(BaseModel):
     linked_resource_count: int = Field(ge=0, le=32)
     required_tools: list[SkillTool] = Field(max_length=32)
     required_permissions: list[Literal["workspace.read", "workspace.write"]] = Field(max_length=2)
+    python_environments: list[SpecialistProcedureEnvironment] = Field(max_length=32)
+    npm_environments: list[SpecialistProcedureEnvironment] = Field(max_length=32)
 
 
 class SkillPythonDependencyCheck(BaseModel):
@@ -3824,6 +3842,9 @@ def create_app(
                     )
                 except ValueError:
                     continue
+                environments = specialist_procedure_environments(
+                    connection, str(row["id"]), int(row["active_version"])
+                )
                 choices.append(
                     {
                         "id": row["id"],
@@ -3832,6 +3853,8 @@ def create_app(
                         "linked_resource_count": len(resources),
                         "required_tools": json.loads(row["required_tools"]),
                         "required_permissions": json.loads(row["required_permissions"]),
+                        "python_environments": environments["python"],
+                        "npm_environments": environments["npm"],
                     }
                 )
             return choices
@@ -3843,7 +3866,12 @@ def create_app(
         _: None = Depends(authenticate),
     ) -> dict[str, Any]:
         try:
-            return specialist_profiles.set_procedure(role, payload.skill_id)
+            return specialist_profiles.set_procedure(
+                role,
+                payload.skill_id,
+                payload.python_environment_digest,
+                payload.npm_environment_digest,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Specialist role not found.") from exc
         except ValueError as exc:

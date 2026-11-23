@@ -11,12 +11,15 @@ test('configure persistent specialist model routes from discovered local models'
     procedure_skill_id: null as string | null,
     procedure_name: null as string | null,
     procedure_version: null as number | null,
+    procedure_python_environment_digest: null as string | null,
+    procedure_npm_environment_digest: null as string | null,
     updated_at: '2026-11-05T00:00:00Z',
   }));
   const saved: {role:string;model_route:string|null}[] = [];
   const instructionSaves: {role:string;system_instructions:string}[] = [];
   const identitySaves: {role:string;display_name:string}[] = [];
   const procedureSaves: {role:string;skill_id:string|null}[] = [];
+  const environmentSaves: {role:string;python_environment_digest:string|null;npm_environment_digest:string|null}[] = [];
   const roleMemories: Record<string,{id:string;content:string}[]> = Object.fromEntries(roles.map(role => [role, []]));
   const errors: string[] = [];
   const integrationModuleRequests: string[] = [];
@@ -41,7 +44,7 @@ test('configure persistent specialist model routes from discovered local models'
     if (path === '/providers/lm-studio/config') return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:'parent/model'},headers});
     if (path === '/providers/lm-studio/credential' || path === '/providers/brave-search/credential') return route.fulfill({json:{configured:false},headers});
     if (path === '/specialists/profiles' && request.method() === 'GET') return route.fulfill({json:profiles,headers});
-    if (path === '/specialists/procedures') return route.fulfill({json:[{id:'procedure-1',name:'Evidence procedure',version:3,linked_resource_count:2,required_tools:[{name:'workspace.search',version:'1'}],required_permissions:['workspace.read']}],headers});
+    if (path === '/specialists/procedures') return route.fulfill({json:[{id:'procedure-1',name:'Evidence procedure',version:3,linked_resource_count:2,required_tools:[{name:'workspace.search',version:'1'}],required_permissions:['workspace.read'],python_environments:[{environment_digest:'a'.repeat(64),distribution:'Ubuntu-24.04',installed_bytes:1234}],npm_environments:[]}],headers});
     const memoryMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/memory(?:\/([^/]+))?$/);
     if (memoryMatch) {
       const role = decodeURIComponent(memoryMatch[1]!);
@@ -60,7 +63,7 @@ test('configure persistent specialist model routes from discovered local models'
     if (routeMatch && request.method() === 'PUT') {
       const role = decodeURIComponent(routeMatch[1]!);
       const profile = profiles.find(item => item.role === role)!;
-      const body = request.postDataJSON() as {model_route?:string|null;system_instructions?:string;display_name?:string;skill_id?:string|null};
+      const body = request.postDataJSON() as {model_route?:string|null;system_instructions?:string;display_name?:string;skill_id?:string|null;python_environment_digest?:string|null;npm_environment_digest?:string|null};
       if (routeMatch[2] === 'route') {
         profile.model_route = body.model_route ?? null;
         saved.push({role,model_route:profile.model_route});
@@ -75,6 +78,9 @@ test('configure persistent specialist model routes from discovered local models'
         profile.procedure_name = profile.procedure_skill_id ? 'Evidence procedure' : null;
         profile.procedure_version = profile.procedure_skill_id ? 3 : null;
         procedureSaves.push({role,skill_id:profile.procedure_skill_id});
+        profile.procedure_python_environment_digest = body.python_environment_digest ?? null;
+        profile.procedure_npm_environment_digest = body.npm_environment_digest ?? null;
+        if (body.python_environment_digest || body.npm_environment_digest) environmentSaves.push({role,python_environment_digest:profile.procedure_python_environment_digest,npm_environment_digest:profile.procedure_npm_environment_digest});
       }
       return route.fulfill({json:profile,headers});
     }
@@ -109,6 +115,11 @@ test('configure persistent specialist model routes from discovered local models'
   await procedure.selectOption('procedure-1');
   await expect(panel.getByLabel('Researcher procedure requirements')).toHaveText('Declared requirements: workspace.search@1, workspace.read. Selecting a procedure does not grant any tools or permissions.');
   expect(procedureSaves).toEqual([{role:'researcher',skill_id:'procedure-1'}]);
+  const pythonEnvironment = panel.getByLabel('Researcher Python environment');
+  await expect(pythonEnvironment.locator('option[value="' + 'a'.repeat(64) + '"]')).toContainText('Ubuntu-24.04');
+  await pythonEnvironment.selectOption('a'.repeat(64));
+  await expect(pythonEnvironment).toHaveValue('a'.repeat(64));
+  expect(environmentSaves).toEqual([{role:'researcher',python_environment_digest:'a'.repeat(64),npm_environment_digest:null}]);
   const instructions = panel.getByLabel('Researcher role instructions');
   await instructions.fill('Cite evidence and label uncertainty.');
   await panel.getByRole('button',{name:'Save role instructions'}).nth(1).click();
@@ -129,5 +140,5 @@ test('configure persistent specialist model routes from discovered local models'
   await expect.poll(() => integrationModuleRequests.some(url => url.includes('ExecutionSetup'))).toBe(true);
   await expect(page.getByRole('button',{name:'Find installed distributions'})).toBeVisible();
   expect(errors).toEqual([]);
-  expect(procedureSaves).toEqual([{role:'researcher',skill_id:'procedure-1'}]);
+  expect(procedureSaves).toEqual([{role:'researcher',skill_id:'procedure-1'},{role:'researcher',skill_id:'procedure-1'}]);
 });

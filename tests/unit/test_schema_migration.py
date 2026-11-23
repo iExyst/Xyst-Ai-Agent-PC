@@ -780,3 +780,25 @@ def test_schema_thirty_eight_adds_specialist_procedure_selection_and_task_snapsh
         assert "procedure_skill_id" in profile_columns
         assert "procedure_snapshot" in task_columns
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+
+
+def test_schema_thirty_nine_adds_specialist_procedure_environment_selection(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-thirty-nine-specialist-environments.sqlite3"
+    store = RunStore(database)
+    with store.connection() as connection:
+        connection.execute(
+            "ALTER TABLE specialist_profiles DROP COLUMN procedure_python_environment_digest"
+        )
+        connection.execute(
+            "ALTER TABLE specialist_profiles DROP COLUMN procedure_npm_environment_digest"
+        )
+        connection.execute("PRAGMA user_version=39")
+
+    migrated = RunStore(database)
+    with migrated.connection() as connection:
+        profile_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(specialist_profiles)")
+        }
+        assert "procedure_python_environment_digest" in profile_columns
+        assert "procedure_npm_environment_digest" in profile_columns
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION

@@ -6612,6 +6612,22 @@
             "title": "Name",
             "type": "string"
           },
+          "npm_environments": {
+            "items": {
+              "$ref": "#/components/schemas/SpecialistProcedureEnvironment"
+            },
+            "maxItems": 32,
+            "title": "Npm Environments",
+            "type": "array"
+          },
+          "python_environments": {
+            "items": {
+              "$ref": "#/components/schemas/SpecialistProcedureEnvironment"
+            },
+            "maxItems": 32,
+            "title": "Python Environments",
+            "type": "array"
+          },
           "required_permissions": {
             "items": {
               "enum": [
@@ -6645,14 +6661,106 @@
           "version",
           "linked_resource_count",
           "required_tools",
-          "required_permissions"
+          "required_permissions",
+          "python_environments",
+          "npm_environments"
         ],
         "title": "SpecialistProcedureChoice",
+        "type": "object"
+      },
+      "SpecialistProcedureEnvironment": {
+        "additionalProperties": false,
+        "properties": {
+          "distribution": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Distribution",
+            "type": "string"
+          },
+          "environment_digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Environment Digest",
+            "type": "string"
+          },
+          "file_count": {
+            "maximum": 50000.0,
+            "minimum": 1.0,
+            "title": "File Count",
+            "type": "integer"
+          },
+          "installed_bytes": {
+            "maximum": 1610612736.0,
+            "minimum": 1.0,
+            "title": "Installed Bytes",
+            "type": "integer"
+          },
+          "node_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Version"
+          },
+          "npm_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Npm Version"
+          },
+          "tree_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Tree Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment_digest",
+          "distribution",
+          "tree_sha256",
+          "installed_bytes",
+          "file_count"
+        ],
+        "title": "SpecialistProcedureEnvironment",
         "type": "object"
       },
       "SpecialistProcedureRequest": {
         "additionalProperties": false,
         "properties": {
+          "npm_environment_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Npm Environment Digest"
+          },
+          "python_environment_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python Environment Digest"
+          },
           "skill_id": {
             "anyOf": [
               {
@@ -6699,6 +6807,28 @@
               }
             ],
             "title": "Procedure Name"
+          },
+          "procedure_npm_environment_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure Npm Environment Digest"
+          },
+          "procedure_python_environment_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedure Python Environment Digest"
           },
           "procedure_skill_id": {
             "anyOf": [

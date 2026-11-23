@@ -7,9 +7,12 @@ import pytest
 from pydantic import ValidationError
 from xaa.runtime.executor import ReconciliationRequired
 from xaa.runtime.states import RunState
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.workspace_snapshot import capture_workspace
 from xaa.storage.commands import CommandCapacityError, CommandJournal, CommandOutcome
-from xaa.storage.runs import LeaseLost, RunStore
+from xaa.storage.runs import LeaseLost, RunStore, TaskReadScope
+from xaa.storage.specialist_profiles import SpecialistProfileStore
+from xaa.storage.tasks import TaskStore
 
 
 def setup(root, *, granted=True):
@@ -158,6 +161,79 @@ def test_procedure_environment_binding_comes_from_saved_selection(workspace_tmp_
             "model-forged-environment",
             {"argv": ["python"], "procedure_environment_digest": "d" * 64},
             idempotency_key="model-forged-environment",
+        )
+
+
+def test_specialist_command_binds_profile_selected_procedure_environment(workspace_tmp_path):
+    store, run, owner, _project = setup(workspace_tmp_path)
+    now = "2026-01-01T00:00:00+00:00"
+    skill_id = str(uuid4())
+    environment_digest, source_digest, tree_digest = "b" * 64, "c" * 64, "d" * 64
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) "
+            "VALUES(?,'Specialist procedure','active',1,?,?)",
+            (skill_id, now, now),
+        )
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) "
+            "VALUES(?,1,'Use the installed package.','[]','[]','{}',?)",
+            (skill_id, now),
+        )
+        connection.execute(
+            "INSERT INTO skill_python_dependency_locks "
+            "(skill_id,skill_version,environment_digest,source_sha256,lock_json,decision,created_at) "
+            "VALUES(?,1,?,?,?,'approved',?)",
+            (skill_id, environment_digest, source_digest, "{}", now),
+        )
+        connection.execute(
+            "INSERT INTO skill_python_dependency_environments "
+            "(skill_id,skill_version,environment_digest,distribution,tree_sha256,installed_bytes,file_count,installed_at) "
+            "VALUES(?,1,?,'Ubuntu-24.04',?,1,1,?)",
+            (skill_id, environment_digest, tree_digest, now),
+        )
+    SpecialistProfileStore(store).set_procedure(
+        "executor", skill_id, python_environment_digest=environment_digest
+    )
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run,
+        owner,
+        [
+            TaskDefinition(
+                id="execute",
+                objective="Run the selected specialist procedure",
+                role="executor",
+                permissions=("workspace.read", "workspace.write", "workspace.command"),
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run, owner)
+    assert claim is not None
+    scope = TaskReadScope(run, owner, "execute", claim["token"])
+    journal = CommandJournal(store, task_scope=scope)
+    intent = journal.reserve(
+        run,
+        owner,
+        "specialist-command",
+        {"argv": ["python", "__xaa_selected_skill__/specialist-procedure/v1/check.py"]},
+        idempotency_key="specialist-command",
+    )
+    assert intent.procedure_environment_digest == environment_digest
+    assert intent.procedure_environment_tree_sha256 == tree_digest
+
+    with store.connection() as connection:
+        connection.execute(
+            "DELETE FROM skill_python_dependency_environments WHERE skill_id=?",
+            (skill_id,),
+        )
+    with pytest.raises(PermissionError, match="no longer approved or installed"):
+        journal.reserve(
+            run,
+            owner,
+            "stale-specialist-environment",
+            {"argv": ["python", "check.py"]},
+            idempotency_key="stale-specialist-environment",
         )
 
 

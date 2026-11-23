@@ -28,6 +28,27 @@ def _active_procedure(store: RunStore, *, identity: str = "procedure-a", version
         )
 
 
+def _installed_python_environment(
+    store: RunStore, identity: str = "procedure-a", version: int = 1
+) -> tuple[str, str]:
+    digest, source_digest, tree_digest = "a" * 64, "c" * 64, "b" * 64
+    now = "2026-01-01T00:00:00+00:00"
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skill_python_dependency_locks "
+            "(skill_id,skill_version,environment_digest,source_sha256,lock_json,decision,created_at) "
+            "VALUES(?,?,?,?,?,'approved',?)",
+            (identity, version, digest, source_digest, "{}", now),
+        )
+        connection.execute(
+            "INSERT INTO skill_python_dependency_environments "
+            "(skill_id,skill_version,environment_digest,distribution,tree_sha256,installed_bytes,file_count,installed_at) "
+            "VALUES(?,?,?,'Ubuntu-24.04',?,1,1,?)",
+            (identity, version, digest, tree_digest, now),
+        )
+    return digest, tree_digest
+
+
 def _add_resource(
     store: RunStore,
     identity: str,
@@ -149,6 +170,55 @@ def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_
     assert TaskStore(store).records(run_id)[0]["procedure_snapshot"] == saved
 
 
+def test_specialist_procedure_python_environment_is_snapshotted_and_validated(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-environment.sqlite3")
+    _active_procedure(store)
+    digest, tree_digest = _installed_python_environment(store)
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skill_versions SET evaluation_evidence=? WHERE skill_id='procedure-a' AND version=1",
+            (
+                '{"source":{"declared_requirements":"{\\"python_dependency_specs\\":[\\"example>=1\\"]}"}}',
+            ),
+        )
+    profile = SpecialistProfileStore(store).set_procedure(
+        "executor", "procedure-a", python_environment_digest=digest
+    )
+    assert profile["procedure_python_environment_digest"] == digest
+    run_id = store.create_run(
+        objective="Use the selected procedure dependency environment",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [TaskDefinition(id="execute", objective="Use the procedure", role="executor")],
+    )
+    snapshot = tasks.records(run_id)[0]["procedure_snapshot"]
+    assert snapshot["required_dependency_managers"] == ["python"]
+    assert snapshot["python_environment"] == {
+        "environment_digest": digest,
+        "distribution": "Ubuntu-24.04",
+        "tree_sha256": tree_digest,
+    }
+    validate_specialist_procedure_snapshot(snapshot)
+    snapshot["python_environment"]["tree_sha256"] = "d" * 64
+    with pytest.raises(ValueError, match="snapshot integrity"):
+        validate_specialist_procedure_snapshot(snapshot)
+
+    with pytest.raises(ValueError, match="approved installed python environment"):
+        SpecialistProfileStore(store).set_procedure(
+            "tester", "procedure-a", python_environment_digest="f" * 64
+        )
+
+
 def test_specialist_procedure_rejects_tampered_resource_snapshot(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "specialist-procedure-integrity.sqlite3")
     _active_procedure(store)
@@ -259,6 +329,8 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
                 "linked_resource_count": 1,
                 "required_tools": [{"name": "workspace.search", "version": "1"}],
                 "required_permissions": ["workspace.read"],
+                "python_environments": [],
+                "npm_environments": [],
             }
         ]
         selected = client.put(
@@ -287,6 +359,43 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
             if item["role"] == "researcher"
         )
         assert researcher["procedure_skill_id"] == "procedure-a"
+
+
+def test_specialist_procedure_api_lists_and_binds_approved_installed_environments(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-environments-api.sqlite3")
+    _active_procedure(store)
+    digest, tree_digest = _installed_python_environment(store)
+    with TestClient(create_app(ProfileProvider(), SecretStr(TOKEN), store=store)) as client:
+        choices = client.get("/specialists/procedures", headers=HEADERS)
+        assert choices.status_code == 200
+        procedure = choices.json()[0]
+        assert procedure["python_environments"] == [
+            {
+                "environment_digest": digest,
+                "distribution": "Ubuntu-24.04",
+                "tree_sha256": tree_digest,
+                "installed_bytes": 1,
+                "file_count": 1,
+                "node_version": None,
+                "npm_version": None,
+            }
+        ]
+        assert procedure["npm_environments"] == []
+        saved = client.put(
+            "/specialists/profiles/executor/procedure",
+            headers=HEADERS,
+            json={"skill_id": "procedure-a", "python_environment_digest": digest},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["procedure_python_environment_digest"] == digest
+        invalid = client.put(
+            "/specialists/profiles/tester/procedure",
+            headers=HEADERS,
+            json={"skill_id": "procedure-a", "python_environment_digest": "f" * 64},
+        )
+        assert invalid.status_code == 422
 
 
 def test_specialist_profile_api_authenticates_and_only_accepts_discovered_models(
