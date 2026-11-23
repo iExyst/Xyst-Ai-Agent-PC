@@ -17,6 +17,7 @@ from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
 from xaa.storage.skills import is_text_asset_media_type, snapshot_digest
 from xaa.storage.specialist_profiles import (
     MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES,
+    MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES,
     specialist_procedure_resources,
 )
 
@@ -83,7 +84,9 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
     resources = cast(list[Any], resources_value)
     if len(resources) > 32:
         raise ValueError("Saved specialist procedure has too many linked resources.")
-    total_bytes = len(content.encode("utf-8"))
+    if len(content.encode("utf-8")) > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
+        raise ValueError("Saved specialist procedure text exceeds the 80 KiB limit.")
+    total_resource_bytes = 0
     seen_paths: set[str] = set()
     for resource_value in resources:
         if not isinstance(resource_value, dict):
@@ -117,9 +120,9 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         raw = text.encode("utf-8")
         if len(raw) > 64 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
             raise ValueError("Saved specialist procedure resource failed its integrity check.")
-        total_bytes += len(raw)
-    if total_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
-        raise ValueError("Saved specialist procedure exceeds the 80 KiB context limit.")
+        total_resource_bytes += len(raw)
+    if total_resource_bytes > MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES:
+        raise ValueError("Saved specialist procedure resources exceed the 2 MiB snapshot limit.")
     required_managers_value: Any = snapshot.get("required_dependency_managers", [])
     required_managers = (
         cast(list[str], required_managers_value)

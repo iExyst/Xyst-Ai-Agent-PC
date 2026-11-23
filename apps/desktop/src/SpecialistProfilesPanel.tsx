@@ -128,7 +128,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
 
   return <section aria-label="Specialist profiles">
     <h3>Specialist identities and model routes</h3>
-      <p>Choose a discovered model and active saved procedure for each role, or inherit the parent run model and leave procedure routing unset. You can bind an approved installed Python/npm environment to that exact procedure version. Role instructions, routes, and up to 80 KiB of procedure text and linked text resources are snapshotted when a task plan is saved. The selected model's context limit is checked before inference. Procedure content is untrusted reference material; tool permissions remain controlled by the application.</p>
+      <p>Choose a discovered model and active saved procedure for each role, or inherit the parent run model and leave procedure routing unset. You can bind an approved installed Python/npm environment to that exact procedure version. Up to 80 KiB of procedure text and 2 MiB of linked text resources are snapshotted when a task plan is saved. Linked resources load on demand to keep task context bounded. The selected model's context limit is checked before inference. Procedure content is untrusted reference material; tool permissions remain controlled by the application.</p>
     {error && <p role="alert">{error}</p>}
     {profiles.map(profile => <div key={profile.role} className="specialist-profile">
       <label>{profile.role} specialist name

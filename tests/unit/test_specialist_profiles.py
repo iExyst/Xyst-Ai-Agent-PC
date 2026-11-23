@@ -139,7 +139,8 @@ def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_
             "UPDATE skill_versions SET content=? WHERE skill_id='procedure-a' AND version=1",
             (large_content,),
         )
-    _add_text_resource(store, "procedure-a", "references/guide.md", b"Use primary sources.\n")
+    _add_text_resource(store, "procedure-a", "references/guide.md", b"G" * (50 * 1024))
+    _add_text_resource(store, "procedure-a", "references/method.md", b"M" * (50 * 1024))
     profiles = SpecialistProfileStore(store)
     saved_profile = profiles.set_procedure("researcher", "procedure-a")
     assert saved_profile["procedure_skill_id"] == "procedure-a"
@@ -163,9 +164,15 @@ def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_
         {
             "path": "references/guide.md",
             "media_type": "text/markdown",
-            "sha256": hashlib.sha256(b"Use primary sources.\n").hexdigest(),
-            "content": "Use primary sources.\n",
-        }
+            "sha256": hashlib.sha256(b"G" * (50 * 1024)).hexdigest(),
+            "content": "G" * (50 * 1024),
+        },
+        {
+            "path": "references/method.md",
+            "media_type": "text/markdown",
+            "sha256": hashlib.sha256(b"M" * (50 * 1024)).hexdigest(),
+            "content": "M" * (50 * 1024),
+        },
     ]
     assert len(saved["snapshot_sha256"]) == 64
     validate_specialist_procedure_snapshot(saved)

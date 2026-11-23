@@ -13,6 +13,7 @@ from xaa.storage.skills import is_text_asset_media_type
 # The provider's exact context admission remains the final guard before inference.
 MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 80 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
+MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES = 2 * 1024 * 1024
 
 
 def specialist_procedure_environments(
@@ -44,7 +45,7 @@ def specialist_procedure_environments(
 def specialist_procedure_resources(
     connection: Any, skill_id: str, version: int, content_bytes: int
 ) -> list[dict[str, str]]:
-    """Load only digest-checked UTF-8 resources within the role context budget."""
+    """Snapshot digest-checked UTF-8 resources for on-demand specialist reads."""
     rows = connection.execute(
         "SELECT relative_path,media_type,size_bytes,sha256,content FROM skill_version_assets "
         "WHERE skill_id=? AND version=? ORDER BY relative_path LIMIT 33",
@@ -52,7 +53,9 @@ def specialist_procedure_resources(
     ).fetchall()
     if len(rows) > MAX_SPECIALIST_PROCEDURE_RESOURCES:
         raise ValueError("Specialist procedures may contain at most 32 linked text resources.")
-    total_bytes = content_bytes
+    if content_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
+        raise ValueError("Specialist procedure text must be 80 KiB or smaller.")
+    total_bytes = 0
     resources: list[dict[str, str]] = []
     for row in rows:
         path = str(row["relative_path"])
@@ -79,8 +82,8 @@ def specialist_procedure_resources(
         except UnicodeDecodeError as exc:
             raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
         total_bytes += len(raw)
-        if total_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
-            raise ValueError("Specialist procedure text and resources must total 80 KiB or less.")
+        if total_bytes > MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES:
+            raise ValueError("Specialist procedure linked text resources must total 2 MiB or less.")
         resources.append(
             {
                 "path": path,

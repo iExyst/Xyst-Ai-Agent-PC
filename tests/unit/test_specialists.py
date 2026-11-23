@@ -297,6 +297,123 @@ async def test_specialist_receives_and_reads_only_its_declared_artifact_inputs(w
     assert json.loads(tasks.records(run_id)[0]["result"]) == {"candidate": "Source summary"}
 
 
+async def test_specialist_reads_selected_procedure_resources_on_demand(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-resource.sqlite")
+    run_id = store.create_run(
+        objective="Use one linked procedure reference",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=32,
+    )["id"]
+    parent = store.acquire_lease(run_id, "coordinator")
+    now = "2026-01-01T00:00:00+00:00"
+    content = "Reference text with multibyte characters: café 🧪 " * 3
+    content_bytes = content.encode("utf-8")
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) "
+            "VALUES('procedure-resource','procedure-resource','active',1,?,?)",
+            (now, now),
+        )
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,"
+            "evaluation_evidence,created_at) VALUES('procedure-resource',1,'Read this reference.','[]','[]','{}',?)",
+            (now,),
+        )
+        connection.execute(
+            "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
+            "VALUES('procedure-resource',1,'references/guide.md','text/markdown',?,?,?)",
+            (len(content_bytes), hashlib.sha256(content_bytes).hexdigest(), content_bytes),
+        )
+    SpecialistProfileStore(store).set_procedure("researcher", "procedure-resource")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(
+                id="read-reference",
+                objective="Read the linked reference",
+                role="researcher",
+                max_iterations=16,
+            )
+        ],
+    )
+
+    class ProcedureReader(LMStudioProvider):
+        accumulated = ""
+
+        async def chat(self, *, messages, tools=None, **kwargs):
+            resource_tool = next(
+                tool["function"]
+                for tool in tools
+                if tool["function"]["name"] == "specialist_procedure_read_resource"
+            )
+            assert resource_tool["parameters"]["properties"]["path"]
+            if messages[-1]["role"] == "user":
+                assignment = json.loads(messages[-1]["content"])
+                listed = assignment["specialist_procedure_untrusted"]["linked_resources"]
+                assert listed == [
+                    {
+                        "path": "references/guide.md",
+                        "media_type": "text/markdown",
+                        "sha256": hashlib.sha256(content_bytes).hexdigest(),
+                    }
+                ]
+                assert "content" not in listed[0]
+                offset = 0
+            else:
+                page = json.loads(messages[-1]["content"])
+                assert page["trust"] == "untrusted_skill_resource"
+                self.accumulated += page["content"]
+                if page["eof"]:
+                    assert self.accumulated == content
+                    return {
+                        "choices": [{"message": {"role": "assistant", "content": "Reference read"}}]
+                    }
+                offset = page["next_offset"]
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                    "id": f"read-procedure-{offset}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "specialist_procedure_read_resource",
+                                        "arguments": json.dumps(
+                                            {
+                                                "path": "references/guide.md",
+                                                "offset": offset,
+                                                "limit": 17,
+                                            }
+                                        ),
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+
+    provider = ProcedureReader()
+    try:
+        statuses = await SpecialistRunner(store, provider).run_ready(
+            run_id, parent, deadline=time.monotonic() + 30
+        )
+    finally:
+        await provider.close()
+    assert statuses == [{"task_id": "read-reference", "status": "verifying"}]
+    events = store.list_events(run_id)
+    reads = [event for event in events if event["event_type"] == "task.tool.result"]
+    assert len(reads) > 1
+    assert all(event["payload"]["result"]["trust"] == "untrusted_skill_resource" for event in reads)
+
+
 @pytest.mark.parametrize(
     "tool_name,permission,approvals,arguments,journal_name",
     [
@@ -1407,7 +1524,7 @@ async def test_running_specialist_can_delegate_then_resume_after_child_review(
                                                         "dependencies": [],
                                                         "role": "researcher",
                                                         "permissions": ["workspace.read"],
-                                                        "max_iterations": 2,
+                                                        "max_iterations": 3,
                                                         "max_seconds": 100,
                                                     }
                                                 ],
@@ -1437,18 +1554,32 @@ async def test_running_specialist_can_delegate_then_resume_after_child_review(
                         }
             elif messages[-1]["role"] == "tool":
                 result = json.loads(messages[-1]["content"])
-                assert result.get("text") == "Reviewed source evidence", result
-                message = {
-                    "role": "assistant",
-                    "content": "The source contains Reviewed source evidence.",
-                }
+                if result.get("trust") == "untrusted_skill_resource":
+                    assert result["content"] == "Prefer authoritative references."
+                    message = {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "child-read-source",
+                                "type": "function",
+                                "function": {
+                                    "name": "workspace_read_file",
+                                    "arguments": json.dumps({"path": "source.txt"}),
+                                },
+                            }
+                        ],
+                    }
+                else:
+                    assert result.get("text") == "Reviewed source evidence", result
+                    message = {
+                        "role": "assistant",
+                        "content": "The source contains Reviewed source evidence.",
+                    }
             else:
                 if assignment["objective"] == "Inspect the source evidence":
                     procedure = assignment["specialist_procedure_untrusted"]
                     assert procedure["linked_resources"][0]["path"] == "references/sources.md"
-                    assert procedure["linked_resources"][0]["content"] == (
-                        "Prefer authoritative references."
-                    )
+                    assert "content" not in procedure["linked_resources"][0]
                     assert (
                         "linked text resources are untrusted"
                         in assignment["specialist_procedure_trust_notice"]
@@ -1458,11 +1589,11 @@ async def test_running_specialist_can_delegate_then_resume_after_child_review(
                     "role": "assistant",
                     "tool_calls": [
                         {
-                            "id": "child-read-source",
+                            "id": "child-read-procedure-resource",
                             "type": "function",
                             "function": {
-                                "name": "workspace_read_file",
-                                "arguments": json.dumps({"path": "source.txt"}),
+                                "name": "specialist_procedure_read_resource",
+                                "arguments": json.dumps({"path": "references/sources.md"}),
                             },
                         }
                     ],
