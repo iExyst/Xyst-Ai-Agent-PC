@@ -1514,6 +1514,96 @@ def test_python_dependency_lock_api_requires_auth_exact_declarations_and_review(
         )
 
 
+def test_imported_procedure_credentials_use_os_vault_without_exposing_values(
+    tmp_path: Path,
+) -> None:
+    package = make_package(tmp_path)
+    skill_path = package / "skills" / "summarize" / "SKILL.md"
+    skill_text = skill_path.read_text(encoding="utf-8").replace(
+        "required_environment_variables: [API_TOKEN]\n",
+        "required_environment_variables: [API_TOKEN]\n"
+        "setup:\n  collect_secrets:\n    - env_var: OPTIONAL_TOKEN\n      optional: true\n",
+    )
+    skill_path.write_text(skill_text, encoding="utf-8")
+
+    class FakeCredentials:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def get(self, profile: str = "lm-studio") -> str | None:
+            return self.values.get(profile)
+
+        def set(self, token: str, profile: str = "lm-studio") -> None:
+            self.values[profile] = token
+
+        def delete(self, profile: str = "lm-studio") -> None:
+            self.values.pop(profile, None)
+
+    credentials = FakeCredentials()
+    store = RunStore(tmp_path / "procedure-credentials.sqlite3")
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,  # type: ignore[arg-type]
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        imported = client.post(
+            "/extensions/packages/import-skill",
+            headers=headers,
+            json={
+                "root": str(tmp_path),
+                "package_name": "sample-package",
+                "skill_name": "summarize",
+            },
+        )
+        assert imported.status_code == 201, imported.text
+        skill_id = imported.json()["id"]
+        status_url = f"/skills/{skill_id}/versions/1/credentials"
+        assert client.get(status_url).status_code == 401
+        before = client.get(status_url, headers=headers)
+        assert before.status_code == 200, before.text
+        assert before.json()["credentials"] == [
+            {"env_name": "API_TOKEN", "required": True, "configured": False},
+            {"env_name": "OPTIONAL_TOKEN", "required": False, "configured": False},
+        ]
+
+        secret = "private-procedure-credential-9cbcb"
+        saved = client.put(f"{status_url}/API_TOKEN", headers=headers, json={"value": secret})
+        assert saved.status_code == 200, saved.text
+        assert secret not in saved.text
+        assert credentials.values[f"procedure:{skill_id}:API_TOKEN"] == secret
+        assert saved.json()["credentials"][0]["configured"] is True
+        run = store.create_run(
+            objective="Export secret redaction fixture",
+            acceptance_criteria=[],
+            workspace=None,
+            mode="observe",
+            model=None,
+        )
+        with store.connection() as connection:
+            store.record_event(connection, run["id"], "fixture.secret", {"value": secret})
+        exported = client.get(f"/runs/{run['id']}/export", headers=headers)
+        assert exported.status_code == 200, exported.text
+        assert secret not in exported.text
+        blocked_delete = client.delete(f"/skills/{skill_id}", headers=headers)
+        assert blocked_delete.status_code == 409
+        assert "Clear the procedure's saved credentials" in blocked_delete.text
+        assert (
+            client.put(
+                f"{status_url}/UNDECLARED_TOKEN", headers=headers, json={"value": secret}
+            ).status_code
+            == 400
+        )
+
+        cleared = client.delete(f"{status_url}/API_TOKEN", headers=headers)
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["credentials"][0]["configured"] is False
+        assert secret not in cleared.text
+        assert client.delete(f"/skills/{skill_id}", headers=headers).status_code == 204
+
+
 @pytest.mark.parametrize("manager", ["python", "pip-tools", "pipenv", "pdm", "poetry", "uv"])
 def test_python_dependency_resolution_api_uses_imported_declarations_and_wsl_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manager: str

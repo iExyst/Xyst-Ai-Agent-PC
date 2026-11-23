@@ -28,6 +28,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, sta
 from fastapi import Path as PathParameter
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from keyring.errors import KeyringError
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from starlette.middleware.cors import CORSMiddleware
 
@@ -380,6 +381,26 @@ class MCPSecretRequest(BaseModel):
     value: SecretStr = Field(min_length=1, max_length=4096)
 
 
+class SkillCredentialItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    env_name: str
+    required: bool
+    configured: bool
+
+
+class SkillCredentialStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    skill_id: str
+    version: int
+    credential_store_available: bool
+    credentials: list[SkillCredentialItem]
+
+
+class SkillCredentialRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    value: SecretStr = Field(min_length=1, max_length=4096)
+
+
 class MCPToolPermissionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     permission: Literal["none", "read", "write"]
@@ -529,6 +550,65 @@ class PluginSkillImportRequest(BaseModel):
 def _plugin_root_scope_sha256(root: str) -> str:
     canonical_root = os.path.normcase(str(Path(root).resolve(strict=True)))
     return hashlib.sha256(canonical_root.encode("utf-8")).hexdigest()
+
+
+def _procedure_credential_requirements(manifest: dict[str, Any]) -> list[tuple[str, bool]]:
+    evidence_value: object = manifest.get("evaluation_evidence")
+    evidence = cast(dict[str, object], evidence_value) if isinstance(evidence_value, dict) else {}
+    source_value = evidence.get("source")
+    source = cast(dict[str, object], source_value) if isinstance(source_value, dict) else {}
+    raw_declarations: object = source.get("declared_requirements")
+    if isinstance(raw_declarations, str) and len(raw_declarations) <= 8192:
+        try:
+            raw_declarations = json.loads(raw_declarations)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(raw_declarations, dict):
+        return []
+    declarations = cast(dict[str, object], raw_declarations)
+    required_value: object = declarations.get("required_environment_names", [])
+    optional_value: object = declarations.get("optional_environment_names", [])
+    required_names = cast(list[object], required_value) if isinstance(required_value, list) else []
+    optional_names = cast(list[object], optional_value) if isinstance(optional_value, list) else []
+    required = {
+        name
+        for name in required_names
+        if isinstance(name, str) and re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", name)
+    }
+    optional = {
+        name
+        for name in optional_names
+        if isinstance(name, str)
+        and re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", name)
+        and name not in required
+    }
+    return [(name, True) for name in sorted(required)] + [
+        (name, False) for name in sorted(optional)
+    ]
+
+
+def _procedure_credential_profile(skill_id: str, env_name: str) -> str:
+    return f"procedure:{skill_id}:{env_name}"
+
+
+def _procedure_credential_profiles(store: RunStore, skill_id: str | None = None) -> list[str]:
+    query = "SELECT skill_id,evaluation_evidence FROM skill_versions"
+    parameters: tuple[str, ...] = ()
+    if skill_id is not None:
+        query += " WHERE skill_id=?"
+        parameters = (skill_id,)
+    profiles: set[str] = set()
+    with store.connection() as connection:
+        for row in connection.execute(query, parameters):
+            try:
+                evidence_value: object = json.loads(row["evaluation_evidence"])
+            except (TypeError, json.JSONDecodeError):
+                continue
+            for env_name, _required in _procedure_credential_requirements(
+                {"evaluation_evidence": evidence_value}
+            ):
+                profiles.add(_procedure_credential_profile(str(row["skill_id"]), env_name))
+    return sorted(profiles)
 
 
 def _qualified_plugin_skill_name(package_name: str, skill_name: str, root_scope: str) -> str:
@@ -1662,6 +1742,104 @@ def create_app(
         except KeyError:
             raise HTTPException(status_code=404, detail="Procedure version not found.") from None
 
+    @app.get(
+        "/skills/{skill_id}/versions/{version}/credentials",
+        response_model=SkillCredentialStatus,
+    )
+    def skill_credential_status(
+        skill_id: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            manifest = skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        requirements = _procedure_credential_requirements(manifest)
+        credentials: list[dict[str, Any]] = []
+        for env_name, required in requirements:
+            try:
+                configured = bool(
+                    credential_store
+                    and credential_store.get(_procedure_credential_profile(skill_id, env_name))
+                )
+            except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=503, detail="Could not read procedure credential status."
+                ) from exc
+            credentials.append(
+                {"env_name": env_name, "required": required, "configured": configured}
+            )
+        return {
+            "skill_id": skill_id,
+            "version": version,
+            "credential_store_available": credential_store is not None,
+            "credentials": credentials,
+        }
+
+    @app.put(
+        "/skills/{skill_id}/versions/{version}/credentials/{env_name}",
+        response_model=SkillCredentialStatus,
+    )
+    def set_skill_credential(
+        skill_id: str,
+        env_name: str,
+        payload: SkillCredentialRequest,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            manifest = skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        if env_name not in {
+            name for name, _required in _procedure_credential_requirements(manifest)
+        }:
+            raise HTTPException(
+                status_code=400, detail="This environment name is not declared by the procedure."
+            )
+        try:
+            credential_store.set(
+                payload.value.get_secret_value(), _procedure_credential_profile(skill_id, env_name)
+            )
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not save the OS credential."
+            ) from exc
+        return skill_credential_status(skill_id, version)
+
+    @app.delete(
+        "/skills/{skill_id}/versions/{version}/credentials/{env_name}",
+        response_model=SkillCredentialStatus,
+    )
+    def delete_skill_credential(
+        skill_id: str,
+        env_name: str,
+        version: int = PathParameter(ge=1, le=128),
+        _: None = Depends(authenticate),
+    ) -> dict[str, Any]:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            manifest = skill_store.version(skill_id, version)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Procedure version not found.") from None
+        if env_name not in {
+            name for name, _required in _procedure_credential_requirements(manifest)
+        }:
+            raise HTTPException(
+                status_code=400, detail="This environment name is not declared by the procedure."
+            )
+        try:
+            credential_store.delete(_procedure_credential_profile(skill_id, env_name))
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        return skill_credential_status(skill_id, version)
+
     @app.post(
         "/skills/{skill_id}/versions/{version}/python-readiness",
         response_model=SkillDependencyReadinessResult,
@@ -2511,6 +2689,22 @@ def create_app(
 
     @app.delete("/skills/{skill_id}", status_code=204)
     def delete_skill(skill_id: str, _: None = Depends(authenticate)) -> Response:
+        if credential_store is not None:
+            try:
+                has_saved_credentials = any(
+                    credential_store.get(profile)
+                    for profile in _procedure_credential_profiles(run_store, skill_id)
+                )
+            except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Could not verify procedure credentials before deletion.",
+                ) from exc
+            if has_saved_credentials:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Clear the procedure's saved credentials before deleting it.",
+                )
         try:
             skill_store.delete(skill_id)
         except SkillConflict as exc:
@@ -4479,6 +4673,10 @@ def create_app(
                     value = credential_store.get(profile)
                     if value:
                         secrets_to_redact.append(value)
+            for profile in _procedure_credential_profiles(run_store):
+                value = credential_store.get(profile)
+                if value:
+                    secrets_to_redact.append(value)
         try:
             trajectory = export_trajectory(run_store, run_id, secrets=tuple(secrets_to_redact))
         except ValueError as exc:

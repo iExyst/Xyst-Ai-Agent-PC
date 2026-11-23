@@ -2031,6 +2031,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/skills/{skill_id}/versions/{version}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skill Credential Status */
+        get: operations["skill_credential_status_skills__skill_id__versions__version__credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/{skill_id}/versions/{version}/credentials/{env_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Skill Credential */
+        put: operations["set_skill_credential_skills__skill_id__versions__version__credentials__env_name__put"];
+        post?: never;
+        /** Delete Skill Credential */
+        delete: operations["delete_skill_credential_skills__skill_id__versions__version__credentials__env_name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/skills/{skill_id}/versions/{version}/evaluations": {
         parameters: {
             query?: never;
@@ -4414,6 +4449,34 @@ export interface components {
             path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /** SkillCredentialItem */
+        SkillCredentialItem: {
+            /** Configured */
+            configured: boolean;
+            /** Env Name */
+            env_name: string;
+            /** Required */
+            required: boolean;
+        };
+        /** SkillCredentialRequest */
+        SkillCredentialRequest: {
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+        };
+        /** SkillCredentialStatus */
+        SkillCredentialStatus: {
+            /** Credential Store Available */
+            credential_store_available: boolean;
+            /** Credentials */
+            credentials: components["schemas"]["SkillCredentialItem"][];
+            /** Skill Id */
+            skill_id: string;
+            /** Version */
+            version: number;
         };
         /** SkillDependencyReadinessResult */
         SkillDependencyReadinessResult: {
@@ -9576,6 +9639,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillVersion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_credential_status_skills__skill_id__versions__version__credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_skill_credential_skills__skill_id__versions__version__credentials__env_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                env_name: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCredentialStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_skill_credential_skills__skill_id__versions__version__credentials__env_name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_id: string;
+                env_name: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCredentialStatus"];
                 };
             };
             /** @description Validation Error */
