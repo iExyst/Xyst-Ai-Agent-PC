@@ -2,7 +2,7 @@
 
 ## Warn about unavailable specialist procedure permissions (2026-11-23)
 
-Task snapshots identify declared workspace permissions that are absent from the assigned task scope, and the specialist receives that list as untrusted context with an explicit instruction not to attempt them. The snapshot digest and validation cover the list; no authority is granted. Focused profile/runtime suites (31), Ruff, formatting, Pyright, and diff checks pass locally. Hosted verification is pending. This is a narrow guardrail around specialist procedure routing and does not establish dependency compatibility or Hermes skill parity. See [`progress.md`](../progress.md#warn-specialists-when-declared-workspace-permissions-are-unavailable-2026-11-23).
+Task snapshots identify declared workspace permissions that are absent from the assigned task scope, and the specialist receives that list as untrusted context with an explicit instruction not to attempt them. The snapshot digest and validation cover the list; no authority is granted. Focused profile/runtime suites (31), Ruff, formatting, Pyright, and diff checks pass locally. Exact-source Windows workflow [45190387893](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45190387893) passed 1,510 Python tests (20 skipped), configured browser/security, contracts, static, desktop acceptance, and process-recovery checks; hosted WSL and installer jobs were skipped by workflow conditions. This is a narrow guardrail around specialist procedure routing and does not establish dependency compatibility or Hermes skill parity. See [`progress.md`](../progress.md#warn-specialists-when-declared-workspace-permissions-are-unavailable-2026-11-23).
 
 ## Show procedure requirements in specialist settings (2026-11-23)
 
