@@ -1245,6 +1245,21 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
         await Coordinator(store, provider, stream_responses=True).execute(run_id)
     finally:
         await provider.close()
+    readiness = next(
+        event
+        for event in store.list_events(run_id)
+        if event["event_type"] == "task.procedure.readiness_checked"
+    )
+    assert readiness["payload"]["task_id"] == "research"
+    assert readiness["payload"]["procedure_id"] == "research-procedure"
+    assert readiness["payload"]["procedure_version"] == 1
+    assert readiness["payload"]["required_tool_count"] == 3
+    assert readiness["payload"]["unavailable_required_tools"] == [
+        {"name": "workspace.write_file", "version": "1"},
+        {"name": "web.search", "version": "2"},
+    ]
+    assert readiness["payload"]["unavailable_required_permissions"] == ["workspace.write"]
+    assert readiness["payload"]["ready"] is False
     assert store.get_run(run_id)["state"] == "verifying"
     assert TaskStore(store).records(run_id)[0]["status"] == "verifying"
     assert any(

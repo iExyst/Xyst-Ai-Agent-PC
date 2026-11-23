@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Persist specialist procedure readiness (2026-11-23)
+
+The runtime records each selected specialist procedure's tool and permission readiness against that task's actual exposed tool schemas and saved authority scope. The durable run event identifies the exact procedure version and any missing declarations; the desktop activity timeline reports them to the owner. This improves task observability without granting authority or setting up missing dependencies. Focused specialist/browser checks, desktop typecheck, Ruff, formatting, Pyright, and diff checks pass locally. Hosted verification is pending. This is not complete skill execution parity. See [`progress.md`](../progress.md#persist-specialist-procedure-readiness-in-run-activity-2026-11-23).
+
 ## Warn when specialist procedure tools are unavailable (2026-11-23)
 
 Before a specialist's first request, X.A.A. compares the explicitly selected procedure's required tool/version pairs with that assignment's actual exposed tool schemas. Missing tools and versions other than the currently implemented version 1 are identified in the untrusted assignment notice. Existing tools and permissions are unchanged. Focused profile/runtime suites (31), Ruff, formatting, Pyright, and diff checks pass locally. Exact-source Windows workflow [45194822748](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45194822748) passed 1,510 Python tests (20 skipped) and configured browser/security, static, API-contract, desktop, and process-recovery checks; hosted WSL and installer jobs were skipped by push-event conditions. This is a readiness notice for selected specialist procedures, not automatic dependency setup or Hermes skill parity. See [`progress.md`](../progress.md#warn-specialists-when-procedure-tools-or-versions-are-unavailable-2026-11-23).

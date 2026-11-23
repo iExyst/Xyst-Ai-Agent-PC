@@ -1,5 +1,9 @@
 # Progress
 
+## Persist specialist procedure readiness in run activity (2026-11-23)
+
+When a specialist starts with a selected procedure, X.A.A. now saves a fenced `task.procedure.readiness_checked` event with the procedure version, requirement count, missing tool/version pairs, missing workspace permissions, and a ready flag. The desktop activity timeline summarizes the missing requirements for the owner, while the model still receives the explicit untrusted-context warning. Focused specialist tests and browser activity coverage pass; desktop typecheck, Ruff/format, strict Pyright, and `git diff --check` pass. No live model inference was used. Hosted verification is pending.
+
 ## Warn specialists when procedure tools or versions are unavailable (2026-11-23)
 
 Specialist startup now compares a selected procedure's declared tool/version requirements with the tools actually exposed to that assignment. Requirements missing from its task scope, disabled provider/run configuration, or unsupported version are listed in the assignment trust notice as unavailable and must not be assumed or attempted. The comparison includes only tools already exposed by the engine; it does not grant tools or permissions. The specialist profile/runtime suites pass (31), as do Ruff, formatting, project Pyright, and `git diff --check`. Exact-source Windows workflow [45194822748](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45194822748) passed 1,510 Python tests (20 skipped) plus all configured browser/security, static, API-contract, desktop, and process-recovery checks. The hosted WSL and installer jobs were skipped by push-event conditions. No live model inference was used. This does not provide automatic dependency setup or complete specialist skill parity.

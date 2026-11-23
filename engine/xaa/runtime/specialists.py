@@ -1323,6 +1323,37 @@ class SpecialistRunner:
                 "You cannot run commands or grant permissions.", "You cannot grant permissions."
             )
         unavailable_procedure_tools = _unavailable_procedure_tools(procedure_snapshot, tools)
+        if procedure_snapshot is not None:
+            unavailable_permissions_value: Any = procedure_snapshot.get(
+                "unavailable_required_permissions", []
+            )
+            unavailable_permissions = (
+                cast(list[str], unavailable_permissions_value)
+                if isinstance(unavailable_permissions_value, list)
+                else []
+            )
+            required_tools_value: Any = procedure_snapshot.get("required_tools", [])
+            required_tools = (
+                cast(list[Any], required_tools_value)
+                if isinstance(required_tools_value, list)
+                else []
+            )
+            self.tasks.record_read_worker_event(
+                run_id,
+                parent,
+                identity,
+                worker,
+                "task.procedure.readiness_checked",
+                {
+                    "task_id": identity,
+                    "procedure_id": procedure_snapshot.get("skill_id"),
+                    "procedure_version": procedure_snapshot.get("version"),
+                    "required_tool_count": len(required_tools),
+                    "unavailable_required_tools": unavailable_procedure_tools,
+                    "unavailable_required_permissions": unavailable_permissions,
+                    "ready": not unavailable_procedure_tools and not unavailable_permissions,
+                },
+            )
         if unavailable_procedure_tools:
             assignment_index: int | None = None
             assignment_images: list[dict[str, Any]] = []

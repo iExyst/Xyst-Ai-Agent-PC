@@ -77,8 +77,9 @@ test('specialist streamed drafts stay attached to their task and visibly unverif
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[task],ready:[],blocked:[]},headers});
     if(path.endsWith('/events/stream')){
       const events=[
-        {sequence:1,event_type:'task.model.delta',payload:{task_id:'inspect',inference_id:'inference-1',text:'Unverified streamed specialist draft'},created_at:'2026-11-06T00:00:00Z'},
-        {sequence:2,event_type:'task.model.message',payload:{task_id:'inspect',inference_id:'inference-1',message:{role:'assistant',content:'Saved candidate'}},created_at:'2026-11-06T00:00:01Z'},
+        {sequence:1,event_type:'task.procedure.readiness_checked',payload:{task_id:'inspect',procedure_id:'source-review',procedure_version:3,required_tool_count:2,unavailable_required_tools:[{name:'workspace.write_file',version:'1'}],unavailable_required_permissions:['workspace.write'],ready:false},created_at:'2026-11-06T00:00:00Z'},
+        {sequence:2,event_type:'task.model.delta',payload:{task_id:'inspect',inference_id:'inference-1',text:'Unverified streamed specialist draft'},created_at:'2026-11-06T00:00:01Z'},
+        {sequence:3,event_type:'task.model.message',payload:{task_id:'inspect',inference_id:'inference-1',message:{role:'assistant',content:'Saved candidate'}},created_at:'2026-11-06T00:00:02Z'},
       ];
       return route.fulfill({headers,contentType:'text/event-stream',body:events.map(event=>`id: ${event.sequence}\nevent: run_event\ndata: ${JSON.stringify(event)}\n\n`).join('')+'event: done\ndata: {}\n\n'});
     }
@@ -92,6 +93,10 @@ test('specialist streamed drafts stay attached to their task and visibly unverif
   await page.getByLabel('Objective',{exact:true}).fill(run.objective);
   await page.getByRole('button',{name:'Start objective'}).click();
   const inspect=page.getByRole('article',{name:'Task inspect'});
+  const activity=page.getByRole('list',{name:'Run activity history'});
+  const readiness=activity.getByRole('listitem').filter({hasText:'source-review v3'});
+  await expect(readiness.locator('.run-activity-type')).toHaveText('task.procedure.readiness_checked');
+  await expect(readiness).toContainText('workspace.write_file@1, workspace.write');
   await expect(inspect.getByRole('heading',{name:'Partial specialist draft · unverified'})).toBeVisible();
   await expect(inspect.locator('article[aria-live="off"]')).toContainText('Unverified streamed specialist draft');
   await expect(inspect.locator('[role="status"]')).toHaveText('An unverified researcher specialist draft is available and may still change.');

@@ -378,7 +378,21 @@ function App() {
         };
         const reason = typeof event.payload.reason === 'string' ? reasons[event.payload.reason] : undefined;
         const counterCode = event.event_type === 'context.admission_failed' && typeof event.payload.counter_error_code === 'string' ? ` (${event.payload.counter_error_code})` : '';
-        const description = event.event_type === 'run.state_changed' ? `Run is ${String(event.payload.to).replaceAll('_', ' ')}${reason ? `. ${reason}` : ''}` : event.event_type === 'context.admission_failed' ? `${labels[event.event_type]}${counterCode}` : (labels[event.event_type] ?? 'Progress saved');
+        const procedureReadiness = event.event_type === 'task.procedure.readiness_checked' ? (() => {
+          const toolRequirements = Array.isArray(event.payload.unavailable_required_tools) ? event.payload.unavailable_required_tools.flatMap(value => {
+            if (!value || typeof value !== 'object') return [];
+            const item = value as {name?:unknown;version?:unknown};
+            return typeof item.name === 'string' && typeof item.version === 'string' ? [`${item.name}@${item.version}`] : [];
+          }) : [];
+          const permissionRequirements = Array.isArray(event.payload.unavailable_required_permissions) ? event.payload.unavailable_required_permissions.filter((value): value is string => typeof value === 'string') : [];
+          const missing = [...toolRequirements, ...permissionRequirements];
+          const procedure = typeof event.payload.procedure_id === 'string' ? event.payload.procedure_id : 'selected procedure';
+          const version = typeof event.payload.procedure_version === 'number' ? ` v${event.payload.procedure_version}` : '';
+          return event.payload.ready === true
+            ? `${procedure}${version}: all declared tool and permission requirements are available to this task.`
+            : `${procedure}${version}: unavailable requirements${missing.length ? `: ${missing.join(', ')}` : ' need review'}.`;
+        })() : undefined;
+        const description = procedureReadiness ?? (event.event_type === 'run.state_changed' ? `Run is ${String(event.payload.to).replaceAll('_', ' ')}${reason ? `. ${reason}` : ''}` : event.event_type === 'context.admission_failed' ? `${labels[event.event_type]}${counterCode}` : (labels[event.event_type] ?? 'Progress saved'));
         setActivity(items => [...items.slice(-199), {...event,description}]);
         if(event.event_type==='procedure.draft_created')setSkillsRefresh(value=>value+1);
         if (event.event_type === 'model.message') {

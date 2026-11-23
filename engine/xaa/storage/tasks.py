@@ -244,6 +244,7 @@ class TaskStore:
             "task.model.stream_rejected",
             "task.tool.result",
             "task.response_requested",
+            "task.procedure.readiness_checked",
         ],
         payload: dict[str, Any],
     ) -> None:
@@ -257,6 +258,7 @@ class TaskStore:
                 "task.model.stream_rejected",
                 "task.tool.result",
                 "task.response_requested",
+                "task.procedure.readiness_checked",
             }
             or payload.get("task_id") != task_id
         ):
