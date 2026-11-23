@@ -61,6 +61,9 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
+  const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
+  const [microphoneId, setMicrophoneId] = useState('');
+  const [microphoneStatus, setMicrophoneStatus] = useState('');
   const streamRef = useRef<MediaStream | undefined>(undefined);
   const recorderRef = useRef<MediaRecorder | undefined>(undefined);
   const chunksRef = useRef<Blob[]>([]);
@@ -106,7 +109,10 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
         throw new Error('Microphone recording is not available in this desktop environment.');
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audio: MediaTrackConstraints = microphoneId
+        ? { deviceId: { exact: microphoneId } }
+        : {};
+      const stream = await navigator.mediaDevices.getUserMedia({ audio });
       if (!mountedRef.current || discardRef.current) {
         stream.getTracks().forEach(track => track.stop());
         onCaptureBusy(false);
@@ -167,7 +173,43 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
   }
 
+  async function refreshMicrophones() {
+    setError('');
+    setMicrophoneStatus('');
+    let temporaryStream: MediaStream | undefined;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices.enumerateDevices) {
+        throw new Error('Microphone selection is not available in this desktop environment.');
+      }
+      // Device names and IDs are hidden until microphone permission is granted.
+      // Use a temporary stream only for enumeration, then release it immediately.
+      temporaryStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      temporaryStream.getTracks().forEach(track => track.stop());
+      temporaryStream = undefined;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter(device => device.kind === 'audioinput');
+      setMicrophones(inputs);
+      setMicrophoneId(current => inputs.some(device => device.deviceId === current) ? current : '');
+      setMicrophoneStatus(inputs.length
+        ? `Found ${inputs.length} microphone${inputs.length === 1 ? '' : 's'}.`
+        : 'No microphones were found.');
+    } catch (failure) {
+      temporaryStream?.getTracks().forEach(track => track.stop());
+      setError(failure instanceof Error && failure.name === 'NotAllowedError'
+        ? 'Microphone permission was denied. Allow microphone access in Windows settings or attach a WAV file.'
+        : failure instanceof Error ? failure.message : 'Could not list microphones.');
+    }
+  }
+
   return <div aria-label="Microphone voice capture">
+    <button type="button" disabled={disabled || recording || processing} onClick={() => void refreshMicrophones()}>List microphones</button>
+    {microphones.length > 0 && <label htmlFor="voice-microphone">Microphone
+      <select id="voice-microphone" value={microphoneId} disabled={disabled || recording || processing} onChange={event => setMicrophoneId(event.target.value)}>
+        <option value="">System default</option>
+        {microphones.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
+      </select>
+    </label>}
+    {microphoneStatus && <p role="status">{microphoneStatus} Choose a device or keep System default. Recordings are created locally.</p>}
     {!recording
       ? <button type="button" disabled={disabled || processing} onClick={() => void start()}>{processing ? 'Converting recording…' : 'Record voice'}</button>
       : <button type="button" disabled={disabled} onClick={stop}>Stop recording</button>}

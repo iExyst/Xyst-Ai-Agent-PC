@@ -62,18 +62,30 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   await page.addInitScript(() => {
     const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     let deniedOnce = false;
+    const microphoneRequests: MediaStreamConstraints[] = [];
+    (window as Window & { __xaaMicrophoneRequests?: MediaStreamConstraints[] }).__xaaMicrophoneRequests = microphoneRequests;
     Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
       configurable: true,
       value: (constraints: MediaStreamConstraints) => {
+        microphoneRequests.push(constraints);
         if (!deniedOnce) {
           deniedOnce = true;
           return Promise.reject(new DOMException('Permission denied by acceptance fixture', 'NotAllowedError'));
         }
-        return getUserMedia(constraints).then(stream => {
+        // The fixture exposes its own stable IDs for selection coverage; the
+        // browser's fake device only has its built-in synthetic input.
+        return getUserMedia({ audio: true }).then(stream => {
           (window as Window & { __xaaMicrophoneStream?: MediaStream }).__xaaMicrophoneStream = stream;
           return stream;
         });
       },
+    });
+    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+      configurable: true,
+      value: async () => [
+        { deviceId: 'builtin-mic', groupId: 'fixture', kind: 'audioinput', label: 'Built-in microphone', toJSON: () => ({}) },
+        { deviceId: 'usb-headset', groupId: 'fixture', kind: 'audioinput', label: 'USB headset microphone', toJSON: () => ({}) },
+      ],
     });
   });
   await page.route('http://127.0.0.1:8765/**', async route => {
@@ -108,7 +120,13 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   await page.getByRole('button', { name: 'Record voice' }).click();
   await expect(page.getByRole('alert')).toContainText('Microphone permission was denied');
   await expect(page.getByRole('button', { name: 'Record voice' })).toBeEnabled();
+  await page.getByRole('button', { name: 'List microphones' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Found 2 microphones.' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Microphone', exact: true }).selectOption('usb-headset');
   await page.getByRole('button', { name: 'Record voice' }).click();
+  await expect.poll(() => page.evaluate(() => {
+    return (window as Window & { __xaaMicrophoneRequests?: MediaStreamConstraints[] }).__xaaMicrophoneRequests ?? [];
+  })).toContainEqual({ audio: { deviceId: { exact: 'usb-headset' } } });
   await expect(page.getByText(/Attached: old\.wav/)).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Start objective', exact: true })).toBeDisabled();
   await expect(page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)')).toBeDisabled();

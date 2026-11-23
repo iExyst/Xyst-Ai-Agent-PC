@@ -1,8 +1,12 @@
 # Hermes capability reference matrix
 
+## Select the microphone for local voice capture (2026-11-23)
+
+The desktop voice capture control can enumerate audio inputs after microphone permission and select an installed device or keep the system default. Enumeration opens a temporary stream and stops it immediately; the selected device ID is passed only to local recording, after which the WAV uses the existing explicitly configured loopback transcription service. The fake-device browser flow covers denied permission/retry, two device choices, selected-device constraints, WAV conversion, track cleanup, and stale attachment clearing (3 pass). Desktop typecheck and production build pass locally. Hosted verification is pending; no live ASR or model inference was used.
+
 ## Verify optional provider credentials (2026-11-23)
 
-The Model setup screen can explicitly check a saved OpenAI-compatible provider token against its configured `/v1/models` endpoint. The engine reads the token from the OS vault and makes no inference request. Explicit HTTP 401/403 responses mean rejected; a returned model list means reachable and notes that some compatible services do not require a token; other failures leave validity unknown. Token values and low-level provider errors are not returned. Focused API/adapter coverage (24 tests) checks these cases and missing-token rejection; the provider setup browser flow, desktop build/typecheck, generated contract, Ruff, formatting, and Pyright pass locally. Hosted exact-source verification is pending. Inference and broader provider feature parity remain unverified.
+The Model setup screen can explicitly check a saved OpenAI-compatible provider token against its configured `/v1/models` endpoint. The engine reads the token from the OS vault and makes no inference request. Explicit HTTP 401/403 responses mean rejected; a returned model list means reachable and notes that some compatible services do not require a token; other failures leave validity unknown. Token values and low-level provider errors are not returned. Focused API/adapter coverage (24 tests) checks these cases and missing-token rejection; the provider setup browser flow, desktop build/typecheck, generated contract, Ruff, formatting, and Pyright pass locally. Exact-source Windows workflow [45261439849](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45261439849) passed on `afdedbbf`, including the full Python suite and configured browser/recovery checks. Inference and broader provider feature parity remain unverified.
 
 ## Grant procedure credentials to specialist tasks per run (2026-11-23)
 
