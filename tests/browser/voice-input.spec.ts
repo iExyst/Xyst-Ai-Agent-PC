@@ -15,6 +15,7 @@ test('voice attachment submits WAV and the selected local transcription endpoint
     const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
+    if (path === '/specialists/profiles') return route.fulfill({ json: [], headers });
     if (path.startsWith('/memory')) return route.fulfill({ json: [], headers });
     if (path === '/runs' && request.method() === 'GET') return route.fulfill({ json: { items: [], next_cursor: null }, headers });
     if (path.endsWith('/plan')) return route.fulfill({ json: { tasks: [], ready: [], blocked: [] }, headers });
@@ -94,6 +95,7 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
     const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
+    if (path === '/specialists/profiles') return route.fulfill({ json: [], headers });
     if (path.startsWith('/memory')) return route.fulfill({ json: [], headers });
     if (path === '/runs' && request.method() === 'GET') return route.fulfill({ json: { items: [], next_cursor: null }, headers });
     if (path.endsWith('/plan')) return route.fulfill({ json: { tasks: [], ready: [], blocked: [] }, headers });
@@ -180,6 +182,7 @@ test('a microphone permission response arriving after leaving the composer is im
     const headers = { 'access-control-allow-origin': 'http://127.0.0.1:5173', 'access-control-allow-headers': 'authorization,content-type,last-event-id', 'access-control-allow-methods': 'GET,POST,OPTIONS' };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
     if (path === '/models') return route.fulfill({ json: [{ id: 'fixture/model' }], headers });
+    if (path === '/specialists/profiles') return route.fulfill({ json: [], headers });
     if (path.startsWith('/memory')) return route.fulfill({ json: [], headers });
     if (path === '/runs' && request.method() === 'GET') return route.fulfill({ json: { items: [], next_cursor: null }, headers });
     if (path.endsWith('/plan')) return route.fulfill({ json: { tasks: [], ready: [], blocked: [] }, headers });
