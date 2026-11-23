@@ -397,7 +397,7 @@ def snapshot_digest(snapshot: dict[str, Any]) -> str:
     for key in ("description", "category"):
         if snapshot.get(key):
             manifest[key] = snapshot[key]
-    if "credential_names" in snapshot:
+    if snapshot.get("credential_names"):
         manifest["credential_names"] = snapshot["credential_names"]
     if snapshot.get("assets"):
         manifest["assets"] = [

@@ -32,6 +32,8 @@ def test_procedure_credential_grant_is_part_of_the_selected_snapshot_digest():
     }
     no_grant = {**snapshot, "credential_names": []}
     assert snapshot_digest(snapshot) != snapshot_digest(no_grant)
+    legacy_snapshot = {key: value for key, value in no_grant.items() if key != "credential_names"}
+    assert snapshot_digest(legacy_snapshot) == snapshot_digest(no_grant)
 
 
 def setup(root, *, selected_script=False):
