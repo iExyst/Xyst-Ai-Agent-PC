@@ -2,7 +2,7 @@
 
 ## Bound local tokenizer worker cancellation (2026-11-23)
 
-The fixed LM Studio prompt-tokenizer worker is terminated directly on timeout or caller cancellation. It does not spawn child processes, so cleanup does not start the Windows process-tree helper. The isolated tokenizer suite passes (20), Ruff and Pyright pass, and the full Python suite passes (1,524 passed, 1 skipped). This verifies bounded worker cleanup only; it does not establish live model inference or provider parity. See [`progress.md`](../progress.md#bound-tokenizer-cancellation-cleanup-on-windows-2026-11-23).
+The fixed LM Studio prompt-tokenizer worker is terminated directly on timeout or caller cancellation. It does not spawn child processes, so cleanup does not start the Windows process-tree helper. The isolated tokenizer suite passes (20), Ruff and Pyright pass, the full local Python suite passes (1,524 passed, 1 skipped), and exact-source Windows workflow [45173101297](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45173101297) passed with 1,505 Python tests and 20 platform/dependency-gated skips. This verifies bounded worker cleanup only; it does not establish live model inference or provider parity. See [`progress.md`](../progress.md#bound-tokenizer-cancellation-cleanup-on-windows-2026-11-23).
 
 ## Verify estimator and updated desktop in the unsigned Windows package (2026-11-18)
 
