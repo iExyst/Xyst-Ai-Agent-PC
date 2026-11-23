@@ -6595,6 +6595,39 @@
         "title": "SpecialistInstructionsRequest",
         "type": "object"
       },
+      "SpecialistProcedureChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "linked_resource_count": {
+            "maximum": 32.0,
+            "minimum": 0.0,
+            "title": "Linked Resource Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "linked_resource_count"
+        ],
+        "title": "SpecialistProcedureChoice",
+        "type": "object"
+      },
       "SpecialistProcedureRequest": {
         "additionalProperties": false,
         "properties": {
@@ -15477,8 +15510,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/SpecialistProcedureChoice"
                   },
                   "title": "Response List Specialist Procedures Specialists Procedures Get",
                   "type": "array"

@@ -1,11 +1,15 @@
+import hashlib
+
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
+from xaa.storage.skills import snapshot_digest
 from xaa.storage.specialist_profiles import SpecialistProfileStore
-from xaa.storage.tasks import TaskStore
+from xaa.storage.tasks import TaskStore, validate_specialist_procedure_snapshot
 
 TOKEN = "a-specialist-profile-test-token-long-enough"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
@@ -22,6 +26,32 @@ def _active_procedure(store: RunStore, *, identity: str = "procedure-a", version
             "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES(?,?,?,'[]','[]','{}',?)",
             (identity, version, f"Procedure body version {version}.", now),
         )
+
+
+def _add_resource(
+    store: RunStore,
+    identity: str,
+    path: str,
+    content: bytes,
+    media_type: str = "text/markdown",
+) -> None:
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
+            "VALUES(?,1,?,?,?,?,?)",
+            (
+                identity,
+                path,
+                media_type,
+                len(content),
+                hashlib.sha256(content).hexdigest(),
+                content,
+            ),
+        )
+
+
+def _add_text_resource(store: RunStore, identity: str, path: str, content: bytes) -> None:
+    _add_resource(store, identity, path, content)
 
 
 class ProfileProvider(LMStudioProvider):
@@ -80,6 +110,7 @@ def test_specialist_route_is_persisted_and_snapshotted_into_saved_task(workspace
 def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "specialist-procedure.sqlite3")
     _active_procedure(store)
+    _add_text_resource(store, "procedure-a", "references/guide.md", b"Use primary sources.\n")
     profiles = SpecialistProfileStore(store)
     saved_profile = profiles.set_procedure("researcher", "procedure-a")
     assert saved_profile["procedure_skill_id"] == "procedure-a"
@@ -99,7 +130,16 @@ def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_
     saved = tasks.records(run_id)[0]["procedure_snapshot"]
     assert saved["content"] == "Procedure body version 1."
     assert saved["version"] == 1
+    assert saved["linked_resources"] == [
+        {
+            "path": "references/guide.md",
+            "media_type": "text/markdown",
+            "sha256": hashlib.sha256(b"Use primary sources.\n").hexdigest(),
+            "content": "Use primary sources.\n",
+        }
+    ]
     assert len(saved["snapshot_sha256"]) == 64
+    validate_specialist_procedure_snapshot(saved)
     with store.connection() as connection:
         connection.execute(
             "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES('procedure-a',2,'Procedure body version 2.','[]','[]','{}','2026-01-02T00:00:00+00:00')"
@@ -109,9 +149,55 @@ def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_
     assert TaskStore(store).records(run_id)[0]["procedure_snapshot"] == saved
 
 
-def test_specialist_procedure_api_lists_only_active_small_resource_free_choices(workspace_tmp_path):
+def test_specialist_procedure_rejects_tampered_resource_snapshot(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-integrity.sqlite3")
+    _active_procedure(store)
+    _add_text_resource(store, "procedure-a", "references/guide.md", b"Use primary sources.\n")
+    SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+    run_id = store.create_run(
+        objective="Research with a saved procedure",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    TaskStore(store).save_plan(
+        run_id, owner, [TaskDefinition(id="research", objective="Research", role="researcher")]
+    )
+    saved = TaskStore(store).records(run_id)[0]["procedure_snapshot"]
+    saved["linked_resources"][0]["content"] = "Changed after snapshot."
+    with pytest.raises(ValueError, match="snapshot integrity"):
+        validate_specialist_procedure_snapshot(saved)
+
+
+def test_legacy_resource_free_specialist_snapshot_remains_valid():
+    snapshot = {
+        "skill_id": "procedure-a",
+        "version": 1,
+        "name": "procedure-a",
+        "content": "Legacy immutable specialist procedure.",
+        "required_tools": [],
+        "required_permissions": [],
+    }
+    snapshot["snapshot_sha256"] = snapshot_digest(snapshot)
+    validate_specialist_procedure_snapshot(snapshot)
+
+
+def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "specialist-procedure-api.sqlite3")
     _active_procedure(store)
+    _add_text_resource(store, "procedure-a", "references/guide.md", b"Short guide.")
+    _active_procedure(store, identity="large-procedure")
+    _active_procedure(store, identity="binary-procedure")
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skill_versions SET content='x' WHERE skill_id='large-procedure' AND version=1"
+        )
+    _add_text_resource(store, "large-procedure", "references/large.md", b"x" * (16 * 1024))
+    _add_resource(
+        store, "binary-procedure", "references/guide.pdf", b"%PDF-1.7\n", "application/pdf"
+    )
     _active_procedure(store, identity="inactive-procedure")
     with store.connection() as connection:
         connection.execute(
@@ -120,7 +206,14 @@ def test_specialist_procedure_api_lists_only_active_small_resource_free_choices(
     with TestClient(create_app(ProfileProvider(), SecretStr(TOKEN), store=store)) as client:
         choices = client.get("/specialists/procedures", headers=HEADERS)
         assert choices.status_code == 200
-        assert [item["id"] for item in choices.json()] == ["procedure-a"]
+        assert choices.json() == [
+            {
+                "id": "procedure-a",
+                "name": "procedure-a",
+                "version": 1,
+                "linked_resource_count": 1,
+            }
+        ]
         selected = client.put(
             "/specialists/profiles/researcher/procedure",
             headers=HEADERS,
@@ -128,6 +221,13 @@ def test_specialist_procedure_api_lists_only_active_small_resource_free_choices(
         )
         assert selected.status_code == 200
         assert selected.json()["procedure_skill_id"] == "procedure-a"
+        for unsupported in ("large-procedure", "binary-procedure"):
+            rejected_resource = client.put(
+                "/specialists/profiles/tester/procedure",
+                headers=HEADERS,
+                json={"skill_id": unsupported},
+            )
+            assert rejected_resource.status_code == 422
         rejected = client.put(
             "/specialists/profiles/researcher/procedure",
             headers=HEADERS,

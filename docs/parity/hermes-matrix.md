@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Route bounded linked text resources through specialist profiles (2026-11-23)
+
+Specialist procedure selection now supports up to 32 digest-checked UTF-8 text resources, with procedure body and resource content capped at 16 KiB together. Planned and dynamic task assignments snapshot exact resource content and hashes; runtime revalidates them and labels all procedure data untrusted. Resource-free snapshots from older builds remain valid for queued-task recovery. Binary and over-budget versions remain unavailable; resources grant no tools or permissions and scripts are not run automatically. Focused profile/specialist tests (30), the existing profile browser flow (1), desktop production build, generated API contracts, Ruff and Pyright pass locally; hosted verification is pending. This improves persistent specialist routing without claiming general procedure execution or full skill parity. See [`progress.md`](../progress.md#route-bounded-linked-text-resources-through-specialist-roles-2026-11-23).
+
 ## Bound local tokenizer worker cancellation (2026-11-23)
 
 The fixed LM Studio prompt-tokenizer worker is terminated directly on timeout or caller cancellation. It does not spawn child processes, so cleanup does not start the Windows process-tree helper. The isolated tokenizer suite passes (20), Ruff and Pyright pass, the full local Python suite passes (1,524 passed, 1 skipped), and exact-source Windows workflow [45173101297](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45173101297) passed with 1,505 Python tests and 20 platform/dependency-gated skips. This verifies bounded worker cleanup only; it does not establish live model inference or provider parity. See [`progress.md`](../progress.md#bound-tokenizer-cancellation-cleanup-on-windows-2026-11-23).

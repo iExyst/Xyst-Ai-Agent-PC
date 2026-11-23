@@ -2,9 +2,67 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import PurePosixPath
 from typing import Any, Literal
 
 from xaa.storage.runs import RunStore, utc_now
+from xaa.storage.skills import is_text_asset_media_type
+
+MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 16 * 1024
+MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
+
+
+def specialist_procedure_resources(
+    connection: Any, skill_id: str, version: int, content_bytes: int
+) -> list[dict[str, str]]:
+    """Load only digest-checked UTF-8 resources within the role context budget."""
+    rows = connection.execute(
+        "SELECT relative_path,media_type,size_bytes,sha256,content FROM skill_version_assets "
+        "WHERE skill_id=? AND version=? ORDER BY relative_path LIMIT 33",
+        (skill_id, version),
+    ).fetchall()
+    if len(rows) > MAX_SPECIALIST_PROCEDURE_RESOURCES:
+        raise ValueError("Specialist procedures may contain at most 32 linked text resources.")
+    total_bytes = content_bytes
+    resources: list[dict[str, str]] = []
+    for row in rows:
+        path = str(row["relative_path"])
+        normalized = PurePosixPath(path)
+        if (
+            len(path) > 512
+            or normalized.is_absolute()
+            or normalized.as_posix() != path
+            or "\\" in path
+            or any(part in {"", ".", ".."} for part in normalized.parts)
+        ):
+            raise ValueError("A linked specialist procedure resource path is invalid.")
+        raw = bytes(row["content"])
+        if not is_text_asset_media_type(str(row["media_type"])):
+            raise ValueError("Specialist procedures can use only linked UTF-8 text resources.")
+        if (
+            len(raw) > 64 * 1024
+            or int(row["size_bytes"]) != len(raw)
+            or hashlib.sha256(raw).hexdigest() != row["sha256"]
+        ):
+            raise ValueError("A linked specialist procedure resource failed its integrity check.")
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
+        total_bytes += len(raw)
+        if total_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
+            raise ValueError("Specialist procedure text and resources must total 16 KiB or less.")
+        resources.append(
+            {
+                "path": path,
+                "media_type": str(row["media_type"]),
+                "sha256": str(row["sha256"]),
+                "content": content,
+            }
+        )
+    return resources
+
 
 SpecialistRole = Literal["planner", "researcher", "developer", "reviewer", "tester", "executor"]
 ROLES: tuple[SpecialistRole, ...] = (
@@ -109,11 +167,12 @@ class SpecialistProfileStore:
                     raise ValueError("Choose a currently active procedure.")
                 if len(str(row["content"]).encode("utf-8")) > 16 * 1024:
                     raise ValueError("Specialist procedures must be 16 KiB or smaller.")
-                if connection.execute(
-                    "SELECT 1 FROM skill_version_assets WHERE skill_id=? AND version=? LIMIT 1",
-                    (skill_id, row["active_version"]),
-                ).fetchone():
-                    raise ValueError("Specialist procedures cannot contain linked resources.")
+                specialist_procedure_resources(
+                    connection,
+                    skill_id,
+                    int(row["active_version"]),
+                    len(str(row["content"]).encode("utf-8")),
+                )
             changed = connection.execute(
                 "UPDATE specialist_profiles SET procedure_skill_id=?,updated_at=? WHERE role=?",
                 (skill_id, utc_now(), role),

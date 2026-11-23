@@ -178,7 +178,11 @@ from xaa.storage.skills import (
     SkillTrialRun,
     SkillVersion,
 )
-from xaa.storage.specialist_profiles import ROLES, SpecialistProfileStore
+from xaa.storage.specialist_profiles import (
+    ROLES,
+    SpecialistProfileStore,
+    specialist_procedure_resources,
+)
 from xaa.storage.tasks import TaskStore
 from xaa.storage.trajectory import export_trajectory
 from xaa.version import APP_VERSION
@@ -873,6 +877,14 @@ class SpecialistProfileResponse(BaseModel):
 class SpecialistProcedureRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     skill_id: str | None
+
+
+class SpecialistProcedureChoice(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str
+    name: str
+    version: int = Field(ge=1, le=128)
+    linked_resource_count: int = Field(ge=0, le=32)
 
 
 class SkillPythonDependencyCheck(BaseModel):
@@ -3786,24 +3798,39 @@ def create_app(
     def list_specialist_profiles(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
         return specialist_profiles.list()
 
-    @app.get("/specialists/procedures")
-    def list_specialist_procedures(_: None = Depends(authenticate)) -> list[dict[str, Any]]:
+    @app.get("/specialists/procedures", response_model=list[SpecialistProcedureChoice])
+    def list_specialist_procedures(
+        _: None = Depends(authenticate),
+    ) -> list[dict[str, Any]]:
         with run_store.connection() as connection:
             rows = connection.execute(
                 "SELECT s.id,s.name,s.active_version,v.content FROM skills s "
                 "JOIN skill_versions v ON v.skill_id=s.id AND v.version=s.active_version "
                 "WHERE s.lifecycle_state='active' ORDER BY s.name COLLATE NOCASE,s.id LIMIT 100"
             ).fetchall()
-            return [
-                {"id": row["id"], "name": row["name"], "version": row["active_version"]}
-                for row in rows
-                if len(str(row["content"]).encode("utf-8")) <= 16 * 1024
-                and connection.execute(
-                    "SELECT 1 FROM skill_version_assets WHERE skill_id=? AND version=? LIMIT 1",
-                    (row["id"], row["active_version"]),
-                ).fetchone()
-                is None
-            ]
+            choices: list[dict[str, Any]] = []
+            for row in rows:
+                content_bytes = len(str(row["content"]).encode("utf-8"))
+                if content_bytes > 16 * 1024:
+                    continue
+                try:
+                    resources = specialist_procedure_resources(
+                        connection,
+                        str(row["id"]),
+                        int(row["active_version"]),
+                        content_bytes,
+                    )
+                except ValueError:
+                    continue
+                choices.append(
+                    {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "version": row["active_version"],
+                        "linked_resource_count": len(resources),
+                    }
+                )
+            return choices
 
     @app.put("/specialists/profiles/{role}/procedure", response_model=SpecialistProfileResponse)
     def set_specialist_procedure(

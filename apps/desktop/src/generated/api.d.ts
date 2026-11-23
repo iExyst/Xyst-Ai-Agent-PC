@@ -4783,6 +4783,17 @@ export interface components {
             /** System Instructions */
             system_instructions: string;
         };
+        /** SpecialistProcedureChoice */
+        SpecialistProcedureChoice: {
+            /** Id */
+            id: string;
+            /** Linked Resource Count */
+            linked_resource_count: number;
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+        };
         /** SpecialistProcedureRequest */
         SpecialistProcedureRequest: {
             /** Skill Id */
@@ -10212,9 +10223,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["SpecialistProcedureChoice"][];
                 };
             };
         };

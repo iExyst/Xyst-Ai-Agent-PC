@@ -5,6 +5,7 @@ import json
 from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import PurePosixPath
 from typing import Any, Literal, cast
 from uuid import uuid4
 
@@ -12,11 +13,80 @@ from xaa.runtime.permissions import workspace_write_authorized
 from xaa.runtime.task_graph import TaskDefinition, TaskGraph, TaskStatus
 from xaa.storage.mcp import MCPRegistry
 from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
-from xaa.storage.skills import snapshot_digest
+from xaa.storage.skills import is_text_asset_media_type, snapshot_digest
+from xaa.storage.specialist_profiles import (
+    MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES,
+    specialist_procedure_resources,
+)
 
 
 class TaskTokenBudgetExceeded(TokenBudgetExceeded):
     """A specialist's own reported token allowance is exhausted or unknown."""
+
+
+def specialist_procedure_snapshot_digest(snapshot: dict[str, Any]) -> str:
+    payload = {key: value for key, value in snapshot.items() if key != "snapshot_sha256"}
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+
+def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
+    """Fail closed on changed text/resources before exposing a saved role procedure."""
+    expected_digest = snapshot.get("snapshot_sha256")
+    digest_matches = specialist_procedure_snapshot_digest(snapshot) == expected_digest
+    if not digest_matches and "linked_resources" not in snapshot:
+        # Pre-resource snapshots used the shared skill manifest digest. Keep queued
+        # tasks created by older app versions resumable after an in-place upgrade.
+        digest_matches = snapshot_digest(snapshot) == expected_digest
+    if not digest_matches:
+        raise ValueError("Saved specialist procedure failed its snapshot integrity check.")
+    content = snapshot.get("content")
+    resources_value: Any = snapshot.get("linked_resources", [])
+    if not isinstance(content, str) or not isinstance(resources_value, list):
+        raise TypeError("Saved specialist procedure has an invalid text/resource shape.")
+    resources = cast(list[Any], resources_value)
+    if len(resources) > 32:
+        raise ValueError("Saved specialist procedure has too many linked resources.")
+    total_bytes = len(content.encode("utf-8"))
+    seen_paths: set[str] = set()
+    for resource_value in resources:
+        if not isinstance(resource_value, dict):
+            raise TypeError("Saved specialist procedure resource is invalid.")
+        resource = cast(dict[str, Any], resource_value)
+        path = resource.get("path")
+        media_type = resource.get("media_type")
+        text = resource.get("content")
+        digest = resource.get("sha256")
+        if (
+            not isinstance(path, str)
+            or not path
+            or len(path) > 512
+            or path in seen_paths
+            or not isinstance(media_type, str)
+            or not is_text_asset_media_type(media_type)
+            or not isinstance(text, str)
+            or len(media_type) > 128
+            or not isinstance(digest, str)
+        ):
+            raise ValueError("Saved specialist procedure resource metadata is invalid.")
+        normalized = PurePosixPath(path)
+        if (
+            normalized.is_absolute()
+            or normalized.as_posix() != path
+            or "\\" in path
+            or any(part in {"", ".", ".."} for part in normalized.parts)
+        ):
+            raise ValueError("Saved specialist procedure resource path is invalid.")
+        seen_paths.add(path)
+        raw = text.encode("utf-8")
+        if len(raw) > 64 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
+            raise ValueError("Saved specialist procedure resource failed its integrity check.")
+        total_bytes += len(raw)
+    if total_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
+        raise ValueError("Saved specialist procedure exceeds the 16 KiB context limit.")
 
 
 class TaskStore:
@@ -39,13 +109,12 @@ class TaskStore:
                 "A specialist procedure is no longer active; update its profile first."
             )
         content = str(row["content"])
-        if len(content.encode("utf-8")) > 16 * 1024:
+        content_bytes = len(content.encode("utf-8"))
+        if content_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
             raise ValueError("A specialist procedure exceeds the 16 KiB context limit.")
-        if connection.execute(
-            "SELECT 1 FROM skill_version_assets WHERE skill_id=? AND version=? LIMIT 1",
-            (skill_id, row["active_version"]),
-        ).fetchone():
-            raise ValueError("A specialist procedure now contains linked resources.")
+        resources = specialist_procedure_resources(
+            connection, skill_id, int(row["active_version"]), content_bytes
+        )
         evidence = json.loads(row["evaluation_evidence"])
         snapshot: dict[str, Any] = {
             "skill_id": skill_id,
@@ -54,11 +123,12 @@ class TaskStore:
             "content": content,
             "required_tools": json.loads(row["required_tools"]),
             "required_permissions": sorted(json.loads(row["required_permissions"])),
+            "linked_resources": resources,
         }
         for key in ("description", "category"):
             if evidence.get(key):
                 snapshot[key] = evidence[key]
-        snapshot["snapshot_sha256"] = snapshot_digest(snapshot)
+        snapshot["snapshot_sha256"] = specialist_procedure_snapshot_digest(snapshot)
         return snapshot
 
     def remaining_run_seconds(self, run_id: str) -> int:

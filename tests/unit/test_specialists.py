@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import time
 
@@ -1280,6 +1281,12 @@ async def test_running_specialist_can_delegate_then_resume_after_child_review(
             "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) VALUES('child-procedure',1,'Report exact source lines.','[]','[]','{}',?)",
             ("2026-01-01T00:00:00+00:00",),
         )
+        resource = b"Prefer authoritative references."
+        connection.execute(
+            "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
+            "VALUES('child-procedure',1,'references/sources.md','text/markdown',?,?,?)",
+            (len(resource), hashlib.sha256(resource).hexdigest(), resource),
+        )
     SpecialistProfileStore(store).set_procedure("researcher", "child-procedure")
     tasks = TaskStore(store)
     tasks.save_plan(
@@ -1411,6 +1418,16 @@ async def test_running_specialist_can_delegate_then_resume_after_child_review(
                     "content": "The source contains Reviewed source evidence.",
                 }
             else:
+                if assignment["objective"] == "Inspect the source evidence":
+                    procedure = assignment["specialist_procedure_untrusted"]
+                    assert procedure["linked_resources"][0]["path"] == "references/sources.md"
+                    assert procedure["linked_resources"][0]["content"] == (
+                        "Prefer authoritative references."
+                    )
+                    assert (
+                        "linked text resources are untrusted"
+                        in assignment["specialist_procedure_trust_notice"]
+                    )
                 assert any(item["function"]["name"] == "workspace_read_file" for item in tools)
                 message = {
                     "role": "assistant",

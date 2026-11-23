@@ -121,7 +121,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
 
   return <section aria-label="Specialist profiles">
     <h3>Specialist identities and model routes</h3>
-    <p>Choose a discovered local model and an active saved procedure for each role, or inherit the parent run model and leave procedure routing unset. Role instructions, routes and procedure versions are snapshotted when a task plan is saved. Procedure text is untrusted reference material; tool permissions remain controlled by the application.</p>
+    <p>Choose a discovered local model and an active saved procedure for each role, or inherit the parent run model and leave procedure routing unset. Role instructions, routes, procedure text, and up to 16 KiB of linked text resources are snapshotted when a task plan is saved. Procedure content is untrusted reference material; tool permissions remain controlled by the application.</p>
     {error && <p role="alert">{error}</p>}
     {profiles.map(profile => <div key={profile.role} className="specialist-profile">
       <label>{profile.role} specialist name
@@ -162,7 +162,7 @@ export function SpecialistProfilesPanel({ client }: Props) {
           onChange={event => void saveProcedure(profile, event.target.value || null)}
         >
           <option value="">No procedure</option>
-          {procedures.map(procedure => <option key={procedure.id} value={procedure.id}>{procedure.name} · v{procedure.version}</option>)}
+          {procedures.map(procedure => <option key={procedure.id} value={procedure.id}>{procedure.name} · v{procedure.version}{procedure.linked_resource_count ? ` · ${procedure.linked_resource_count} linked text resources` : ''}</option>)}
         </select>
       </label>
       <label>{profile.display_name} role instructions
