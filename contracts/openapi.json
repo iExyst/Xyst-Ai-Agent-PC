@@ -6426,6 +6426,14 @@
       "SkillTrial": {
         "additionalProperties": false,
         "properties": {
+          "credential_names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Credential Names",
+            "type": "array"
+          },
           "purpose": {
             "default": "evaluation_trial",
             "enum": [
@@ -6458,6 +6466,14 @@
       "SkillTrialRecord": {
         "additionalProperties": false,
         "properties": {
+          "credential_names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Credential Names",
+            "type": "array"
+          },
           "name": {
             "title": "Name",
             "type": "string"

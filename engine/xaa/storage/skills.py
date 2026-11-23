@@ -14,7 +14,7 @@ from typing import Any, Literal, cast
 from uuid import uuid4
 
 from packaging.requirements import InvalidRequirement, Requirement
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from xaa.extensions.npm_dependencies import (
     NpmVerifiedTarball,
@@ -362,6 +362,16 @@ class SkillTrial(BaseModel):
     skill_id: str = Field(min_length=1, max_length=128)
     version: int = Field(ge=1, le=128)
     purpose: Literal["evaluation_trial", "active_use"] = "evaluation_trial"
+    credential_names: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("credential_names")
+    @classmethod
+    def valid_credential_names(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)) or any(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", item) is None for item in value
+        ):
+            raise ValueError("Procedure credential grants need unique valid environment names.")
+        return value
 
 
 class SkillTrialRecord(SkillTrial):
@@ -387,6 +397,8 @@ def snapshot_digest(snapshot: dict[str, Any]) -> str:
     for key in ("description", "category"):
         if snapshot.get(key):
             manifest[key] = snapshot[key]
+    if "credential_names" in snapshot:
+        manifest["credential_names"] = snapshot["credential_names"]
     if snapshot.get("assets"):
         manifest["assets"] = [
             {key: asset[key] for key in ("path", "media_type", "sha256")}
@@ -436,6 +448,7 @@ def resolve_trial(
         "required_tools": tools,
         "required_permissions": sorted(permissions),
         "purpose": selection.purpose,
+        "credential_names": selection.credential_names,
     }
     evidence = json.loads(row["evaluation_evidence"])
     if evidence.get("description"):

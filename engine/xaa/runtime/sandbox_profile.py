@@ -104,6 +104,7 @@ def bubblewrap_arguments(
     procedure_environment: Path | None = None,
     node_modules: Path | None = None,
     node_modules_link: str | None = None,
+    procedure_credentials_file: Path | None = None,
 ) -> list[str]:
     """stdin is the BPF descriptor and is consumed before the command starts."""
     bootstrap = (
@@ -122,12 +123,31 @@ def bubblewrap_arguments(
         " p=pathlib.Path(link);assert p.is_dir() and not p.is_symlink();"
         " n=p/'node_modules';assert not n.exists() and not n.is_symlink();"
         " os.symlink('/opt/xaa/procedure-node/node_modules',n,target_is_directory=True)\n"
-        "os.execvpe(args[0],args,dict(os.environ))"
+        "environment=dict(os.environ);credential_file=request.get('credential_file');\n"
+        "if credential_file is not None:\n"
+        " credentials=json.loads(pathlib.Path(credential_file).read_text());"
+        "assert type(credentials) is dict and all(type(k) is str and type(v) is str for k,v in credentials.items());"
+        "environment.update(credentials)\n"
+        "os.execvpe(args[0],args,environment)"
     )
     import json
 
     path_parts = ["/usr/bin", "/bin"]
     environment_mount: list[str] = []
+    if procedure_credentials_file is not None:
+        if not procedure_credentials_file.is_absolute() or not procedure_credentials_file.is_file():
+            raise ValueError("Procedure credential file is unavailable to the WSL worker.")
+        environment_mount.extend(
+            [
+                "--dir",
+                "/run",
+                "--dir",
+                "/run/xaa",
+                "--ro-bind",
+                str(procedure_credentials_file),
+                "/run/xaa/procedure-credentials.json",
+            ]
+        )
     if (node_modules is None) != (node_modules_link is None):
         raise ValueError("Node module mount and procedure link must be paired.")
     if node_modules_link is not None:
@@ -236,5 +256,15 @@ def bubblewrap_arguments(
         "-I",
         "-c",
         bootstrap,
-        json.dumps({"argv": argv, "node_modules_link": node_modules_link}),
+        json.dumps(
+            {
+                "argv": argv,
+                "node_modules_link": node_modules_link,
+                "credential_file": (
+                    "/run/xaa/procedure-credentials.json"
+                    if procedure_credentials_file is not None
+                    else None
+                ),
+            }
+        ),
     ]

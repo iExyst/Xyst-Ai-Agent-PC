@@ -400,6 +400,14 @@ class SkillCredentialRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     value: SecretStr = Field(min_length=1, max_length=4096)
 
+    @field_validator("value")
+    @classmethod
+    def bounded_credential_bytes(cls, value: SecretStr) -> SecretStr:
+        secret = value.get_secret_value()
+        if "\0" in secret or len(secret.encode("utf-8")) > 8192:
+            raise ValueError("Procedure credentials must be NUL-free and no larger than 8 KiB.")
+        return value
+
 
 class MCPToolPermissionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -4399,6 +4407,41 @@ def create_app(
                         pages=document_page_images,
                     )
                     document_text = (document_text or "") + "\n\n" + ocr_text
+            if payload.procedure_trial and payload.procedure_trial.credential_names:
+                selected = payload.procedure_trial
+                if credential_store is None:
+                    raise HTTPException(
+                        status_code=503, detail="OS credential storage is unavailable."
+                    )
+                try:
+                    manifest = skill_store.version(selected.skill_id, selected.version)
+                except KeyError:
+                    raise HTTPException(
+                        status_code=404, detail="Procedure version not found."
+                    ) from None
+                declared = {
+                    name for name, _required in _procedure_credential_requirements(manifest)
+                }
+                if not set(selected.credential_names) <= declared:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Credential grant contains a name not declared by the selected procedure.",
+                    )
+                for env_name in selected.credential_names:
+                    try:
+                        value = credential_store.get(
+                            _procedure_credential_profile(selected.skill_id, env_name)
+                        )
+                    except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="Could not read a selected procedure credential from the OS vault.",
+                        ) from exc
+                    if not value:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Every granted procedure credential must still be saved in the OS vault.",
+                        )
             if payload.command_grant is not None:
                 execution_readiness.require_grant(payload.command_grant)
             record = run_store.create_run(

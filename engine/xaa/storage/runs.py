@@ -1830,6 +1830,7 @@ class RunStore:
                 key: trial[key]
                 for key in ("skill_id", "version", "name", "snapshot_sha256", "purpose")
             }
+            | {"credential_names": trial.get("credential_names", [])}
             | (
                 {"python_environment": trial["python_environment"]}
                 if "python_environment" in trial

@@ -1575,6 +1575,40 @@ def test_imported_procedure_credentials_use_os_vault_without_exposing_values(
         assert secret not in saved.text
         assert credentials.values[f"procedure:{skill_id}:API_TOKEN"] == secret
         assert saved.json()["credentials"][0]["configured"] is True
+        granted_run = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Use the selected procedure credential",
+                "mode": "workspace",
+                "workspace": str(tmp_path),
+                "procedure_trial": {
+                    "skill_id": skill_id,
+                    "version": 1,
+                    "purpose": "evaluation_trial",
+                    "credential_names": ["API_TOKEN"],
+                },
+            },
+        )
+        assert granted_run.status_code == 201, granted_run.text
+        assert secret not in granted_run.text
+        assert granted_run.json()["procedure_trial"]["credential_names"] == ["API_TOKEN"]
+        undeclared_grant = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Reject undeclared credentials",
+                "mode": "workspace",
+                "workspace": str(tmp_path),
+                "procedure_trial": {
+                    "skill_id": skill_id,
+                    "version": 1,
+                    "purpose": "evaluation_trial",
+                    "credential_names": ["UNDECLARED_TOKEN"],
+                },
+            },
+        )
+        assert undeclared_grant.status_code == 400
         run = store.create_run(
             objective="Export secret redaction fixture",
             acceptance_criteria=[],
@@ -1601,6 +1635,22 @@ def test_imported_procedure_credentials_use_os_vault_without_exposing_values(
         assert cleared.status_code == 200, cleared.text
         assert cleared.json()["credentials"][0]["configured"] is False
         assert secret not in cleared.text
+        missing_credential_grant = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Reject a cleared procedure credential",
+                "mode": "workspace",
+                "workspace": str(tmp_path),
+                "procedure_trial": {
+                    "skill_id": skill_id,
+                    "version": 1,
+                    "purpose": "evaluation_trial",
+                    "credential_names": ["API_TOKEN"],
+                },
+            },
+        )
+        assert missing_credential_grant.status_code == 409
         assert client.delete(f"/skills/{skill_id}", headers=headers).status_code == 204
 
 

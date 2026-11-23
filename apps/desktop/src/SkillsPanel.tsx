@@ -106,7 +106,7 @@ export function SkillsPanel({client,onTrial,refreshKey,objective,executionDistri
       const [pythonRecords,npmRecords]=await Promise.all([client.skillPythonDependencyLocks(selected.id,version),client.skillNpmDependencyLocks(selected.id,version)]);
       const python_environments=pythonRecords.locks.flatMap(lock=>lock.decision==='approved'&&lock.environment_installed&&lock.installed_tree_sha256?[{environment_digest:lock.environment_digest,distribution:lock.lock.target.distribution,python_version:String(lock.lock.target.environment['python_full_version']??'unknown'),tree_sha256:lock.installed_tree_sha256}]:[]);
       const npm_environments=npmRecords.locks.flatMap(lock=>lock.decision==='approved'&&lock.environment_installed&&lock.installed_tree_sha256?[{environment_digest:lock.environment_digest,distribution:lock.lock.distribution,node_version:lock.lock.node_version,npm_version:lock.lock.npm_version,tree_sha256:lock.installed_tree_sha256}]:[]);
-      onTrial({skill_id:selected.id,version,name:selected.name,latest_version:selected.latest_version,purpose,python_environments,npm_environments});
+      onTrial({skill_id:selected.id,version,name:selected.name,latest_version:selected.latest_version,purpose,credential_names:[],python_environments,npm_environments});
     }catch(failure){setError(String(failure));}finally{setBusy(false);}
   }
   async function save(){

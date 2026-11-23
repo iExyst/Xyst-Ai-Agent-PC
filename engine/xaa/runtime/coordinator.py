@@ -1210,7 +1210,9 @@ class Coordinator:
                 transport = await discover_command_transport(grant, deadline=deadline)
                 if transport.profile_sha256 != grant.profile_sha256:
                     raise PermissionError("The execution profile changed after authorization.")
-                return await CommandController(self.store, transport).execute(
+                return await CommandController(
+                    self.store, transport, credential_store=self.credential_store
+                ).execute(
                     run_id,
                     token,
                     call["id"],

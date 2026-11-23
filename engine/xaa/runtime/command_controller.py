@@ -8,6 +8,9 @@ import time
 from typing import Any, Literal, cast
 from uuid import uuid4
 
+from keyring.errors import KeyringError
+
+from xaa.credentials import CredentialStore
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.command_transport import CommandTransport
@@ -29,10 +32,12 @@ class CommandController:
         *,
         task_scope: TaskReadScope | None = None,
         purpose: Literal["agent", "project_validation"] = "agent",
+        credential_store: CredentialStore | None = None,
     ):
         self.store = store
         self.transport = transport
         self.journal = CommandJournal(store, task_scope=task_scope, purpose=purpose)
+        self.credential_store = credential_store
 
     def artifact(self, run_id: str, owner: str, identity: str, kind: str, data: bytes) -> str:
         directory = command_artifact_root(self.store, create=True)
@@ -162,6 +167,35 @@ class CommandController:
             self.journal.snapshot_ready(run_id, owner, call_id, snapshot, manifest)
             intent = self.journal.authorize_launch(run_id, owner, call_id)
 
+            procedure_secrets: dict[str, str] = {}
+            if intent.procedure_credential_names:
+                if self.credential_store is None or intent.procedure_skill_id is None:
+                    raise PermissionError(
+                        "Approved procedure credentials are unavailable from the OS vault."
+                    )
+                for env_name in intent.procedure_credential_names:
+                    try:
+                        value = self.credential_store.get(
+                            f"procedure:{intent.procedure_skill_id}:{env_name}"
+                        )
+                    except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+                        raise PermissionError(
+                            "Could not read an approved procedure credential from the OS vault."
+                        ) from exc
+                    if not value:
+                        raise PermissionError(
+                            "An approved procedure credential was cleared before command launch."
+                        )
+                    if "\0" in value or len(value.encode("utf-8")) > 8192:
+                        raise PermissionError(
+                            "An approved procedure credential is outside its launch bounds."
+                        )
+                    procedure_secrets[env_name] = value
+                if sum(len(value.encode("utf-8")) for value in procedure_secrets.values()) > 16384:
+                    raise PermissionError(
+                        "The approved procedure credential set exceeds its limit."
+                    )
+
             async def save_output(stream: str, chunk: bytes) -> None:
                 self.store.append_worker_event(
                     run_id,
@@ -176,9 +210,18 @@ class CommandController:
                     },
                 )
 
-            observed = await self.transport.run(
-                intent, snapshot, deadline=deadline, on_output=save_output
-            )
+            if procedure_secrets:
+                observed = await self.transport.run(
+                    intent,
+                    snapshot,
+                    deadline=deadline,
+                    on_output=save_output,
+                    procedure_secrets=procedure_secrets,
+                )
+            else:
+                observed = await self.transport.run(
+                    intent, snapshot, deadline=deadline, on_output=save_output
+                )
             output_ids: dict[str, str] = {}
             combined = 0
             for stream in ("stdout", "stderr"):

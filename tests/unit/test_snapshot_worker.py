@@ -23,6 +23,17 @@ from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 
 
+def test_procedure_credential_grant_is_part_of_the_selected_snapshot_digest():
+    snapshot = {
+        "content": "Use a declared credential only when approved.",
+        "required_tools": [],
+        "required_permissions": [],
+        "credential_names": ["API_TOKEN"],
+    }
+    no_grant = {**snapshot, "credential_names": []}
+    assert snapshot_digest(snapshot) != snapshot_digest(no_grant)
+
+
 def setup(root, *, selected_script=False):
     project = root / "project"
     project.mkdir()

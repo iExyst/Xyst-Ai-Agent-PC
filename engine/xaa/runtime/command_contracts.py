@@ -1,7 +1,8 @@
 """User-granted command profiles and model arguments are separate authority domains."""
 
+import re
 import sys
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -67,6 +68,7 @@ class CommandIntent(CommandArguments):
     )
     procedure_skill_id: str | None = Field(default=None, pattern=r"^[a-f0-9-]{36}$")
     procedure_version: int | None = Field(default=None, ge=1, le=128)
+    procedure_credential_names: list[str] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def paired_procedure_environment(self) -> "CommandIntent":
@@ -87,6 +89,34 @@ class CommandIntent(CommandArguments):
             raise ValueError("Procedure Node environments are available only in WSL.")
         if (self.procedure_skill_id is None) != (self.procedure_version is None):
             raise ValueError("Selected procedure identity fields must be paired.")
+        if len(self.procedure_credential_names) != len(set(self.procedure_credential_names)) or any(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name) is None
+            for name in self.procedure_credential_names
+        ):
+            raise ValueError("Procedure credential grant names are invalid or duplicated.")
+        if self.procedure_credential_names and self.procedure_skill_id is None:
+            raise ValueError("Procedure credentials require an exact selected procedure identity.")
+        if self.procedure_credential_names:
+            script = PurePosixPath(self.argv[1].replace("\\", "/")) if len(self.argv) > 1 else None
+            root = f"__xaa_selected_skill__/{self.procedure_skill_id}/v{self.procedure_version}"
+            expected_interpreter = {
+                ".py": {"python", "python3"},
+                ".sh": {"bash", "sh"},
+                ".js": {"node", "nodejs"},
+                ".mjs": {"node", "nodejs"},
+                ".cjs": {"node", "nodejs"},
+            }
+            if (
+                script is None
+                or script.is_absolute()
+                or ".." in script.parts
+                or not script.as_posix().startswith(root + "/")
+                or self.argv[0].replace("\\", "/").rsplit("/", 1)[-1].casefold()
+                not in expected_interpreter.get(script.suffix.casefold(), set())
+            ):
+                raise ValueError(
+                    "Procedure credentials may be granted only to a selected procedure script command."
+                )
         if self.procedure_node_environment_digest is not None and self.procedure_skill_id is None:
             raise ValueError("A Node environment requires an exact selected procedure identity.")
         return self

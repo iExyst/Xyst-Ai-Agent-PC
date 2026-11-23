@@ -27,6 +27,7 @@ on:
           - wsl-node
           - wsl-python
           - wsl-specialist-profile
+          - wsl-procedure-credentials
         default: all
         required: true
 
@@ -762,7 +763,7 @@ jobs:
           retention-days: 90
 
   wsl-procedure-acceptance:
-    if: github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'wsl-node' || inputs.acceptance == 'wsl-python' || inputs.acceptance == 'wsl-specialist-profile')
+    if: github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'wsl-node' || inputs.acceptance == 'wsl-python' || inputs.acceptance == 'wsl-specialist-profile' || inputs.acceptance == 'wsl-procedure-credentials')
     runs-on: windows-latest
     timeout-minutes: 35
     env:
@@ -830,11 +831,23 @@ jobs:
         if: inputs.acceptance == 'wsl-specialist-profile'
         run: uv run python scripts/specialist_dependency_environment_diagnostic.py --distribution Ubuntu-24.04 --report-root .acceptance/specialist-dependency-environment-${{ github.run_id }}
         timeout-minutes: 12
+      - name: Verify owner-approved procedure credential delivery and output suppression
+        if: inputs.acceptance == 'wsl-procedure-credentials'
+        run: uv run python scripts/wsl_procedure_credential_acceptance.py --distribution Ubuntu-24.04 --report .acceptance/wsl-procedure-credentials-${{ github.run_id }}/report.json
+        timeout-minutes: 10
       - uses: actions/upload-artifact@v4
         if: always() && inputs.acceptance == 'wsl-specialist-profile'
         with:
           name: selected-specialist-profile-script-${{ github.run_id }}
           path: .acceptance/selected-specialist-profile-script-${{ github.run_id }}/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.acceptance == 'wsl-procedure-credentials'
+        with:
+          name: wsl-procedure-credentials-${{ github.run_id }}
+          path: .acceptance/wsl-procedure-credentials-${{ github.run_id }}/report.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 90

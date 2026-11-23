@@ -56,6 +56,49 @@ def ready(store, run, owner, project, call="call"):
     return journal, intent, snapshot
 
 
+def test_procedure_credential_grant_is_bound_to_the_selected_script(workspace_tmp_path):
+    store, run, owner, _project = setup(workspace_tmp_path)
+    skill_id = str(uuid4())
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run,
+            "procedure.selected",
+            {
+                "skill_id": skill_id,
+                "version": 2,
+                "purpose": "active_use",
+                "credential_names": ["API_TOKEN"],
+                "snapshot_sha256": "a" * 64,
+            },
+        )
+    journal = CommandJournal(store)
+    intent = journal.reserve(
+        run,
+        owner,
+        "selected-script",
+        {
+            "argv": [
+                "python3",
+                f"__xaa_selected_skill__/{skill_id}/v2/scripts/check.py",
+            ]
+        },
+        idempotency_key="selected-script",
+    )
+    assert intent.procedure_credential_names == ["API_TOKEN"]
+    assert intent.procedure_skill_id == skill_id
+    assert intent.procedure_version == 2
+
+    with pytest.raises(ValidationError, match="only to a selected procedure script"):
+        journal.reserve(
+            run,
+            owner,
+            "unrelated-command",
+            {"argv": ["python3", "-c", "print('unrelated')"]},
+            idempotency_key="unrelated-command",
+        )
+
+
 def outcome(store, run, owner, intent, snapshot):
     out = b"literal untrusted output\n"
     err = b"test passed\n"

@@ -112,6 +112,7 @@ class WSLTransport:
         *,
         deadline: float,
         on_output: Callable[[str, bytes], Awaitable[None]] | None = None,
+        procedure_secrets: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         self.require_intent(intent)
         remaining = deadline - time.monotonic()
@@ -124,6 +125,20 @@ class WSLTransport:
             "max_seconds": intent.max_seconds,
             "snapshot_b64": base64.b64encode(snapshot.to_bytes()).decode("ascii"),
         }
+        if intent.procedure_credential_names:
+            if (
+                procedure_secrets is None
+                or sorted(procedure_secrets) != sorted(intent.procedure_credential_names)
+                or intent.procedure_skill_id is None
+                or intent.procedure_version is None
+            ):
+                raise PermissionError(
+                    "Procedure credential values do not match the saved run grant."
+                )
+            request["procedure_credential_names"] = intent.procedure_credential_names
+            request["procedure_credentials"] = procedure_secrets
+        elif procedure_secrets:
+            raise PermissionError("Procedure credential values have no matching owner grant.")
         if intent.procedure_environment_digest is not None:
             request["procedure_environment_digest"] = intent.procedure_environment_digest
             request["procedure_environment_tree_sha256"] = intent.procedure_environment_tree_sha256
@@ -132,6 +147,7 @@ class WSLTransport:
             request["procedure_node_environment_tree_sha256"] = (
                 intent.procedure_node_environment_tree_sha256
             )
+        if intent.procedure_skill_id is not None:
             request["procedure_skill_id"] = intent.procedure_skill_id
             request["procedure_version"] = intent.procedure_version
         payload = json.dumps(request).encode("utf-8")

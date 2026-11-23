@@ -92,17 +92,36 @@ def run(
     node_environment_fields = {
         "procedure_node_environment_digest",
         "procedure_node_environment_tree_sha256",
+    }
+    procedure_identity_fields = {
         "procedure_skill_id",
         "procedure_version",
     }
+    credential_fields = {"procedure_credential_names", "procedure_credentials"}
     request_fields = frozenset(request)
-    if request_fields not in {
-        frozenset(required_fields),
-        frozenset(required_fields | environment_fields),
-        frozenset(required_fields | node_environment_fields),
-        frozenset(required_fields | environment_fields | node_environment_fields),
-    }:
+    optional_fields = frozenset(
+        environment_fields | node_environment_fields | procedure_identity_fields | credential_fields
+    )
+    if (
+        not required_fields <= request_fields
+        or not request_fields <= required_fields | optional_fields
+    ):
         raise ValueError("Invalid execution request fields.")
+    for paired_fields in (
+        environment_fields,
+        node_environment_fields,
+        procedure_identity_fields,
+        credential_fields,
+    ):
+        if bool(paired_fields & request_fields) != (paired_fields <= request_fields):
+            raise ValueError("Execution request fields must be supplied in complete pairs.")
+    if procedure_identity_fields <= request_fields and (
+        not isinstance(request["procedure_skill_id"], str)
+        or re.fullmatch(r"[a-f0-9-]{36}", request["procedure_skill_id"]) is None
+        or type(request["procedure_version"]) is not int
+        or not 1 <= request["procedure_version"] <= 128
+    ):
+        raise ValueError("Selected procedure identity is invalid.")
     identity = execution_id(request["execution_id"])
     raw_arguments = request["argv"]
     if not isinstance(raw_arguments, list):
@@ -118,6 +137,60 @@ def run(
     seconds = request["max_seconds"]
     if type(seconds) is not int or not 1 <= seconds <= 30:
         raise ValueError("Command runtime must be 1..30 seconds.")
+    procedure_credentials: dict[str, str] = {}
+    if credential_fields <= request_fields:
+        raw_names = request["procedure_credential_names"]
+        raw_credentials = request["procedure_credentials"]
+        if not isinstance(raw_names, list) or not isinstance(raw_credentials, dict):
+            raise ValueError("Procedure credential values do not match the exact run grant.")
+        names = cast(list[object], raw_names)
+        credential_items = cast(dict[object, object], raw_credentials)
+        if (
+            not names
+            or len(names) > 32
+            or any(
+                not isinstance(name, str)
+                or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name) is None
+                for name in names
+            )
+            or len(set(names)) != len(names)
+            or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                for key, value in credential_items.items()
+            )
+            or set(names) != set(credential_items)
+            or "procedure_skill_id" not in request_fields
+        ):
+            raise ValueError("Procedure credential values do not match the exact run grant.")
+        procedure_credentials = cast(dict[str, str], raw_credentials)
+        if any(
+            not value or "\0" in value or len(value.encode("utf-8")) > 8192
+            for value in procedure_credentials.values()
+        ):
+            raise ValueError("Procedure credential values are outside their allowed bounds.")
+        if sum(len(value.encode("utf-8")) for value in procedure_credentials.values()) > 16384:
+            raise ValueError("Procedure credential grant exceeds its aggregate limit.")
+        script = Path(arguments[1].replace("\\", "/")) if len(arguments) > 1 else None
+        expected_interpreter = {
+            ".py": {"python", "python3"},
+            ".sh": {"bash", "sh"},
+            ".js": {"node", "nodejs"},
+            ".mjs": {"node", "nodejs"},
+            ".cjs": {"node", "nodejs"},
+        }
+        expected_root = (
+            f"__xaa_selected_skill__/{request['procedure_skill_id']}"
+            f"/v{request['procedure_version']}"
+        )
+        if (
+            script is None
+            or script.is_absolute()
+            or ".." in script.parts
+            or not script.as_posix().startswith(expected_root + "/")
+            or arguments[0].replace("\\", "/").rsplit("/", 1)[-1].casefold()
+            not in expected_interpreter.get(script.suffix.casefold(), set())
+        ):
+            raise ValueError("Procedure credentials are allowed only for the selected script.")
     encoded_snapshot = request["snapshot_b64"]
     if not isinstance(encoded_snapshot, str):
         raise TypeError("Missing snapshot wire data.")
@@ -164,17 +237,34 @@ def run(
         if node_environment_path is not None
         else None
     )
+    withhold_output = bool(procedure_credentials)
     stage = BASE / identity
     process: subprocess.Popen[bytes] | None = None
     result: dict[str, Any] = {}
     claimed = False
     try:
         with journal.locked(identity):
-            journal.claim(identity, request)
+            journal_request = {
+                key: value for key, value in request.items() if key != "procedure_credentials"
+            }
+            journal.claim(identity, journal_request)
             claimed = True
             stage.mkdir(mode=0o700, exist_ok=False)
             source = stage / "input"
             codec["materialize_snapshot"](snapshot, source)
+            credential_file: Path | None = None
+            if procedure_credentials:
+                credential_file = stage / "procedure-credentials.json"
+                descriptor = os.open(
+                    credential_file,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o444,
+                )
+                with os.fdopen(descriptor, "wb") as target:
+                    target.write(json.dumps(procedure_credentials).encode("utf-8"))
+                    target.flush()
+                    os.fsync(target.fileno())
+                os.chmod(credential_file, 0o444)
             unit = f"xaa-exec-{identity}.service"
             command = [
                 "/usr/bin/systemd-run",
@@ -203,9 +293,15 @@ def run(
                     environment_path,
                     node_environment_path,
                     procedure_modules_link,
+                    credential_file,
                 )
                 if node_environment_path is not None
-                else profile["bubblewrap_arguments"](source, arguments, environment_path)
+                else profile["bubblewrap_arguments"](
+                    source,
+                    arguments,
+                    environment_path,
+                    procedure_credentials_file=credential_file,
+                )
             )
             started = time.monotonic()
             process = subprocess.Popen(
@@ -240,9 +336,10 @@ def run(
                         selector.unregister(key.fileobj)
                         continue
                     remaining = MAX_OUTPUT_BYTES - total
-                    output[key.data].extend(chunk[:remaining])
+                    if not withhold_output:
+                        output[key.data].extend(chunk[:remaining])
                     total += min(len(chunk), remaining)
-                    if emit_output is not None and remaining > 0:
+                    if emit_output is not None and remaining > 0 and not withhold_output:
                         emit_output(key.data, chunk[:remaining])
                     if len(chunk) > remaining and reason == "finished":
                         reason = "output_limit"
@@ -258,6 +355,12 @@ def run(
         ).stdout.splitlines()
         metadata = dict(line.split("=", 1) for line in unit_state if "=" in line)
         unit_result = metadata.get("Result", "success" if exit_code == 0 else "unknown")
+        if withhold_output:
+            marker = b"[command output withheld because procedure credentials were authorized]"
+            for stream_name in ("stdout", "stderr"):
+                output[stream_name].extend(marker)
+                if emit_output is not None:
+                    emit_output(stream_name, marker)
         if reason == "finished" and unit_result in {"timeout", "oom-kill", "signal", "resources"}:
             reason = unit_result
         result = {

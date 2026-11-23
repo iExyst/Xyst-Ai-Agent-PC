@@ -41,7 +41,7 @@ export function ProcedureCredentialsPanel({client,skillId,version}:{client:Engin
 
   return <section aria-label="Procedure credential readiness">
     <h4>Procedure credentials</h4>
-    <p>Credential values are stored in Windows Credential Manager and never returned by the API. Saving a value records availability only; procedures do not receive these credentials.</p>
+    <p>Credential values are stored in Windows Credential Manager and never returned by the API. They are available to a procedure only when you grant specific names for a single run; command output is then withheld from the model and saved run history.</p>
     {!status&&<p role="status">Loading declared credential names…</p>}
     {status&&!status.credential_store_available&&<p role="status">Windows Credential Manager is unavailable.</p>}
     {status?.credentials.map(item=><div className="procedure-credential-row" key={item.env_name}>

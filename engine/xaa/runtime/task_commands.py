@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from xaa.credentials import CredentialStore
 from xaa.runtime.command_contracts import CommandArguments
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.command_transport_factory import discover_command_transport
@@ -227,6 +228,7 @@ async def execute_task_command(
     *,
     deadline: float,
     model_call_id: str,
+    credential_store: CredentialStore | None = None,
 ) -> dict[str, Any]:
     parsed = CommandArguments.model_validate(arguments)
     if deadline <= time.monotonic():
@@ -240,7 +242,9 @@ async def execute_task_command(
     transport = await discover_command_transport(grant, deadline=deadline)
     if transport.profile_sha256 != grant.profile_sha256:
         raise PermissionError("Execution profile changed after authorization.")
-    return await CommandController(store, transport, task_scope=scope).execute(
+    return await CommandController(
+        store, transport, task_scope=scope, credential_store=credential_store
+    ).execute(
         scope.run_id,
         scope.parent_token,
         call_id,

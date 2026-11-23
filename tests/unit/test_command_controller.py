@@ -1,15 +1,18 @@
 import asyncio
 import base64
 import hashlib
+import json
 import os
 import subprocess
 import time
+from uuid import uuid4
 
 import pytest
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.states import RunState
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import LeaseLost, RunStore
+from xaa.storage.skills import snapshot_digest
 
 
 class FixtureTransport:
@@ -84,6 +87,85 @@ async def test_controller_commits_only_registered_matching_output(workspace_tmp_
     )
     assert result["succeeded"] is True
     assert len(store.list_artifacts(run_id)) == 3
+
+
+async def test_controller_reads_only_run_approved_procedure_credentials_and_saves_no_output(
+    workspace_tmp_path,
+):
+    secret = "procedure-secret-value-917a"
+    output_marker = b"[command output withheld because procedure credentials were authorized]"
+    skill_id = str(uuid4())
+    profile = f"procedure:{skill_id}:API_TOKEN"
+
+    class FakeCredentials:
+        def get(self, name):
+            assert name == profile
+            return secret
+
+    class CredentialTransport(FixtureTransport):
+        async def run(
+            self, intent, snapshot, *, deadline, on_output=None, procedure_secrets=None
+        ):
+            assert intent.procedure_credential_names == ["API_TOKEN"]
+            assert procedure_secrets == {"API_TOKEN": secret}
+            if on_output is not None:
+                await on_output("stdout", output_marker)
+            return {
+                "execution_id": intent.execution_id,
+                "snapshot_sha256": snapshot.sha256,
+                "filter_sha256": "f" * 64,
+                "termination_reason": "finished",
+                "exit_code": 0,
+                "supervisor_exit_code": 0,
+                "succeeded": True,
+                "output_complete": True,
+                "cleanup_confirmed": True,
+                "elapsed_seconds": 0.1,
+                "stdout_b64": base64.b64encode(output_marker).decode(),
+                "stderr_b64": base64.b64encode(output_marker).decode(),
+                "stdout_bytes": len(output_marker),
+                "stderr_bytes": len(output_marker),
+                "stdout_sha256": hashlib.sha256(output_marker).hexdigest(),
+                "stderr_sha256": hashlib.sha256(output_marker).hexdigest(),
+            }
+
+    transport = CredentialTransport()
+    controller, store, run_id, token, _project = setup(workspace_tmp_path, transport)
+    controller.credential_store = FakeCredentials()  # type: ignore[assignment]
+    selected = {
+        "skill_id": skill_id,
+        "version": 1,
+        "name": "credential fixture",
+        "content": "Run its selected script.",
+        "required_tools": [],
+        "required_permissions": [],
+        "purpose": "active_use",
+        "credential_names": ["API_TOKEN"],
+        "assets": [],
+    }
+    selected["snapshot_sha256"] = snapshot_digest(selected)
+    with store.connection() as connection:
+        store.record_event(connection, run_id, "procedure.selected", selected)
+
+    script = f"__xaa_selected_skill__/{skill_id}/v1/scripts/check.py"
+    result = await controller.execute(
+        run_id,
+        token,
+        "credential-command",
+        {"argv": ["python3", script]},
+        idempotency_key="credential-command",
+        deadline=time.monotonic() + 15,
+    )
+    assert result["succeeded"] is True
+    events = store.list_events(run_id)
+    output_events = [event for event in events if event["event_type"] == "execution.output.delta"]
+    assert output_events
+    assert secret not in json.dumps(output_events)
+    assert base64.b64encode(secret.encode()).decode() not in json.dumps(output_events)
+    assert all(
+        base64.b64decode(event["payload"]["chunk_b64"]) == output_marker
+        for event in output_events
+    )
     assert not store.unresolved_tool_calls(run_id)
 
 

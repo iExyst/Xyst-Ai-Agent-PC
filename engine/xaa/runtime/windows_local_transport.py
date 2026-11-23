@@ -348,6 +348,7 @@ class WindowsLocalTransport:
         *,
         deadline: float,
         on_output: Callable[[str, bytes], Awaitable[None]] | None = None,
+        procedure_secrets: dict[str, str] | None = None,
         on_protocol_frame: Callable[[bytes], Awaitable[bytes | None]] | None = None,
         on_workspace_result: Callable[[Path], Awaitable[None]] | None = None,
         isolated_python_worker: bool = False,
@@ -373,6 +374,22 @@ class WindowsLocalTransport:
             raise ValueError("Windows isolated workspace limit is outside its supported bound.")
         if streaming_protocol and on_protocol_frame is None:
             raise ValueError("Streaming protocol mode requires an interactive frame handler.")
+        if procedure_secrets:
+            if (
+                sorted(procedure_secrets) != sorted(intent.procedure_credential_names)
+                or intent.procedure_skill_id is None
+                or intent.procedure_version is None
+                or on_protocol_frame is not None
+                or streaming_protocol
+                or isolated_python_worker
+            ):
+                raise PermissionError(
+                    "Procedure credentials require a matching owner grant for a regular isolated command."
+                )
+        elif intent.procedure_credential_names:
+            raise PermissionError(
+                "Approved procedure credentials are unavailable to the command worker."
+            )
         if type(max_protocol_bytes) is not int or not 1 <= max_protocol_bytes <= 512 * 1024 * 1024:
             raise ValueError("Windows protocol stream limit must be 1..512 MiB.")
         if deadline - time.monotonic() < duration:
@@ -477,6 +494,8 @@ class WindowsLocalTransport:
             # the matching base from GetAppContainerFolderPath so this works
             # even when the engine's own LOCALAPPDATA is redirected for tests.
             child_environment["LOCALAPPDATA"] = str(access.private_temp_path.parent.parents[2])
+            if procedure_secrets:
+                child_environment.update(procedure_secrets)
             shim_args = (
                 ["--mcp-appcontainer-shim"]
                 if getattr(sys, "frozen", False)
@@ -597,14 +616,15 @@ class WindowsLocalTransport:
                         if name == "stdout":
                             stdout_bytes += len(chunk)
                             stdout_digest.update(chunk)
-                        target.extend(chunk)
+                        if not procedure_secrets:
+                            target.extend(chunk)
                         if streamed > max_output_bytes:
                             if max_output_bytes == MAX_OUTPUT_BYTES:
                                 raise ValueError("Windows command output exceeded the 1 MiB limit.")
                             raise ValueError(
                                 "Windows command output exceeded its configured limit."
                             )
-                    if on_output is not None:
+                    if on_output is not None and not procedure_secrets:
                         await on_output(name, chunk)
                 if name == "stdout" and protocol_buffer:
                     raise RuntimeError("Windows command protocol ended with an incomplete frame.")
@@ -651,6 +671,15 @@ class WindowsLocalTransport:
                 normal_exit = exit_code if output_complete else None
             if on_workspace_result is not None and output_complete and exit_code == 0:
                 await on_workspace_result(workspace)
+            if procedure_secrets:
+                marker = b"[command output withheld because procedure credentials were authorized]"
+                stdout[:] = marker
+                stderr[:] = marker
+                stdout_digest = hashlib.sha256(marker)
+                stdout_bytes = len(marker)
+                if on_output is not None:
+                    await on_output("stdout", marker)
+                    await on_output("stderr", marker)
             receipt: dict[str, Any] = {
                 "execution_id": intent.execution_id,
                 "snapshot_sha256": snapshot.sha256,

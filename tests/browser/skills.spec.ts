@@ -76,6 +76,9 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
   await expect(credentialPanel).not.toContainText(credential);
   await credentialPanel.getByRole('button',{name:'Clear saved credential'}).first().click();
   await expect(credentialPanel).toContainText('Not configured.');
+  await credentialPanel.getByLabel(/API_TOKEN/).fill(credential);
+  await credentialPanel.getByRole('button',{name:'Save securely'}).first().click();
+  await expect(credentialPanel.getByLabel(/API_TOKEN/)).toHaveValue('');
   await panel.getByRole('button',{name:'Check Python dependencies in WSL',exact:true}).click();
   await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('3.12.0');
   await expect(panel.getByRole('region',{name:'Restricted WSL Python dependency readiness'})).toContainText('requests>=2.0: available (2.32.0)');
@@ -138,6 +141,12 @@ test('resolve, approve and install imported Python dependencies in WSL',async({p
   await expect(npmEnvironmentChoice.locator('option')).toHaveCount(3);
   await npmEnvironmentChoice.selectOption('8'.repeat(64));
   await expect(npmEnvironmentChoice).toHaveValue('8'.repeat(64));
+  const credentialGrant=page.getByRole('group',{name:'Procedure credential access'});
+  await expect(credentialGrant).toContainText('This approval applies only to this procedure version and run.');
+  await expect(credentialGrant).toContainText('Command output is withheld from the model and saved run history while credentials are available.');
+  await credentialGrant.getByRole('checkbox',{name:/API_TOKEN/}).check();
+  await expect(credentialGrant.getByRole('checkbox',{name:/API_TOKEN/})).toBeChecked();
+  await expect(credentialGrant).not.toContainText(credential);
   await navigateMainSection(page,'Skills');
   await panel.getByRole('button',{name:'Inspect Summarize',exact:true}).click();
   const lockDetails=lockReview.locator('details').first();

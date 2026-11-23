@@ -312,6 +312,7 @@ class CommandJournal:
             procedure_environment: dict[str, Any] | None = None
             procedure_node_environment: dict[str, Any] | None = None
             procedure_identity: tuple[str, int] | None = None
+            procedure_credential_names: list[str] = []
             if self.purpose == "agent" and grant.backend == "wsl-bubblewrap-v1":
                 selected = connection.execute(
                     "SELECT payload FROM run_events WHERE run_id=? "
@@ -331,6 +332,17 @@ class CommandJournal:
                             and 1 <= version <= 128
                         ):
                             procedure_identity = (skill_id, version)
+                            raw_credential_names = selected_payload.get("credential_names", [])
+                            if not isinstance(raw_credential_names, list):
+                                raise PermissionError(
+                                    "Selected procedure credential grant is invalid."
+                                )
+                            credential_names = cast(list[object], raw_credential_names)
+                            if any(not isinstance(name, str) for name in credential_names):
+                                raise PermissionError(
+                                    "Selected procedure credential grant is invalid."
+                                )
+                            procedure_credential_names = cast(list[str], credential_names)
                         raw_environment = selected_payload.get("python_environment")
                         if isinstance(raw_environment, dict):
                             procedure_environment = cast(dict[str, Any], raw_environment)
@@ -518,14 +530,17 @@ class CommandJournal:
                 ),
                 procedure_skill_id=(
                     procedure_identity[0]
-                    if procedure_node_environment is not None and procedure_identity is not None
+                    if procedure_identity is not None
+                    and (procedure_node_environment is not None or procedure_credential_names)
                     else None
                 ),
                 procedure_version=(
                     procedure_identity[1]
-                    if procedure_node_environment is not None and procedure_identity is not None
+                    if procedure_identity is not None
+                    and (procedure_node_environment is not None or procedure_credential_names)
                     else None
                 ),
+                procedure_credential_names=procedure_credential_names,
             )
             now = utc_now()
             connection.execute(

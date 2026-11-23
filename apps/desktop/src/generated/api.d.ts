@@ -4750,6 +4750,8 @@ export interface components {
         };
         /** SkillTrial */
         SkillTrial: {
+            /** Credential Names */
+            credential_names?: string[];
             /**
              * Purpose
              * @default evaluation_trial
@@ -4763,6 +4765,8 @@ export interface components {
         };
         /** SkillTrialRecord */
         SkillTrialRecord: {
+            /** Credential Names */
+            credential_names?: string[];
             /** Name */
             name: string;
             /** Npm Environment */

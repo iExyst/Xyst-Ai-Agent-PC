@@ -1961,6 +1961,7 @@ class SpecialistRunner:
                         arguments,
                         deadline=deadline,
                         model_call_id=call["id"],
+                        credential_store=self.credential_store,
                     )
                     self.tasks.record_read_worker_event(
                         run_id,

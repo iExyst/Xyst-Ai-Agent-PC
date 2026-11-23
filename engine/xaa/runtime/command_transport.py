@@ -26,6 +26,7 @@ class CommandTransport(Protocol):
         *,
         deadline: float,
         on_output: OutputCallback | None = None,
+        procedure_secrets: dict[str, str] | None = None,
     ) -> dict[str, Any]: ...
 
     async def control(
