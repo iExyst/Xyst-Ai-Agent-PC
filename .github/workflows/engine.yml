@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       acceptance:
-        description: Windows package or offline WSL dependency acceptance
+        description: Windows package, WSL dependency, or credential acceptance
         type: choice
         options:
           - all
@@ -28,6 +28,7 @@ on:
           - wsl-python
           - wsl-specialist-profile
           - wsl-procedure-credentials
+          - wsl-specialist-credentials
         default: all
         required: true
 
@@ -763,7 +764,7 @@ jobs:
           retention-days: 90
 
   wsl-procedure-acceptance:
-    if: github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'wsl-node' || inputs.acceptance == 'wsl-python' || inputs.acceptance == 'wsl-specialist-profile' || inputs.acceptance == 'wsl-procedure-credentials')
+    if: github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'wsl-node' || inputs.acceptance == 'wsl-python' || inputs.acceptance == 'wsl-specialist-profile' || inputs.acceptance == 'wsl-procedure-credentials' || inputs.acceptance == 'wsl-specialist-credentials')
     runs-on: windows-latest
     timeout-minutes: 35
     env:
@@ -835,6 +836,10 @@ jobs:
         if: inputs.acceptance == 'wsl-procedure-credentials'
         run: uv run python scripts/wsl_procedure_credential_acceptance.py --distribution Ubuntu-24.04 --report .acceptance/wsl-procedure-credentials-${{ github.run_id }}/report.json
         timeout-minutes: 10
+      - name: Verify specialist procedure credential delivery and output suppression
+        if: inputs.acceptance == 'wsl-specialist-credentials'
+        run: uv run python scripts/wsl_specialist_credential_acceptance.py --distribution Ubuntu-24.04 --report .acceptance/wsl-specialist-credentials-${{ github.run_id }}/report.json
+        timeout-minutes: 10
       - uses: actions/upload-artifact@v4
         if: always() && inputs.acceptance == 'wsl-specialist-profile'
         with:
@@ -848,6 +853,14 @@ jobs:
         with:
           name: wsl-procedure-credentials-${{ github.run_id }}
           path: .acceptance/wsl-procedure-credentials-${{ github.run_id }}/report.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.acceptance == 'wsl-specialist-credentials'
+        with:
+          name: wsl-specialist-credentials-${{ github.run_id }}
+          path: .acceptance/wsl-specialist-credentials-${{ github.run_id }}/report.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 90
