@@ -340,3 +340,93 @@ async def test_coordinator_commits_same_response_draft_batch_as_one_storage_unit
     assert {item["name"] for item in procedures} == {"Candidate 1", "Candidate 2"}
     assert all(item["lifecycle_state"] == "candidate" for item in procedures)
     assert not store.unresolved_tool_calls(run_id)
+
+
+@pytest.mark.asyncio
+async def test_coordinator_rejects_mixed_draft_and_revision_batch_without_partial_write(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-mixed-batch.sqlite3")
+    skills = SkillStore(store)
+    selected = skills.create(_draft("Selected procedure"))
+    run_id = str(
+        store.create_run(
+            objective="Draft a new procedure and revise the selected one.",
+            acceptance_criteria=[],
+            workspace=".",
+            mode="observe",
+            model="fixture",
+            procedure_trial={"skill_id": selected["id"], "version": 1},
+            allow_procedure_drafting=True,
+            allow_procedure_revision=True,
+        )["id"]
+    )
+    calls = [
+        {
+            "id": "mixed-draft-call",
+            "type": "function",
+            "function": {
+                "name": "procedure_draft",
+                "arguments": json.dumps(_draft("New candidate").model_dump(mode="json")),
+            },
+        },
+        {
+            "id": "mixed-revision-call",
+            "type": "function",
+            "function": {
+                "name": "procedure_revise",
+                "arguments": json.dumps(
+                    {
+                        "skill_id": selected["id"],
+                        "expected_version": 1,
+                        "old_string": "Read the selected configuration",
+                        "new_string": "Read the approved configuration",
+                    }
+                ),
+            },
+        },
+    ]
+
+    class MixedManagerProvider(LMStudioProvider):
+        requests = 0
+
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            self.requests += 1
+            if self.requests == 1:
+                available = {item["function"]["name"] for item in (tools or [])}
+                assert {"procedure_draft", "procedure_revise"} <= available
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
+            return {"choices": [{"message": {"role": "assistant", "content": "Batch rejected."}}]}
+
+    provider = MixedManagerProvider()
+    try:
+        await Coordinator(store, provider).execute(run_id)
+    finally:
+        await provider.close()
+
+    assert len(skills.list()) == 1
+    assert skills.get(selected["id"])["latest_version"] == 1
+    with store.connection() as connection:
+        failures = connection.execute(
+            "SELECT provider_call_id,state,error FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
+            (run_id,),
+        ).fetchall()
+    assert [(row["provider_call_id"], row["state"]) for row in failures] == [
+        ("mixed-draft-call", "failed"),
+        ("mixed-revision-call", "failed"),
+    ]
+    assert all(
+        json.loads(row["error"])["code"] == "incompatible_procedure_manager_batch"
+        for row in failures
+    )
+    assert not store.unresolved_tool_calls(run_id)

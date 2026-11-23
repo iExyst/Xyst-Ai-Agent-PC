@@ -1463,10 +1463,26 @@ class Coordinator:
             return True
 
         manager_names = {
+            "procedure_draft",
             "procedure_resource_revise",
             "procedure_resource_remove",
             "procedure_revise",
         }
+        manager_call_names = {call["function"]["name"] for call in calls}
+        if (
+            len(calls) > 1
+            and all(call.get("function", {}).get("name") in manager_names for call in calls)
+            and "procedure_draft" in manager_call_names
+            and len(manager_call_names) > 1
+        ):
+            results = record_batch_failure(
+                calls,
+                "incompatible_procedure_manager_batch",
+                "Procedure creation and edits must be handled in separate model batches.",
+            )
+            append_batch_results(calls, results)
+            return True
+
         if (
             len(calls) > 1
             and all(call.get("function", {}).get("name") in manager_names for call in calls)
