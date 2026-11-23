@@ -2517,6 +2517,91 @@ class RunStore:
             )
         return result
 
+    def record_tool_failure_batch(
+        self,
+        run_id: str,
+        token: str,
+        calls: list[tuple[str, str, Any]],
+        *,
+        code: str,
+        message: str,
+    ) -> list[dict[str, Any]]:
+        """Close a bounded rejected tool batch and journal every call atomically."""
+        call_ids = [call_id for call_id, _tool, _arguments in calls]
+        if (
+            not calls
+            or len(calls) > 8
+            or len(set(call_ids)) != len(call_ids)
+            or any(not call_id or len(call_id) > 128 for call_id in call_ids)
+        ):
+            raise ValueError("Failed tool batch call identities or size are invalid.")
+        now = utc_now()
+        results: list[dict[str, Any]] = []
+        error = {"code": code, "message": message}
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.require_lease(connection, run_id, token)
+            for call_id, _tool, _arguments in calls:
+                existing = connection.execute(
+                    "SELECT 1 FROM tool_calls WHERE run_id=? AND (provider_call_id=? OR idempotency_key=?)",
+                    (run_id, call_id, call_id),
+                ).fetchone()
+                if existing is not None:
+                    raise ValueError("Failed tool batch contains a previously used call ID.")
+                if connection.execute(
+                    "SELECT 1 FROM run_events WHERE run_id=? AND event_type='tool.executing' "
+                    "AND json_extract(payload,'$.call_id')=? LIMIT 1",
+                    (run_id, call_id),
+                ).fetchone():
+                    raise ValueError(
+                        "Effect may have started; destination reconciliation is required."
+                    )
+            task_key = (
+                f"{run_id}:{self.task_scope.task_id}" if self.task_scope is not None else None
+            )
+            for call_id, tool, arguments in calls:
+                result = {
+                    "ok": False,
+                    "effect": "not_started",
+                    "error": error,
+                }
+                connection.execute(
+                    "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) "
+                    "VALUES (?, ?, ?, ?, '1', ?, ?, 'failed', ?, ?, ?, ?, ?)",
+                    (
+                        str(uuid.uuid4()),
+                        task_key,
+                        run_id,
+                        tool,
+                        json.dumps(arguments, sort_keys=True),
+                        call_id,
+                        json.dumps(result),
+                        json.dumps(error),
+                        now,
+                        now,
+                        call_id,
+                    ),
+                )
+                self.record_event(
+                    connection,
+                    run_id,
+                    "tool.intended",
+                    {"call_id": call_id, "tool": tool, "internal": self.internal_tools},
+                )
+                self.record_event(
+                    connection,
+                    run_id,
+                    "tool.failed",
+                    {
+                        "call_id": call_id,
+                        "internal": self.internal_tools,
+                        "effect": "not_started",
+                        "code": code,
+                    },
+                )
+                results.append(result)
+        return results
+
     def record_tool_reconciled_not_applied(
         self, run_id: str, token: str, call_id: str, *, message: str
     ) -> dict[str, Any]:

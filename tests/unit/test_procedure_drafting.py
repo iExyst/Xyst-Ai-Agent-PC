@@ -159,6 +159,53 @@ def test_model_draft_batch_rolls_back_every_candidate_and_call_on_late_failure(
         )
 
 
+def test_rejected_tool_batch_failure_journal_rolls_back_as_a_unit(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-failed-batch-rollback.sqlite3")
+    run_id, owner = _run(store)
+    original_record_event = RunStore.record_event
+    events = 0
+
+    def fail_late_event(
+        connection: Any, event_run_id: str, kind: str, payload: dict[str, Any]
+    ) -> None:
+        nonlocal events
+        events += 1
+        if events == 3:
+            raise RuntimeError("fixture interruption")
+        original_record_event(connection, event_run_id, kind, payload)
+
+    monkeypatch.setattr(RunStore, "record_event", staticmethod(fail_late_event))
+    with pytest.raises(RuntimeError, match="fixture interruption"):
+        store.record_tool_failure_batch(
+            run_id,
+            owner,
+            [
+                ("failed-call-1", "procedure.draft", "{}"),
+                ("failed-call-2", "procedure.revise", "{}"),
+            ],
+            code="incompatible_procedure_manager_batch",
+            message="Separate procedure creation and edits.",
+        )
+
+    assert store.unresolved_tool_calls(run_id) == []
+    with store.connection() as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM tool_calls WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM run_events WHERE run_id=? AND event_type IN ('tool.intended','tool.failed')",
+                (run_id,),
+            ).fetchone()[0]
+            == 0
+        )
+
+
 def test_unapproved_run_cannot_create_model_draft(workspace_tmp_path: Path) -> None:
     store = RunStore(workspace_tmp_path / "procedure-draft-denied.sqlite3")
     run_id, owner = _run(store, authorized=False)

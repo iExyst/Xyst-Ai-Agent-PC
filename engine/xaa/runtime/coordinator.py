@@ -1370,7 +1370,7 @@ class Coordinator:
         def record_batch_failure(
             failed_calls: list[dict[str, Any]], code: str, message: str
         ) -> list[dict[str, Any]]:
-            results: list[dict[str, Any]] = []
+            failures: list[tuple[str, str, Any]] = []
             for failed_call in failed_calls:
                 name = failed_call["function"]["name"]
                 tool_name = {
@@ -1379,26 +1379,12 @@ class Coordinator:
                     "procedure_resource_remove": "procedure.resource_remove",
                     "procedure_revise": "procedure.revise",
                 }[name]
-                if not self.store.record_tool_intent(
-                    run_id,
-                    token,
-                    call_id=failed_call["id"],
-                    tool=tool_name,
-                    version="1",
-                    arguments=failed_call["function"]["arguments"],
-                    idempotency_key=failed_call["id"],
-                ):
-                    raise ValueError("Procedure edit batch failure requires reconciliation.")
-                results.append(
-                    self.store.record_tool_failure(
-                        run_id,
-                        token,
-                        failed_call["id"],
-                        code=code,
-                        message=message,
-                    )
+                failures.append(
+                    (failed_call["id"], tool_name, failed_call["function"]["arguments"])
                 )
-            return results
+            return self.store.record_tool_failure_batch(
+                run_id, token, failures, code=code, message=message
+            )
 
         def append_batch_results(
             batch_calls: list[dict[str, Any]], results: list[dict[str, Any]]
