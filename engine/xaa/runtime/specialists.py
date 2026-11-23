@@ -31,7 +31,10 @@ from xaa.runtime.executor import (
 from xaa.runtime.line_edit import WriteLinesArguments
 from xaa.runtime.mcp_manager import MCPInvocationError, MCPManager
 from xaa.runtime.planning import DelegateSubtasksArguments
-from xaa.runtime.snapshot_worker import selected_skill_script_paths
+from xaa.runtime.snapshot_worker import (
+    selected_skill_script_paths,
+    specialist_procedure_script_paths,
+)
 from xaa.runtime.specialist_workers import SpecialistWorkerRegistry
 from xaa.runtime.task_commands import (
     execute_task_command,
@@ -863,6 +866,12 @@ class SpecialistRunner:
         ]
         if len(text_input_ids) + len(image_input_ids) != len(task["input_artifacts"]):
             raise ValueError("A task has an unsupported assigned input artifact type.")
+        procedure_value = task.get("procedure_snapshot")
+        if procedure_value is not None and not isinstance(procedure_value, dict):
+            raise ValueError("Saved specialist procedure snapshot is invalid.")
+        procedure_snapshot = cast(dict[str, Any] | None, procedure_value)
+        if procedure_snapshot is not None:
+            validate_specialist_procedure_snapshot(procedure_snapshot)
         isolated = "workspace.write" in task["permission_scope"]
         saved_grant = run.get("command_grant")
         command_grant = (
@@ -874,7 +883,10 @@ class SpecialistRunner:
             and command_grant is not None
         )
         selected_script_paths = (
-            selected_skill_script_paths(self.store.procedure_trial(run_id))
+            [
+                *selected_skill_script_paths(self.store.procedure_trial(run_id)),
+                *specialist_procedure_script_paths(procedure_snapshot),
+            ]
             if commands and command_grant and command_grant.backend == "wsl-bubblewrap-v1"
             else []
         )
@@ -918,11 +930,6 @@ class SpecialistRunner:
         review_target_ids = list(
             dict.fromkeys([*task["dependencies"], *(item["local_id"] for item in subtasks)])
         )
-        procedure_snapshot = task.get("procedure_snapshot")
-        if procedure_snapshot is not None:
-            if not isinstance(procedure_snapshot, dict):
-                raise ValueError("Saved specialist procedure snapshot is invalid.")
-            validate_specialist_procedure_snapshot(cast(dict[str, Any], procedure_snapshot))
         prerequisites: list[dict[str, Any]] = []
         input_bytes = 0
         for dependency in task["dependencies"]:
@@ -1096,7 +1103,7 @@ class SpecialistRunner:
         if commands:
             script_hint = (
                 " Selected procedure scripts are available in the private command snapshot at: "
-                + ", ".join(selected_script_paths)
+                + ", ".join(dict.fromkeys(selected_script_paths))
                 + ". Invoke only with structured argv."
                 if selected_script_paths
                 else ""

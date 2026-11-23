@@ -11,12 +11,16 @@ from xaa.runtime.snapshot_worker import (
     add_selected_skill_scripts,
     capture_command_snapshot,
     selected_skill_script_paths,
+    specialist_procedure_script_paths,
 )
 from xaa.runtime.states import RunState
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot, capture_workspace
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import LeaseLost, RunStore
 from xaa.storage.skills import SkillAsset, SkillDraft, SkillStore, snapshot_digest
+from xaa.storage.specialist_profiles import SpecialistProfileStore
+from xaa.storage.tasks import TaskStore
 
 
 def setup(root, *, selected_script=False):
@@ -254,3 +258,49 @@ def test_selected_script_overlay_rejects_tampering_and_project_collisions():
     )
     with pytest.raises(ValueError, match="conflicts"):
         add_selected_skill_scripts(collision, selected_trial())
+
+
+def test_assigned_specialist_script_is_staged_from_frozen_task_snapshot(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-script.sqlite3")
+    profiles = SpecialistProfileStore(store)
+    script = b"print('specialist script')\n"
+    skill = SkillStore(store).create(
+        SkillDraft(
+            name="Specialist script fixture",
+            content="Run the test script when authorized.",
+            required_tools=[],
+            required_permissions=["workspace.read"],
+            assets=[
+                SkillAsset(
+                    path="scripts/check.py",
+                    content_base64=base64.b64encode(script).decode("ascii"),
+                    media_type="text/x-python",
+                    sha256=hashlib.sha256(script).hexdigest(),
+                )
+            ],
+        )
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skills SET lifecycle_state='active',active_version=1 WHERE id=?",
+            (skill["id"],),
+        )
+    profiles.set_procedure("executor", skill["id"])
+    run = store.create_run(
+        objective="Run assigned check",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="workspace",
+        model=None,
+    )
+    owner = store.acquire_lease(run["id"], "fixture")
+    TaskStore(store).save_plan(
+        run["id"], owner, [TaskDefinition(id="check", objective="Run check", role="executor")]
+    )
+    procedure = TaskStore(store).records(run["id"])[0]["procedure_snapshot"]
+    assert procedure is not None
+    source = WorkspaceSnapshot((SnapshotFile("input.txt", b"unchanged"),), (), ())
+    staged = add_selected_skill_scripts(source, None, procedure)
+    path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.py"
+    assert {item.path: item.content for item in staged.files}[path] == script
+    assert specialist_procedure_script_paths(procedure) == [path]

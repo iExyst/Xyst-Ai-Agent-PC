@@ -20,13 +20,17 @@ from xaa.runtime.tool_worker import FilesystemWorkerError, execute_filesystem
 from xaa.storage.commands import CommandJournal
 from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.skills import SkillAsset, SkillDraft, SkillStore
+from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 
 
-async def private_tasks(root, transport, *, command_permission=True, selected_script=False):
+async def private_tasks(
+    root, transport, *, command_permission=True, selected_script=False, specialist_script=False
+):
     procedure_trial = None
-    if selected_script:
-        skill_store = SkillStore(RunStore(root / "data" / "db.sqlite3"))
+    if selected_script or specialist_script:
+        runs = RunStore(root / "data" / "db.sqlite3")
+        skill_store = SkillStore(runs)
         script = b"print('selected specialist script')\n"
         skill = skill_store.create(
             SkillDraft(
@@ -44,7 +48,15 @@ async def private_tasks(root, transport, *, command_permission=True, selected_sc
                 ],
             )
         )
-        procedure_trial = {"skill_id": skill["id"], "version": 1}
+        if specialist_script:
+            with runs.connection() as connection:
+                connection.execute(
+                    "UPDATE skills SET lifecycle_state='active',active_version=1 WHERE id=?",
+                    (skill["id"],),
+                )
+            SpecialistProfileStore(runs).set_procedure("executor", skill["id"])
+        else:
+            procedure_trial = {"skill_id": skill["id"], "version": 1}
     _, store, run_id, owner, project = setup(root, transport, procedure_trial=procedure_trial)
     tasks = TaskStore(store)
     tasks.save_plan(
@@ -121,6 +133,44 @@ async def test_selected_procedure_script_is_staged_for_granted_private_task(
     selected = store.procedure_trial(run_id)
     assert selected is not None
     path = f"__xaa_selected_skill__/{selected['skill_id']}/v1/scripts/check.py"
+    assert {item.path: item.content for item in transport.snapshots[-1].files}[path] == (
+        b"print('selected specialist script')\n"
+    )
+    evidence = command_evidence(store, run_id, scope.task_id)
+    assert result["succeeded"]
+    assert evidence[0]["matches_current_private_tree"]
+
+
+async def test_specialist_assigned_script_is_staged_in_granted_private_task(workspace_tmp_path):
+    class InspectingTransport(FixtureTransport):
+        def __init__(self):
+            super().__init__()
+            self.snapshots = []
+
+        async def run(self, intent, snapshot, *, deadline, on_output=None):
+            self.snapshots.append(snapshot)
+            return await super().run(intent, snapshot, deadline=deadline, on_output=on_output)
+
+    transport = InspectingTransport()
+    store, run_id, owner, _, scopes = await private_tasks(
+        workspace_tmp_path, transport, specialist_script=True
+    )
+    scope = scopes[0]
+    result = await CommandController(store, transport, task_scope=scope).execute(
+        run_id,
+        owner,
+        "test-specialist-script",
+        {"argv": ["fixture"]},
+        idempotency_key="test-specialist-script",
+        deadline=time.monotonic() + 15,
+    )
+    procedure = next(
+        item["procedure_snapshot"]
+        for item in TaskStore(store).records(run_id)
+        if item["local_id"] == scope.task_id
+    )
+    assert procedure is not None
+    path = f"__xaa_selected_skill__/{procedure['skill_id']}/v1/scripts/check.py"
     assert {item.path: item.content for item in transport.snapshots[-1].files}[path] == (
         b"print('selected specialist script')\n"
     )

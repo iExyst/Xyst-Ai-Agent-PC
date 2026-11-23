@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import json
 import sys
 import time
 from pathlib import Path, PurePosixPath
@@ -25,18 +26,42 @@ from xaa.storage.runs import RunStore, TaskReadScope
 
 def selected_skill_script_resources(
     trial: dict[str, Any] | None,
+    specialist_procedure: dict[str, Any] | None = None,
 ) -> tuple[str, int, list[tuple[str, bytes]]] | None:
     """Return selected, integrity-checked Python/shell/Node resources in their immutable version."""
-    if trial is None:
+    if trial is None and specialist_procedure is None:
         return None
     from xaa.storage.skills import snapshot_digest
 
-    saved_digest = trial.get("snapshot_sha256")
-    if not isinstance(saved_digest, str) or snapshot_digest(trial) != saved_digest:
-        raise ValueError("Selected procedure snapshot failed its integrity check.")
-    skill_id = trial.get("skill_id")
-    version = trial.get("version")
-    assets = trial.get("assets", [])
+    assets: Any = []
+    if trial is not None:
+        saved_digest = trial.get("snapshot_sha256")
+        if not isinstance(saved_digest, str) or snapshot_digest(trial) != saved_digest:
+            raise ValueError("Selected procedure snapshot failed its integrity check.")
+        skill_id = trial.get("skill_id")
+        version = trial.get("version")
+        assets = trial.get("assets", [])
+    else:
+        from xaa.storage.tasks import validate_specialist_procedure_snapshot
+
+        assert specialist_procedure is not None
+        validate_specialist_procedure_snapshot(specialist_procedure)
+        skill_id = specialist_procedure.get("skill_id")
+        version = specialist_procedure.get("version")
+        resources = cast(list[dict[str, Any]], specialist_procedure.get("linked_resources", []))
+        assets = []
+        for resource in resources:
+            content = resource.get("content")
+            if not isinstance(content, str):
+                raise TypeError("Selected specialist script must be UTF-8 text.")
+            assets.append(
+                {
+                    "path": resource.get("path"),
+                    "media_type": resource.get("media_type"),
+                    "content_base64": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+                    "sha256": resource.get("sha256"),
+                }
+            )
     if not isinstance(skill_id, str) or type(version) is not int or not isinstance(assets, list):
         raise TypeError("Selected procedure identity or resources are invalid.")
 
@@ -85,21 +110,47 @@ def selected_skill_script_paths(trial: dict[str, Any] | None) -> list[str]:
     return [f"__xaa_selected_skill__/{skill_id}/v{version}/{path}" for path, _ in scripts]
 
 
+def specialist_procedure_script_paths(procedure: dict[str, Any] | None) -> list[str]:
+    """Return executable paths bound to an integrity-checked specialist task procedure."""
+    selected = selected_skill_script_resources(None, procedure)
+    if selected is None:
+        return []
+    skill_id, version, scripts = selected
+    return [f"__xaa_selected_skill__/{skill_id}/v{version}/{path}" for path, _ in scripts]
+
+
 def add_selected_skill_scripts(
-    snapshot: WorkspaceSnapshot, trial: dict[str, Any] | None
+    snapshot: WorkspaceSnapshot,
+    trial: dict[str, Any] | None,
+    specialist_procedure: dict[str, Any] | None = None,
 ) -> WorkspaceSnapshot:
     """Overlay integrity-checked selected executable resources into the private snapshot."""
-    selected = selected_skill_script_resources(trial)
-    if selected is None:
+    selections = [
+        selected
+        for selected in (
+            selected_skill_script_resources(trial),
+            selected_skill_script_resources(None, specialist_procedure)
+            if specialist_procedure is not None
+            else None,
+        )
+        if selected is not None
+    ]
+    if not selections:
         return snapshot
-    skill_id, version, scripts = selected
-    if not scripts:
+    staged_by_path: dict[str, bytes] = {}
+    for skill_id, version, scripts in selections:
+        for path, content in scripts:
+            relative = f"__xaa_selected_skill__/{skill_id}/v{version}/{path}"
+            previous = staged_by_path.get(relative)
+            if previous is not None and previous != content:
+                raise ValueError("Selected procedures conflict at the same staged script path.")
+            staged_by_path[relative] = content
+    if not staged_by_path:
         return snapshot
 
     staged: list[SnapshotFile] = []
     staged_dirs: set[str] = set()
-    for path, content in scripts:
-        relative = f"__xaa_selected_skill__/{skill_id}/v{version}/{path}"
+    for relative, content in sorted(staged_by_path.items()):
         checked = checked_path(relative)
         for parent in checked.parents:
             if str(parent) != ".":
@@ -209,7 +260,23 @@ def main() -> None:
                 base.excluded,
             )
     if request.purpose == "agent":
-        snapshot = add_selected_skill_scripts(snapshot, store.procedure_trial(request.run_id))
+        specialist_procedure: dict[str, Any] | None = None
+        if scope is not None:
+            from xaa.storage.tasks import validate_specialist_procedure_snapshot
+
+            with store.connection() as connection:
+                row = connection.execute(
+                    "SELECT procedure_snapshot FROM tasks WHERE run_id=? AND id=?",
+                    (request.run_id, f"{request.run_id}:{scope.task_id}"),
+                ).fetchone()
+            if row is None:
+                raise KeyError(scope.task_id)
+            if row["procedure_snapshot"]:
+                specialist_procedure = cast(dict[str, Any], json.loads(row["procedure_snapshot"]))
+                validate_specialist_procedure_snapshot(specialist_procedure)
+        snapshot = add_selected_skill_scripts(
+            snapshot, store.procedure_trial(request.run_id), specialist_procedure
+        )
     journal.snapshot_intent(request.run_id, request.owner, request.call_id)
     sys.stdout.buffer.write(snapshot.to_bytes())
     sys.stdout.buffer.flush()

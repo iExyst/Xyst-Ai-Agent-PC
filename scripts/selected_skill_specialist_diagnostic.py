@@ -18,6 +18,7 @@ from xaa.runtime.workspace_snapshot import capture_workspace
 from xaa.runtime.wsl_transport import WSLTransport, profile_fingerprint
 from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.skills import SkillAsset, SkillDraft, SkillStore
+from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 
 
@@ -64,6 +65,12 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
             ],
         )
     )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skills SET lifecycle_state='active',active_version=1 WHERE id=?",
+            (skill["id"],),
+        )
+    SpecialistProfileStore(store).set_procedure("executor", skill["id"])
     profile_sha256 = profile_fingerprint()[0]
     run = store.create_run(
         objective="Execute selected Python, shell and Node.js resources from a granted specialist task.",
@@ -72,7 +79,6 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
         mode="workspace",
         model=None,
         command_grant={"distribution": distribution, "profile_sha256": profile_sha256},
-        procedure_trial={"skill_id": skill["id"], "version": 1},
     )
     run_id = run["id"]
     owner = store.acquire_lease(run_id, "selected-skill-specialist-diagnostic", seconds=180)

@@ -15,6 +15,7 @@ from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.storage.commands import CommandJournal, command_artifact_root
 from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.task_workspaces import TaskWorkspaces
+from xaa.storage.tasks import validate_specialist_procedure_snapshot
 
 
 def verify_command_output(store: RunStore, run_id: str, result: dict[str, Any]) -> None:
@@ -48,12 +49,27 @@ def command_evidence(store: RunStore, run_id: str, task_id: str) -> list[dict[st
         if not rows:
             return []
         base, files = TaskWorkspaces(store).view(connection, run_id, task_id)
+        task_row = connection.execute(
+            "SELECT procedure_snapshot FROM tasks WHERE run_id=? AND id=?",
+            (run_id, f"{run_id}:{task_id}"),
+        ).fetchone()
+        if task_row is None:
+            raise KeyError(task_id)
+        specialist_procedure = (
+            json.loads(task_row["procedure_snapshot"]) if task_row["procedure_snapshot"] else None
+        )
+        if specialist_procedure is not None:
+            validate_specialist_procedure_snapshot(specialist_procedure)
         current_snapshot = WorkspaceSnapshot(
             tuple(SnapshotFile(name, data) for name, data in files.items()),
             base.directories,
             base.excluded,
         )
-        current = add_selected_skill_scripts(current_snapshot, store.procedure_trial(run_id)).sha256
+        current = add_selected_skill_scripts(
+            current_snapshot,
+            store.procedure_trial(run_id),
+            specialist_procedure,
+        ).sha256
     evidence: list[dict[str, Any]] = []
     for row in reversed(rows):
         result = json.loads(row["result"])
