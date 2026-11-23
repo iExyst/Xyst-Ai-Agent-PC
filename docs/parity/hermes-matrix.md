@@ -2,7 +2,7 @@
 
 ## Select the microphone for local voice capture (2026-11-23)
 
-The desktop voice capture control can enumerate audio inputs after microphone permission and select an installed device or keep the system default. Enumeration opens a temporary stream and stops it immediately; the selected device ID is passed only to local recording, after which the WAV uses the existing explicitly configured loopback transcription service. The fake-device browser flow covers denied permission/retry, two device choices, selected-device constraints, WAV conversion, track cleanup, and stale attachment clearing (3 pass). Desktop typecheck and production build pass locally. Hosted verification is pending; no live ASR or model inference was used.
+The desktop voice capture control can enumerate audio inputs after microphone permission and select an installed device or keep the system default. Enumeration opens a temporary stream and stops it immediately; the selected device ID is passed only to local recording, after which the WAV uses the existing explicitly configured loopback transcription service. The fake-device browser flow covers denied permission/retry, two device choices, selected-device constraints, WAV conversion, track cleanup, and stale attachment clearing (3 pass). Desktop typecheck and production build pass locally. Exact-source Windows run [45264502158](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45264502158) passed configured Edge/browser, desktop, static, contract, and recovery checks on `d8eddeb2`; Python verification was skipped by its desktop-only change filter. No physical microphone or live ASR/model inference was used.
 
 ## Verify optional provider credentials (2026-11-23)
 
