@@ -103,9 +103,7 @@ async def test_controller_reads_only_run_approved_procedure_credentials_and_save
             return secret
 
     class CredentialTransport(FixtureTransport):
-        async def run(
-            self, intent, snapshot, *, deadline, on_output=None, procedure_secrets=None
-        ):
+        async def run(self, intent, snapshot, *, deadline, on_output=None, procedure_secrets=None):
             assert intent.procedure_credential_names == ["API_TOKEN"]
             assert procedure_secrets == {"API_TOKEN": secret}
             if on_output is not None:
@@ -163,8 +161,7 @@ async def test_controller_reads_only_run_approved_procedure_credentials_and_save
     assert secret not in json.dumps(output_events)
     assert base64.b64encode(secret.encode()).decode() not in json.dumps(output_events)
     assert all(
-        base64.b64decode(event["payload"]["chunk_b64"]) == output_marker
-        for event in output_events
+        base64.b64decode(event["payload"]["chunk_b64"]) == output_marker for event in output_events
     )
     assert not store.unresolved_tool_calls(run_id)
 
