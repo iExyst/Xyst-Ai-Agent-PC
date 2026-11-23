@@ -1374,6 +1374,7 @@ class Coordinator:
             for failed_call in failed_calls:
                 name = failed_call["function"]["name"]
                 tool_name = {
+                    "procedure_draft": "procedure.draft",
                     "procedure_resource_revise": "procedure.resource_revise",
                     "procedure_resource_remove": "procedure.resource_remove",
                     "procedure_revise": "procedure.revise",
@@ -1410,6 +1411,56 @@ class Coordinator:
                 }
                 for call, result in zip(batch_calls, results, strict=True)
             )
+
+        if len(calls) > 1 and all(
+            call.get("function", {}).get("name") == "procedure_draft" for call in calls
+        ):
+            if not any(tool["function"]["name"] == "procedure_draft" for tool in tools):
+                raise PermissionError("Tool is not authorized in the current catalog.")
+            if not run.get("allow_procedure_drafting"):
+                raise PermissionError("This run has no user authorization to draft procedures.")
+            drafts: list[tuple[str, SkillDraft]] = []
+            try:
+                for call in calls:
+                    raw_arguments = json.loads(call["function"]["arguments"])
+                    if not isinstance(raw_arguments, dict):
+                        raise TypeError("Procedure draft arguments must be objects.")
+                    drafts.append(
+                        (call["id"], SkillDraft.model_validate(cast(dict[str, Any], raw_arguments)))
+                    )
+                results = SkillStore(self.store).create_model_draft_batch_from_run(
+                    run_id, token, drafts
+                )
+            except PermissionError:
+                raise
+            except (
+                json.JSONDecodeError,
+                ValidationError,
+                TypeError,
+                ValueError,
+                SkillConflict,
+            ) as exc:
+                try:
+                    failures = record_batch_failure(
+                        calls,
+                        "invalid_procedure_draft_batch"
+                        if not isinstance(exc, SkillConflict)
+                        else "procedure_draft_conflict",
+                        str(exc) or "The procedure draft batch is invalid.",
+                    )
+                except ValueError as failure_exc:
+                    raise failure_exc from exc
+                append_batch_results(calls, failures)
+                return True
+            messages.extend(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps(result, ensure_ascii=False),
+                }
+                for call, result in zip(calls, results, strict=True)
+            )
+            return True
 
         manager_names = {
             "procedure_resource_revise",

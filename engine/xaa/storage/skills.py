@@ -674,19 +674,27 @@ class SkillStore:
         self, run_id: str, owner: str, call_id: str, draft: SkillDraft
     ) -> dict[str, Any]:
         """Atomically save an explicitly authorized model candidate and its tool result."""
+        return self.create_model_draft_batch_from_run(run_id, owner, [(call_id, draft)])[0]
+
+    def create_model_draft_batch_from_run(
+        self, run_id: str, owner: str, drafts: list[tuple[str, SkillDraft]]
+    ) -> list[dict[str, Any]]:
+        """Atomically save a bounded set of model candidates and their tool results."""
         if self.runs.task_scope is not None:
             raise PermissionError("Specialists cannot create user-library procedures.")
-        if not call_id or len(call_id) > 128:
-            raise ValueError("Procedure draft call identity is invalid.")
-        identity = str(uuid4())
+        call_ids = [call_id for call_id, _draft in drafts]
+        if (
+            not drafts
+            or len(drafts) > 3
+            or len(set(call_ids)) != len(call_ids)
+            or any(not call_id or len(call_id) > 128 for call_id in call_ids)
+        ):
+            raise ValueError("Procedure draft batch identities or size are invalid.")
+        names = [draft.name.strip().casefold() for _call_id, draft in drafts]
+        if len(set(names)) != len(names):
+            raise SkillConflict("A procedure draft batch cannot repeat a name.")
         now = utc_now()
-        encoded_arguments = json.dumps(draft.model_dump(mode="json"), sort_keys=True)
-        evidence: dict[str, Any] = {
-            "state": "candidate",
-            "provenance": "model_draft",
-            "source": {"run_id": run_id, "call_id": call_id},
-            "evaluations": [],
-        }
+        results: list[dict[str, Any]] = []
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, owner)
@@ -696,77 +704,90 @@ class SkillStore:
             ).fetchone()
             if grant is None:
                 raise PermissionError("This run has no user authorization to draft procedures.")
-            if connection.execute(
-                "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?", (run_id, call_id)
-            ).fetchone():
-                raise SkillConflict("The model procedure-draft call was already used.")
+            for call_id in call_ids:
+                if connection.execute(
+                    "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                    (run_id, call_id),
+                ).fetchone():
+                    raise SkillConflict("A model procedure-draft call was already used.")
             drafts_this_run = int(
                 connection.execute(
                     "SELECT COUNT(*) FROM run_events WHERE run_id=? AND event_type='procedure.draft_created'",
                     (run_id,),
                 ).fetchone()[0]
             )
-            if drafts_this_run >= 3:
+            if drafts_this_run + len(drafts) > 3:
                 raise SkillConflict("A run may create at most three procedure candidates.")
-            if connection.execute("SELECT COUNT(*) FROM skills").fetchone()[0] >= 100:
+            if connection.execute("SELECT COUNT(*) FROM skills").fetchone()[0] + len(drafts) > 100:
                 raise SkillConflict("The current procedure library limit is 100.")
-            try:
+            for call_id, draft in drafts:
+                identity = str(uuid4())
+                evidence: dict[str, Any] = {
+                    "state": "candidate",
+                    "provenance": "model_draft",
+                    "source": {"run_id": run_id, "call_id": call_id},
+                    "evaluations": [],
+                }
+                try:
+                    connection.execute(
+                        "INSERT INTO skills VALUES (?,?,'candidate',NULL,?,?)",
+                        (identity, draft.name.strip(), now, now),
+                    )
+                except sqlite3.IntegrityError:
+                    raise SkillConflict("A procedure with that name already exists.") from None
+                self._insert_version(connection, identity, 1, draft, evidence)
+                result = {
+                    "status": "candidate_created",
+                    "procedure": {
+                        "id": identity,
+                        "name": draft.name.strip(),
+                        "description": draft.description,
+                        "category": draft.category,
+                        "lifecycle_state": "candidate",
+                        "active_version": None,
+                        "lifecycle_revision": 0,
+                        "latest_version": 1,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                    "trust": "untrusted_model_draft",
+                    "requires_user_review": True,
+                    "notice": "The candidate was not evaluated, activated, selected, or executed.",
+                }
+                ensure_model_procedure_result_bounded(result)
                 connection.execute(
-                    "INSERT INTO skills VALUES (?,?,'candidate',NULL,?,?)",
-                    (identity, draft.name.strip(), now, now),
+                    "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.draft','1',?,?,'completed',?,NULL,?,?,?)",
+                    (
+                        str(uuid4()),
+                        run_id,
+                        json.dumps(draft.model_dump(mode="json"), sort_keys=True),
+                        call_id,
+                        json.dumps(result),
+                        now,
+                        now,
+                        call_id,
+                    ),
                 )
-            except sqlite3.IntegrityError:
-                raise SkillConflict("A procedure with that name already exists.") from None
-            self._insert_version(connection, identity, 1, draft, evidence)
-            summary = {
-                "id": identity,
-                "name": draft.name.strip(),
-                "description": draft.description,
-                "category": draft.category,
-                "lifecycle_state": "candidate",
-                "active_version": None,
-                "lifecycle_revision": 0,
-                "latest_version": 1,
-                "created_at": now,
-                "updated_at": now,
-            }
-            result = {
-                "status": "candidate_created",
-                "procedure": summary,
-                "trust": "untrusted_model_draft",
-                "requires_user_review": True,
-                "notice": "The candidate was not evaluated, activated, selected, or executed.",
-            }
-            ensure_model_procedure_result_bounded(result)
-            connection.execute(
-                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) VALUES (?,NULL,?,'procedure.draft','1',?,?,'completed',?,NULL,?,?,?)",
-                (
-                    str(uuid4()),
+                self.runs.record_event(
+                    connection,
                     run_id,
-                    encoded_arguments,
-                    call_id,
-                    json.dumps(result),
-                    now,
-                    now,
-                    call_id,
-                ),
-            )
-            self.runs.record_event(
-                connection,
-                run_id,
-                "tool.intended",
-                {"call_id": call_id, "tool": "procedure.draft", "internal": False},
-            )
-            self.runs.record_event(
-                connection,
-                run_id,
-                "procedure.draft_created",
-                {"skill_id": identity, "version": 1, "call_id": call_id},
-            )
-            self.runs.record_event(
-                connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}
-            )
-        return result
+                    "tool.intended",
+                    {"call_id": call_id, "tool": "procedure.draft", "internal": False},
+                )
+                self.runs.record_event(
+                    connection,
+                    run_id,
+                    "procedure.draft_created",
+                    {"skill_id": identity, "version": 1, "call_id": call_id},
+                )
+                self.runs.record_event(
+                    connection,
+                    run_id,
+                    "tool.completed",
+                    {"call_id": call_id, "internal": False},
+                )
+                results.append(result)
+        return results
 
     def create_model_revision_from_run(
         self,

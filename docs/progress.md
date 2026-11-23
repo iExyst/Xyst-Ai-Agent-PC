@@ -1,3 +1,6 @@
+## Batch procedure draft creation atomically (2026-11-23)
+
+A manager-only model response containing multiple `procedure_draft` calls now validates every draft before writing and creates all inactive candidates, provenance, tool results, and lifecycle events in one SQLite transaction. A duplicate name, exhausted per-run/library limit, or late insertion failure leaves no partial candidates or completed calls. The coordinator returns one result per original provider call ID; the existing per-run limit of three drafts and explicit user grant remain enforced. New storage and coordinator regressions cover successful multi-draft creation, duplicate-name rejection, transaction rollback, and call closure. The focused procedure drafting/revision suites pass (37 tests); Ruff, formatting, targeted Pyright, and `git diff --check` pass. Exact-source Windows workflow [45286913920](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45286913920) passed on prior code commit `5cc62ec3`, and exact-commit installer acceptance [45286949283](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45286949283) passed install, boot, upgrade, and uninstall checks on that same prior code. Hosted verification of this draft-batching change is pending. No live model inference was used.
 # Progress
 
 ## Assign larger pinned skills to specialists (2026-11-23)

@@ -80,6 +80,85 @@ def test_model_draft_is_inactive_and_tool_journal_is_atomic(workspace_tmp_path: 
     assert event_types[-3:] == ["tool.intended", "procedure.draft_created", "tool.completed"]
 
 
+def test_model_draft_batch_saves_candidates_and_journals_atomically(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-batch.sqlite3")
+    run_id, owner = _run(store)
+
+    results = SkillStore(store).create_model_draft_batch_from_run(
+        run_id, owner, [("draft-1", _draft("Candidate one")), ("draft-2", _draft("Candidate two"))]
+    )
+
+    assert [item["procedure"]["name"] for item in results] == ["Candidate one", "Candidate two"]
+    assert all(item["procedure"]["active_version"] is None for item in results)
+    with store.connection() as connection:
+        calls = connection.execute(
+            "SELECT provider_call_id,state FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
+            (run_id,),
+        ).fetchall()
+        created = connection.execute(
+            "SELECT COUNT(*) FROM run_events WHERE run_id=? AND event_type='procedure.draft_created'",
+            (run_id,),
+        ).fetchone()[0]
+    assert [(row["provider_call_id"], row["state"]) for row in calls] == [
+        ("draft-1", "completed"),
+        ("draft-2", "completed"),
+    ]
+    assert created == 2
+    assert len(SkillStore(store).list()) == 2
+    assert store.unresolved_tool_calls(run_id) == []
+
+
+def test_model_draft_batch_conflict_creates_no_partial_candidates(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-batch-conflict.sqlite3")
+    run_id, owner = _run(store)
+
+    with pytest.raises(SkillConflict, match="cannot repeat a name"):
+        SkillStore(store).create_model_draft_batch_from_run(
+            run_id, owner, [("draft-1", _draft("Duplicate")), ("draft-2", _draft("duplicate"))]
+        )
+
+    assert SkillStore(store).list() == []
+    assert store.unresolved_tool_calls(run_id) == []
+
+
+def test_model_draft_batch_rolls_back_every_candidate_and_call_on_late_failure(
+    workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-batch-rollback.sqlite3")
+    run_id, owner = _run(store)
+    original_insert = SkillStore._insert_version
+    inserts = 0
+
+    def fail_second_insert(*args: Any, **kwargs: Any) -> None:
+        nonlocal inserts
+        inserts += 1
+        if inserts == 2:
+            raise RuntimeError("fixture interruption")
+        original_insert(*args, **kwargs)
+
+    monkeypatch.setattr(SkillStore, "_insert_version", staticmethod(fail_second_insert))
+    with pytest.raises(RuntimeError, match="fixture interruption"):
+        SkillStore(store).create_model_draft_batch_from_run(
+            run_id,
+            owner,
+            [("draft-1", _draft("Candidate one")), ("draft-2", _draft("Candidate two"))],
+        )
+
+    assert SkillStore(store).list() == []
+    assert store.unresolved_tool_calls(run_id) == []
+    with store.connection() as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM tool_calls WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            == 0
+        )
+
+
 def test_unapproved_run_cannot_create_model_draft(workspace_tmp_path: Path) -> None:
     store = RunStore(workspace_tmp_path / "procedure-draft-denied.sqlite3")
     run_id, owner = _run(store, authorized=False)
@@ -200,3 +279,64 @@ async def test_coordinator_exposes_draft_tool_only_after_explicit_run_grant(
         assert procedures[0]["lifecycle_state"] == "candidate"
         assert procedures[0]["active_version"] is None
         assert not store.unresolved_tool_calls(run_id)
+
+
+@pytest.mark.asyncio
+async def test_coordinator_commits_same_response_draft_batch_as_one_storage_unit(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-coordinator-batch.sqlite3")
+    run_id = str(
+        store.create_run(
+            objective="Draft two independent procedures from verified work.",
+            acceptance_criteria=[],
+            workspace=None,
+            mode="observe",
+            model="fixture",
+            allow_procedure_drafting=True,
+        )["id"]
+    )
+    calls = [
+        {
+            "id": f"draft-call-{index}",
+            "type": "function",
+            "function": {
+                "name": "procedure_draft",
+                "arguments": json.dumps(_draft(f"Candidate {index}").model_dump(mode="json")),
+            },
+        }
+        for index in (1, 2)
+    ]
+
+    class DraftBatchProvider(LMStudioProvider):
+        requests = 0
+
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            self.requests += 1
+            if self.requests == 1:
+                assert "procedure_draft" in {item["function"]["name"] for item in (tools or [])}
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Two candidates saved."}}]
+            }
+
+    provider = DraftBatchProvider()
+    try:
+        await Coordinator(store, provider).execute(run_id)
+    finally:
+        await provider.close()
+
+    procedures = SkillStore(store).list()
+    assert {item["name"] for item in procedures} == {"Candidate 1", "Candidate 2"}
+    assert all(item["lifecycle_state"] == "candidate" for item in procedures)
+    assert not store.unresolved_tool_calls(run_id)
