@@ -41,7 +41,7 @@ test('configure persistent specialist model routes from discovered local models'
     if (path === '/providers/lm-studio/config') return route.fulfill({json:{endpoint:'http://127.0.0.1:1234',selected_model:'parent/model'},headers});
     if (path === '/providers/lm-studio/credential' || path === '/providers/brave-search/credential') return route.fulfill({json:{configured:false},headers});
     if (path === '/specialists/profiles' && request.method() === 'GET') return route.fulfill({json:profiles,headers});
-    if (path === '/specialists/procedures') return route.fulfill({json:[{id:'procedure-1',name:'Evidence procedure',version:3,linked_resource_count:2}],headers});
+    if (path === '/specialists/procedures') return route.fulfill({json:[{id:'procedure-1',name:'Evidence procedure',version:3,linked_resource_count:2,required_tools:[{name:'workspace.search',version:'1'}],required_permissions:['workspace.read']}],headers});
     const memoryMatch = path.match(/^\/specialists\/profiles\/([^/]+)\/memory(?:\/([^/]+))?$/);
     if (memoryMatch) {
       const role = decodeURIComponent(memoryMatch[1]!);
@@ -107,6 +107,7 @@ test('configure persistent specialist model routes from discovered local models'
   const procedure = panel.getByLabel('Researcher active procedure');
   await expect(procedure.locator('option[value="procedure-1"]')).toContainText('2 linked text resources');
   await procedure.selectOption('procedure-1');
+  await expect(panel.getByLabel('Researcher procedure requirements')).toHaveText('Declared requirements: workspace.search@1, workspace.read. Selecting a procedure does not grant any tools or permissions.');
   expect(procedureSaves).toEqual([{role:'researcher',skill_id:'procedure-1'}]);
   const instructions = panel.getByLabel('Researcher role instructions');
   await instructions.fill('Cite evidence and label uncertainty.');

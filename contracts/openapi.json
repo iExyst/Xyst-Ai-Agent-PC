@@ -6612,6 +6612,26 @@
             "title": "Name",
             "type": "string"
           },
+          "required_permissions": {
+            "items": {
+              "enum": [
+                "workspace.read",
+                "workspace.write"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "title": "Required Permissions",
+            "type": "array"
+          },
+          "required_tools": {
+            "items": {
+              "$ref": "#/components/schemas/SkillTool"
+            },
+            "maxItems": 32,
+            "title": "Required Tools",
+            "type": "array"
+          },
           "version": {
             "maximum": 128.0,
             "minimum": 1.0,
@@ -6623,7 +6643,9 @@
           "id",
           "name",
           "version",
-          "linked_resource_count"
+          "linked_resource_count",
+          "required_tools",
+          "required_permissions"
         ],
         "title": "SpecialistProcedureChoice",
         "type": "object"

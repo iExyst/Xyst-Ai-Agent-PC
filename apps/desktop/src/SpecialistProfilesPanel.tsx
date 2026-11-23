@@ -165,6 +165,17 @@ export function SpecialistProfilesPanel({ client }: Props) {
           {procedures.map(procedure => <option key={procedure.id} value={procedure.id}>{procedure.name} · v{procedure.version}{procedure.linked_resource_count ? ` · ${procedure.linked_resource_count} linked text resources` : ''}</option>)}
         </select>
       </label>
+      {profile.procedure_skill_id && (() => {
+        const selectedProcedure = procedures.find(item => item.id === profile.procedure_skill_id);
+        if (!selectedProcedure) return null;
+        const declared = [
+          ...selectedProcedure.required_tools.map(item => `${item.name}@${item.version}`),
+          ...selectedProcedure.required_permissions,
+        ];
+        return <p aria-label={`${profile.display_name} procedure requirements`}>
+          Declared requirements: {declared.length ? declared.join(', ') : 'none declared'}. Selecting a procedure does not grant any tools or permissions.
+        </p>;
+      })()}
       <label>{profile.display_name} role instructions
         <textarea
           aria-label={`${profile.display_name} role instructions`}

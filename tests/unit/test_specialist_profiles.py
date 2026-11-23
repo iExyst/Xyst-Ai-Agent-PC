@@ -188,6 +188,11 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
     store = RunStore(workspace_tmp_path / "specialist-procedure-api.sqlite3")
     _active_procedure(store)
     _add_text_resource(store, "procedure-a", "references/guide.md", b"Short guide.")
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skill_versions SET required_tools=?,required_permissions=? WHERE skill_id='procedure-a' AND version=1",
+            ('[{"name":"workspace.search","version":"1"}]', '["workspace.read"]'),
+        )
     _active_procedure(store, identity="large-procedure")
     _active_procedure(store, identity="binary-procedure")
     with store.connection() as connection:
@@ -212,6 +217,8 @@ def test_specialist_procedure_api_lists_only_active_bounded_text_choices(workspa
                 "name": "procedure-a",
                 "version": 1,
                 "linked_resource_count": 1,
+                "required_tools": [{"name": "workspace.search", "version": "1"}],
+                "required_permissions": ["workspace.read"],
             }
         ]
         selected = client.put(

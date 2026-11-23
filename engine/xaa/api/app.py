@@ -885,6 +885,8 @@ class SpecialistProcedureChoice(BaseModel):
     name: str
     version: int = Field(ge=1, le=128)
     linked_resource_count: int = Field(ge=0, le=32)
+    required_tools: list[SkillTool] = Field(max_length=32)
+    required_permissions: list[Literal["workspace.read", "workspace.write"]] = Field(max_length=2)
 
 
 class SkillPythonDependencyCheck(BaseModel):
@@ -3804,7 +3806,7 @@ def create_app(
     ) -> list[dict[str, Any]]:
         with run_store.connection() as connection:
             rows = connection.execute(
-                "SELECT s.id,s.name,s.active_version,v.content FROM skills s "
+                "SELECT s.id,s.name,s.active_version,v.content,v.required_tools,v.required_permissions FROM skills s "
                 "JOIN skill_versions v ON v.skill_id=s.id AND v.version=s.active_version "
                 "WHERE s.lifecycle_state='active' ORDER BY s.name COLLATE NOCASE,s.id LIMIT 100"
             ).fetchall()
@@ -3828,6 +3830,8 @@ def create_app(
                         "name": row["name"],
                         "version": row["active_version"],
                         "linked_resource_count": len(resources),
+                        "required_tools": json.loads(row["required_tools"]),
+                        "required_permissions": json.loads(row["required_permissions"]),
                     }
                 )
             return choices

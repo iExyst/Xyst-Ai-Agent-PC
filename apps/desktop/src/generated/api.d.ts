@@ -4791,6 +4791,10 @@ export interface components {
             linked_resource_count: number;
             /** Name */
             name: string;
+            /** Required Permissions */
+            required_permissions: ("workspace.read" | "workspace.write")[];
+            /** Required Tools */
+            required_tools: components["schemas"]["SkillTool"][];
             /** Version */
             version: number;
         };
