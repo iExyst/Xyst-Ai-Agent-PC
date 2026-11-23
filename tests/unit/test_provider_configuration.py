@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
-from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
+from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 from xaa.providers.openai_compatible import OpenAICompatibleProvider
 from xaa.providers.router import OPENAI_MODEL_PREFIX, ProviderRouter
 from xaa.storage.runs import RunStore
@@ -52,6 +52,11 @@ class FixtureCompatibleProvider(OpenAICompatibleProvider):
 
     async def health(self) -> bool:
         return True
+
+
+class RejectingCompatibleProvider(FixtureCompatibleProvider):
+    async def models(self) -> list[ModelInfo]:
+        raise ProviderError("sensitive low-level provider response")
 
 
 @pytest.mark.parametrize(
@@ -259,6 +264,46 @@ def test_compatible_provider_settings_and_token_use_named_vault_profile(workspac
         cleared = client.delete("/providers/openai-compatible/credential", headers=headers)
         assert cleared.json() == {"configured": False}
         assert credentials.get("openai-compatible") is None
+
+
+def test_compatible_provider_credential_diagnostic_checks_saved_token_without_exposing_details(
+    workspace_tmp_path,
+):
+    credentials = MemoryCredentialStore()
+    router = ProviderRouter(AvailableProvider(), FixtureCompatibleProvider())
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(
+        create_app(
+            router,
+            SecretStr(TOKEN),
+            store=RunStore(workspace_tmp_path / "compatible-credential-diagnostic.sqlite3"),
+            credential_store=credentials,
+        )
+    ) as client:
+        missing = client.post(
+            "/providers/openai-compatible/credential/diagnostics", headers=headers
+        )
+        assert missing.status_code == 409
+        credentials.set("candidate-secret", "openai-compatible")
+        valid = client.post("/providers/openai-compatible/credential/diagnostics", headers=headers)
+        assert valid.status_code == 200
+        assert valid.json() == {
+            "status": "verified",
+            "model_count": 1,
+            "message": "The provider accepted the saved token and returned its model list.",
+        }
+        assert "candidate-secret" not in valid.text
+        router.openai_compatible = RejectingCompatibleProvider()
+        invalid = client.post(
+            "/providers/openai-compatible/credential/diagnostics", headers=headers
+        )
+        assert invalid.status_code == 200
+        assert invalid.json() == {
+            "status": "unavailable",
+            "model_count": None,
+            "message": "The provider did not accept the saved token or its model endpoint is unavailable.",
+        }
+        assert "sensitive low-level" not in invalid.text
 
 
 def test_model_selection_is_exclusive_and_run_id_keeps_adapter(workspace_tmp_path):

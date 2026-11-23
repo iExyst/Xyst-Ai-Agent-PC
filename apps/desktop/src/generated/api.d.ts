@@ -1310,6 +1310,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/providers/openai-compatible/credential/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Diagnose Compatible Provider Credential */
+        post: operations["diagnose_compatible_provider_credential_providers_openai_compatible_credential_diagnostics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/providers/openai-compatible/selection": {
         parameters: {
             query?: never;
@@ -2691,6 +2708,18 @@ export interface components {
         CompatibleProviderConfigRequest: {
             /** Endpoint */
             endpoint: string;
+        };
+        /** CompatibleProviderCredentialDiagnostic */
+        CompatibleProviderCredentialDiagnostic: {
+            /** Message */
+            message: string;
+            /** Model Count */
+            model_count: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "verified" | "unavailable";
         };
         /** CompatibleProviderSelectionRequest */
         CompatibleProviderSelectionRequest: {
@@ -8101,6 +8130,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LMStudioCredentialStatus"];
+                };
+            };
+        };
+    };
+    diagnose_compatible_provider_credential_providers_openai_compatible_credential_diagnostics_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompatibleProviderCredentialDiagnostic"];
                 };
             };
         };

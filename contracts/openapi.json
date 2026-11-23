@@ -543,6 +543,41 @@
         "title": "CompatibleProviderConfigRequest",
         "type": "object"
       },
+      "CompatibleProviderCredentialDiagnostic": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "model_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Count"
+          },
+          "status": {
+            "enum": [
+              "verified",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "model_count",
+          "message"
+        ],
+        "title": "CompatibleProviderCredentialDiagnostic",
+        "type": "object"
+      },
       "CompatibleProviderSelectionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12091,6 +12126,29 @@
           }
         ],
         "summary": "Set Compatible Provider Credential"
+      }
+    },
+    "/providers/openai-compatible/credential/diagnostics": {
+      "post": {
+        "operationId": "diagnose_compatible_provider_credential_providers_openai_compatible_credential_diagnostics_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompatibleProviderCredentialDiagnostic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Diagnose Compatible Provider Credential"
       }
     },
     "/providers/openai-compatible/selection": {

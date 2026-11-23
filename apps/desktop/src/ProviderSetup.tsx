@@ -28,6 +28,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [compatibleEndpoint,setCompatibleEndpoint]=useState('');
   const [compatibleCredential,setCompatibleCredential]=useState('');
   const [compatibleCredentialConfigured,setCompatibleCredentialConfigured]=useState(false);
+  const [compatibleCredentialDiagnostic,setCompatibleCredentialDiagnostic]=useState('');
   const selectedDetails=modelDetails.find(item=>item.id===model);
   const loadedInstances=selectedDetails?.loaded_instances??[];
 
@@ -311,13 +312,20 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     <p>{compatibleCredentialConfigured?'A token is saved in Windows Credential Manager.':'No token is saved.'} The token is never shown after saving.</p>
     <button type="button" disabled={busy||!compatibleCredential} onClick={()=>void (async()=>{
       setBusy(true);setError('');
-      try {const result=await client.setCompatibleProviderCredential(compatibleCredential);setCompatibleCredential('');setCompatibleCredentialConfigured(result.configured);}
+      try {const result=await client.setCompatibleProviderCredential(compatibleCredential);setCompatibleCredential('');setCompatibleCredentialConfigured(result.configured);setCompatibleCredentialDiagnostic('');}
       catch(failure) {setError(failure instanceof Error?failure.message:'Could not save the provider token.');}
       finally {setBusy(false);}
     })()}>Save provider token securely</button>
     {compatibleCredentialConfigured&&<button type="button" disabled={busy} onClick={()=>void (async()=>{
+      setBusy(true);setError('');setCompatibleCredentialDiagnostic('');
+      try {const result=await client.diagnoseCompatibleProviderCredential();setCompatibleCredentialDiagnostic(result.message);}
+      catch(failure) {setError(failure instanceof Error?failure.message:'Could not check the provider token.');}
+      finally {setBusy(false);}
+    })()}>Check saved token</button>}
+    {compatibleCredentialDiagnostic&&<p role="status">{compatibleCredentialDiagnostic}</p>}
+    {compatibleCredentialConfigured&&<button type="button" disabled={busy} onClick={()=>void (async()=>{
       setBusy(true);setError('');
-      try {const result=await client.clearCompatibleProviderCredential();setCompatibleCredentialConfigured(result.configured);}
+      try {const result=await client.clearCompatibleProviderCredential();setCompatibleCredentialConfigured(result.configured);setCompatibleCredentialDiagnostic('');}
       catch(failure) {setError(failure instanceof Error?failure.message:'Could not clear the provider token.');}
       finally {setBusy(false);}
     })()}>Clear saved provider token</button>}

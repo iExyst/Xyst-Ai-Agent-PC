@@ -381,6 +381,13 @@ class CompatibleProviderConfigRecord(BaseModel):
     selected_model: str | None
 
 
+class CompatibleProviderCredentialDiagnostic(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["verified", "unavailable"]
+    model_count: int | None
+    message: str
+
+
 class CompatibleProviderSelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str | None = Field(default=None, max_length=320)
@@ -2957,6 +2964,35 @@ def create_app(
                 status_code=503, detail="Could not clear the OS credential."
             ) from exc
         return LMStudioCredentialStatus(configured=False)
+
+    @app.post(
+        "/providers/openai-compatible/credential/diagnostics",
+        response_model=CompatibleProviderCredentialDiagnostic,
+    )
+    async def diagnose_compatible_provider_credential(
+        _: None = Depends(authenticate),
+    ) -> CompatibleProviderCredentialDiagnostic:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        if credential_store.get("openai-compatible") is None:
+            raise HTTPException(status_code=409, detail="Save a provider token before checking it.")
+        if provider.openai_compatible is None:
+            raise HTTPException(
+                status_code=409, detail="Configure the provider address before checking its token."
+            )
+        try:
+            models = await provider.openai_compatible.models()
+        except ProviderError:
+            return CompatibleProviderCredentialDiagnostic(
+                status="unavailable",
+                model_count=None,
+                message="The provider did not accept the saved token or its model endpoint is unavailable.",
+            )
+        return CompatibleProviderCredentialDiagnostic(
+            status="verified",
+            model_count=len(models),
+            message="The provider accepted the saved token and returned its model list.",
+        )
 
     @app.put("/providers/openai-compatible/selection")
     async def set_compatible_provider_model(

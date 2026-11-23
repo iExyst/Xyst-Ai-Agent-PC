@@ -235,6 +235,10 @@ export class EngineClient {
     return this.#request('/providers/openai-compatible/credential', {method:'PUT',body:JSON.stringify({token})});
   }
 
+  diagnoseCompatibleProviderCredential(): Promise<components['schemas']['CompatibleProviderCredentialDiagnostic']> {
+    return this.#request('/providers/openai-compatible/credential/diagnostics', {method:'POST'});
+  }
+
   clearCompatibleProviderCredential(): Promise<components['schemas']['LMStudioCredentialStatus']> {
     return this.#request('/providers/openai-compatible/credential', {method:'DELETE'});
   }
