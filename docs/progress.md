@@ -1,5 +1,9 @@
 # Progress
 
+## Warn specialists when procedure tools or versions are unavailable (2026-11-23)
+
+Specialist startup now compares a selected procedure's declared tool/version requirements with the tools actually exposed to that assignment. Requirements missing from its task scope, disabled provider/run configuration, or unsupported version are listed in the assignment trust notice as unavailable and must not be assumed or attempted. The comparison includes only tools already exposed by the engine; it does not grant tools or permissions. The specialist profile/runtime suites pass (31), as do Ruff, formatting, project Pyright, and `git diff --check`. No live model inference was used. Hosted verification is pending.
+
 ## Warn specialists when declared workspace permissions are unavailable (2026-11-23)
 
 Planned and dynamically delegated specialist tasks now record which active procedure workspace permissions exceed that task's saved permission scope. The unavailable list is integrity-protected with the procedure snapshot, validated against the procedure's declarations, and included in the specialist's untrusted-context notice with an explicit instruction not to attempt those permissions. This is diagnostic context only; it does not expand authority or solve required-tool/version compatibility. The profile and specialist runtime suites pass (31); Ruff, formatting, project Pyright, and `git diff --check` pass. Exact-source Windows workflow [45190387893](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45190387893) passed 1,510 Python tests (20 skipped), all configured browser/security, contracts, static, desktop acceptance, and process-recovery checks. Hosted WSL and installer jobs were skipped by workflow conditions. No live model inference was used. Dependency compatibility and full Hermes procedure/skill parity remain open.

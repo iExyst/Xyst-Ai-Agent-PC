@@ -54,6 +54,38 @@ from xaa.storage.task_workspaces import TaskWorkspaces
 from xaa.storage.tasks import TaskStore, validate_specialist_procedure_snapshot
 
 
+def _unavailable_procedure_tools(
+    procedure_snapshot: dict[str, Any] | None,
+    exposed_tools: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Return declared versioned tools absent from a specialist's actual tool schema."""
+    if procedure_snapshot is None:
+        return []
+    required_tools_value = procedure_snapshot.get("required_tools", [])
+    if not isinstance(required_tools_value, list):
+        return []
+    exposed_names: set[str] = set()
+    for item in exposed_tools:
+        function = item.get("function")
+        if isinstance(function, dict):
+            name_value = cast(dict[str, Any], function).get("name")
+            if isinstance(name_value, str):
+                exposed_names.add(name_value)
+    unavailable: list[dict[str, str]] = []
+    for dependency_value in cast(list[Any], required_tools_value):
+        if not isinstance(dependency_value, dict):
+            continue
+        dependency = cast(dict[str, Any], dependency_value)
+        name = dependency.get("name")
+        version = dependency.get("version")
+        if not isinstance(name, str) or not isinstance(version, str):
+            continue
+        runtime_name = name.replace(".", "_")
+        if version != "1" or runtime_name not in exposed_names:
+            unavailable.append({"name": name, "version": version})
+    return unavailable
+
+
 class RunReadyArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1289,6 +1321,54 @@ class SpecialistRunner:
         if commands:
             messages[0]["content"] = messages[0]["content"].replace(
                 "You cannot run commands or grant permissions.", "You cannot grant permissions."
+            )
+        unavailable_procedure_tools = _unavailable_procedure_tools(procedure_snapshot, tools)
+        if unavailable_procedure_tools:
+            assignment_index: int | None = None
+            assignment_images: list[dict[str, Any]] = []
+            assignment: dict[str, Any] | None = None
+            for index, message in enumerate(messages):
+                content = message.get("content")
+                if isinstance(content, str):
+                    candidate_text = content
+                    candidate_images: list[dict[str, Any]] = []
+                elif isinstance(content, list) and content and isinstance(content[0], dict):
+                    candidate_text_value = cast(dict[str, Any], content[0]).get("text", "")
+                    if not isinstance(candidate_text_value, str):
+                        continue
+                    candidate_text = candidate_text_value
+                    candidate_images = cast(list[dict[str, Any]], content[1:])
+                else:
+                    continue
+                try:
+                    candidate_assignment = json.loads(candidate_text)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(candidate_assignment, dict) and (
+                    "specialist_procedure_untrusted" in candidate_assignment
+                ):
+                    assignment_index = index
+                    assignment_images = candidate_images
+                    assignment = cast(dict[str, Any], candidate_assignment)
+                    break
+            if assignment_index is None or assignment is None:
+                raise ValueError("Saved specialist assignment context is unavailable.")
+            assignment["unavailable_required_tools"] = unavailable_procedure_tools
+            notice = cast(str, assignment["specialist_procedure_trust_notice"])
+            required_labels = ", ".join(
+                f"{item['name']}@{item['version']}" for item in unavailable_procedure_tools
+            )
+            assignment["specialist_procedure_trust_notice"] = (
+                notice
+                + " The following declared tool/version requirements are not available to this task and must not be assumed or attempted: "
+                + required_labels
+                + "."
+            )
+            updated_assignment_text = json.dumps(assignment, ensure_ascii=False)
+            messages[assignment_index]["content"] = (
+                updated_assignment_text
+                if not assignment_images
+                else [{"type": "text", "text": updated_assignment_text}, *assignment_images]
             )
         scope_instruction = messages[0]["content"]
         stream_retried = False
