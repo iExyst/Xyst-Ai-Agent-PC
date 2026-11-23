@@ -77,18 +77,12 @@ def test_procedure_credential_grant_is_bound_to_the_selected_script(workspace_tm
         run,
         owner,
         "selected-script",
-        {
-            "argv": [
-                "python3",
-                f"__xaa_selected_skill__/{skill_id}/v2/scripts/check.py",
-            ]
-        },
+        {"argv": ["python3", f"__xaa_selected_skill__/{skill_id}/v2/scripts/check.py"]},
         idempotency_key="selected-script",
     )
     assert intent.procedure_credential_names == ["API_TOKEN"]
     assert intent.procedure_skill_id == skill_id
     assert intent.procedure_version == 2
-
     with pytest.raises(ValidationError, match="only to a selected procedure script"):
         journal.reserve(
             run,
@@ -97,6 +91,73 @@ def test_procedure_credential_grant_is_bound_to_the_selected_script(workspace_tm
             {"argv": ["python3", "-c", "print('unrelated')"]},
             idempotency_key="unrelated-command",
         )
+
+
+def test_specialist_command_uses_only_its_snapshotted_credential_names(workspace_tmp_path):
+    store, run, owner, _project = setup(workspace_tmp_path)
+    skill_id = str(uuid4())
+    now = "2026-01-01T00:00:00+00:00"
+    declarations = json.dumps({"required_environment_names": ["API_TOKEN"]})
+    evidence = json.dumps({"source": {"declared_requirements": declarations}})
+    script = b"import os\nprint(os.environ['API_TOKEN'])\n"
+    with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) "
+            "VALUES(?,'Specialist credentials','active',1,?,?)",
+            (skill_id, now, now),
+        )
+        connection.execute(
+            "INSERT INTO skill_versions(skill_id,version,content,required_tools,required_permissions,evaluation_evidence,created_at) "
+            "VALUES(?,1,'Run the check script.','[]','[]',?,?)",
+            (skill_id, evidence, now),
+        )
+        connection.execute(
+            "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
+            "VALUES(?,1,'scripts/check.py','text/x-python',?,?,?)",
+            (skill_id, len(script), hashlib.sha256(script).hexdigest(), script),
+        )
+        store.record_event(
+            connection,
+            run,
+            "specialist.procedure_credentials_granted",
+            {
+                "grants": [
+                    {
+                        "role": "executor",
+                        "skill_id": skill_id,
+                        "version": 1,
+                        "credential_names": ["API_TOKEN"],
+                    }
+                ]
+            },
+        )
+    SpecialistProfileStore(store).set_procedure("executor", skill_id)
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run,
+        owner,
+        [
+            TaskDefinition(
+                id="execute",
+                objective="Run the selected specialist procedure",
+                role="executor",
+                permissions=("workspace.read", "workspace.write", "workspace.command"),
+            )
+        ],
+    )
+    claim = tasks.claim_ready(run, owner)
+    assert claim is not None
+    journal = CommandJournal(store, task_scope=TaskReadScope(run, owner, "execute", claim["token"]))
+    intent = journal.reserve(
+        run,
+        owner,
+        "specialist-secret-command",
+        {"argv": ["python", f"__xaa_selected_skill__/{skill_id}/v1/scripts/check.py"]},
+        idempotency_key="specialist-secret-command",
+    )
+    assert intent.procedure_credential_names == ["API_TOKEN"]
+    assert intent.procedure_skill_id == skill_id
+    assert intent.procedure_version == 1
 
 
 def outcome(store, run, owner, intent, snapshot):

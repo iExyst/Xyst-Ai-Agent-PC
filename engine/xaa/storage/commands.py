@@ -401,6 +401,9 @@ class CommandJournal:
                     ):
                         raise PermissionError("Saved specialist procedure identity is invalid.")
                     procedure_identity = (skill_id, version)
+                    procedure_credential_names = cast(
+                        list[str], specialist_procedure.get("credential_names", [])
+                    )
                     procedure_environment = None
                     procedure_node_environment = None
                     required_managers = cast(

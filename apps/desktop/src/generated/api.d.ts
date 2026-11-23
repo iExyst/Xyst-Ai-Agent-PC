@@ -2844,6 +2844,8 @@ export interface components {
             /** Procedure Python Environment Digest */
             procedure_python_environment_digest?: string | null;
             procedure_trial?: components["schemas"]["SkillTrial"] | null;
+            /** Specialist Credential Grants */
+            specialist_credential_grants?: components["schemas"]["SpecialistCredentialGrant"][];
             /** Transcription Url */
             transcription_url?: string | null;
             /** Workspace */
@@ -4839,6 +4841,20 @@ export interface components {
             content: string;
             /** Source Uri */
             source_uri: string;
+        };
+        /** SpecialistCredentialGrant */
+        SpecialistCredentialGrant: {
+            /** Credential Names */
+            credential_names: string[];
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "planner" | "researcher" | "developer" | "reviewer" | "tester" | "executor";
+            /** Skill Id */
+            skill_id: string;
+            /** Version */
+            version: number;
         };
         /** SpecialistIdentityRequest */
         SpecialistIdentityRequest: {

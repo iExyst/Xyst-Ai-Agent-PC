@@ -192,6 +192,24 @@ from xaa.version import APP_VERSION
 SCANNED_PAGE_OCR_TOKEN_RESERVATION = 4_608
 
 
+class SpecialistCredentialGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    role: Literal["planner", "researcher", "developer", "reviewer", "tester", "executor"]
+    skill_id: str = Field(min_length=1, max_length=128)
+    version: int = Field(ge=1, le=128)
+    credential_names: list[str] = Field(min_length=1, max_length=32)
+
+    @field_validator("credential_names")
+    @classmethod
+    def valid_credential_names(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)) or any(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name) is None for name in value
+        ):
+            raise ValueError("Specialist credential grants need unique valid environment names.")
+        return value
+
+
 class CreateRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -214,6 +232,9 @@ class CreateRunRequest(BaseModel):
         description="Require exact prompt counting and a durable token hold before each inference.",
     )
     procedure_trial: SkillTrial | None = None
+    specialist_credential_grants: list[SpecialistCredentialGrant] = Field(
+        default_factory=lambda: list[SpecialistCredentialGrant](), max_length=6
+    )
     procedure_python_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     procedure_npm_environment_digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     command_grant: CommandGrant | None = None
@@ -4442,6 +4463,70 @@ def create_app(
                             status_code=409,
                             detail="Every granted procedure credential must still be saved in the OS vault.",
                         )
+            if payload.specialist_credential_grants:
+                if credential_store is None:
+                    raise HTTPException(
+                        status_code=503, detail="OS credential storage is unavailable."
+                    )
+                if (
+                    payload.command_grant is None
+                    or payload.command_grant.backend != "wsl-bubblewrap-v1"
+                    or payload.mode != "workspace"
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Specialist credentials require the restricted WSL command grant in workspace mode.",
+                    )
+                profiles_by_role = {
+                    str(profile["role"]): profile for profile in specialist_profiles.list()
+                }
+                if len({grant.role for grant in payload.specialist_credential_grants}) != len(
+                    payload.specialist_credential_grants
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="A specialist role may have only one credential grant.",
+                    )
+                for grant in payload.specialist_credential_grants:
+                    profile = profiles_by_role.get(grant.role)
+                    if (
+                        profile is None
+                        or profile.get("procedure_skill_id") != grant.skill_id
+                        or profile.get("procedure_version") != grant.version
+                    ):
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Specialist credential grant must match that role's currently selected procedure version.",
+                        )
+                    try:
+                        manifest = skill_store.version(grant.skill_id, grant.version)
+                    except KeyError:
+                        raise HTTPException(
+                            status_code=404, detail="Specialist procedure version not found."
+                        ) from None
+                    declared = {
+                        name for name, _required in _procedure_credential_requirements(manifest)
+                    }
+                    if not set(grant.credential_names) <= declared:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Specialist credential grant contains a name not declared by its selected procedure.",
+                        )
+                    for env_name in grant.credential_names:
+                        try:
+                            value = credential_store.get(
+                                _procedure_credential_profile(grant.skill_id, env_name)
+                            )
+                        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="Could not read a specialist procedure credential from the OS vault.",
+                            ) from exc
+                        if not value:
+                            raise HTTPException(
+                                status_code=409,
+                                detail="Every granted specialist credential must still be saved in the OS vault.",
+                            )
             if payload.command_grant is not None:
                 execution_readiness.require_grant(payload.command_grant)
             record = run_store.create_run(
@@ -4459,6 +4544,9 @@ def create_app(
                 procedure_trial=payload.procedure_trial.model_dump()
                 if payload.procedure_trial
                 else None,
+                specialist_credential_grants=[
+                    grant.model_dump() for grant in payload.specialist_credential_grants
+                ],
                 procedure_python_environment_digest=payload.procedure_python_environment_digest,
                 procedure_npm_environment_digest=payload.procedure_npm_environment_digest,
                 command_grant=payload.command_grant.model_dump() if payload.command_grant else None,

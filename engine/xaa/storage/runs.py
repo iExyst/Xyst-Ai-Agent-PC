@@ -1052,6 +1052,7 @@ class RunStore:
         pre_inference_token_reservations: bool = False,
         file_checks: list[dict[str, Any]] | None = None,
         procedure_trial: dict[str, Any] | None = None,
+        specialist_credential_grants: list[dict[str, Any]] | None = None,
         procedure_python_environment_digest: str | None = None,
         procedure_npm_environment_digest: str | None = None,
         command_grant: dict[str, Any] | None = None,
@@ -1514,6 +1515,13 @@ class RunStore:
                     )
             if trial_snapshot is not None:
                 self.record_event(connection, run_id, "procedure.selected", trial_snapshot)
+            if specialist_credential_grants:
+                self.record_event(
+                    connection,
+                    run_id,
+                    "specialist.procedure_credentials_granted",
+                    {"grants": specialist_credential_grants},
+                )
             if granted_command is not None:
                 self.record_event(connection, run_id, "execution.granted", granted_command)
             if (

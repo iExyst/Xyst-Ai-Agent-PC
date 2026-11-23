@@ -46,9 +46,22 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         raise ValueError("Saved specialist procedure failed its snapshot integrity check.")
     content = snapshot.get("content")
     resources_value: Any = snapshot.get("linked_resources", [])
+    credential_names_value: Any = snapshot.get("credential_names", [])
     unavailable_permissions_value: Any = snapshot.get("unavailable_required_permissions", [])
     if not isinstance(content, str) or not isinstance(resources_value, list):
         raise TypeError("Saved specialist procedure has an invalid text/resource shape.")
+    if not isinstance(credential_names_value, list):
+        raise TypeError("Saved specialist procedure credential grant is invalid.")
+    credential_names = cast(list[Any], credential_names_value)
+    if (
+        len(credential_names) > 32
+        or any(
+            not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", name) is None
+            for name in credential_names
+        )
+        or len(set(credential_names)) != len(credential_names)
+    ):
+        raise ValueError("Saved specialist procedure credential grant is invalid.")
     required_permissions_value: Any = snapshot.get("required_permissions", [])
     if not isinstance(unavailable_permissions_value, list) or not isinstance(
         required_permissions_value, list
@@ -144,12 +157,61 @@ class TaskStore:
         self.runs = runs
 
     @staticmethod
+    def _specialist_credential_grants(connection: Any, run_id: str) -> dict[str, dict[str, Any]]:
+        row = connection.execute(
+            "SELECT payload FROM run_events WHERE run_id=? "
+            "AND event_type='specialist.procedure_credentials_granted' ORDER BY sequence LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return {}
+        value: object = json.loads(row["payload"])
+        value_dict = cast(dict[str, Any], value) if isinstance(value, dict) else {}
+        grants_value: object = value_dict.get("grants")
+        if not isinstance(grants_value, list):
+            raise TypeError("Saved specialist credential grants are invalid.")
+        grant_items = cast(list[Any], grants_value)
+        grants: dict[str, dict[str, Any]] = {}
+        for grant_value in grant_items:
+            if not isinstance(grant_value, dict):
+                raise TypeError("Saved specialist credential grant is invalid.")
+            grant_data = cast(dict[str, Any], grant_value)
+            role = grant_data.get("role")
+            skill_id = grant_data.get("skill_id")
+            version = grant_data.get("version")
+            names_value = grant_data.get("credential_names")
+            names = cast(list[Any], names_value) if isinstance(names_value, list) else None
+            if (
+                not isinstance(role, str)
+                or role
+                not in {"planner", "researcher", "developer", "reviewer", "tester", "executor"}
+                or role in grants
+                or not isinstance(skill_id, str)
+                or re.fullmatch(r"[a-f0-9-]{36}", skill_id) is None
+                or type(version) is not int
+                or not 1 <= version <= 128
+                or names is None
+                or not names
+                or len(names) > 32
+                or any(not isinstance(name, str) for name in names)
+                or len(set(names)) != len(names)
+            ):
+                raise ValueError("Saved specialist credential grant is invalid.")
+            grants[role] = {
+                "skill_id": skill_id,
+                "version": version,
+                "credential_names": [cast(str, name) for name in names],
+            }
+        return grants
+
+    @staticmethod
     def _procedure_snapshot(
         connection: Any,
         skill_id: str | None,
         available_permissions: Sequence[str],
         python_environment_digest: str | None = None,
         npm_environment_digest: str | None = None,
+        credential_grant: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         if skill_id is None:
             return None
@@ -164,6 +226,18 @@ class TaskStore:
             raise ValueError(
                 "A specialist procedure is no longer active; update its profile first."
             )
+        credential_names: Sequence[str] = ()
+        if credential_grant is not None:
+            if credential_grant.get("skill_id") != skill_id or credential_grant.get(
+                "version"
+            ) != int(row["active_version"]):
+                raise ValueError(
+                    "Specialist credential grant no longer matches its selected procedure."
+                )
+            credential_names_value = credential_grant.get("credential_names")
+            if not isinstance(credential_names_value, list):
+                raise ValueError("Specialist credential grant is invalid.")
+            credential_names = cast(list[str], credential_names_value)
         content = str(row["content"])
         content_bytes = len(content.encode("utf-8"))
         if content_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
@@ -194,6 +268,24 @@ class TaskStore:
         except json.JSONDecodeError:
             declarations = None
         declared = cast(dict[str, Any], declarations) if isinstance(declarations, dict) else {}
+        declared_credentials: set[str] = set()
+        for key in ("required_environment_names", "optional_environment_names"):
+            raw_names = declared.get(key)
+            if isinstance(raw_names, list):
+                declared_credentials.update(
+                    name
+                    for name in cast(list[Any], raw_names)
+                    if isinstance(name, str) and re.fullmatch(r"[A-Z_][A-Z0-9_]{0,63}", name)
+                )
+        granted_credentials = list(credential_names)
+        if (
+            len(granted_credentials) > 32
+            or len(set(granted_credentials)) != len(granted_credentials)
+            or any(name not in declared_credentials for name in granted_credentials)
+        ):
+            raise ValueError("Specialist credential grant does not match its selected procedure.")
+        if granted_credentials:
+            snapshot["credential_names"] = granted_credentials
         required_dependency_managers = [
             manager
             for manager, key in (
@@ -766,11 +858,14 @@ class TaskStore:
                 "SELECT 1 FROM tasks WHERE run_id=? LIMIT 1", (run_id,)
             ).fetchone():
                 raise ValueError("A saved plan cannot be silently replaced.")
+            specialist_credential_grants = self._specialist_credential_grants(connection, run_id)
             specialist_profiles = {
                 str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id,"
-                    "procedure_python_environment_digest,procedure_npm_environment_digest FROM specialist_profiles"
+                    "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,"
+                    "s.active_version AS procedure_version,p.procedure_python_environment_digest,"
+                    "p.procedure_npm_environment_digest FROM specialist_profiles p "
+                    "LEFT JOIN skills s ON s.id=p.procedure_skill_id"
                 ).fetchall()
             }
             profile_instructions = {
@@ -827,6 +922,7 @@ class TaskStore:
                                     specialist_profiles.get(task.role, {}).get(
                                         "procedure_npm_environment_digest"
                                     ),
+                                    specialist_credential_grants.get(task.role),
                                 )
                             )
                             is not None
@@ -1033,11 +1129,14 @@ class TaskStore:
                 if active_tokens + added_tokens > max(0, run_token_limit - run_tokens_used):
                     raise ValueError("Delegated subtasks exceed the remaining shared token budget.")
 
+            specialist_credential_grants = self._specialist_credential_grants(connection, run_id)
             profiles = {
                 str(row["role"]): dict(row)
                 for row in connection.execute(
-                    "SELECT role,display_name,model_route,system_instructions,procedure_skill_id,"
-                    "procedure_python_environment_digest,procedure_npm_environment_digest FROM specialist_profiles"
+                    "SELECT p.role,p.display_name,p.model_route,p.system_instructions,p.procedure_skill_id,"
+                    "s.active_version AS procedure_version,p.procedure_python_environment_digest,"
+                    "p.procedure_npm_environment_digest FROM specialist_profiles p "
+                    "LEFT JOIN skills s ON s.id=p.procedure_skill_id"
                 ).fetchall()
             }
             inserted: set[str] = set()
@@ -1061,6 +1160,7 @@ class TaskStore:
                         item.permissions,
                         profiles.get(item.role, {}).get("procedure_python_environment_digest"),
                         profiles.get(item.role, {}).get("procedure_npm_environment_digest"),
+                        specialist_credential_grants.get(item.role),
                     )
                     connection.execute(
                         "INSERT INTO tasks (id,run_id,parent_task_id,objective,acceptance_criteria,input_artifacts,expected_outputs,assigned_role,identity_name,model_route,identity_instructions,procedure_snapshot,workspace,permission_scope,budgets,status,checkpoint,result,created_at,updated_at,schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', NULL, NULL, ?, ?, 1)",

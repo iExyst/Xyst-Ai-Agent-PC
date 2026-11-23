@@ -948,6 +948,14 @@
               }
             ]
           },
+          "specialist_credential_grants": {
+            "items": {
+              "$ref": "#/components/schemas/SpecialistCredentialGrant"
+            },
+            "maxItems": 6,
+            "title": "Specialist Credential Grants",
+            "type": "array"
+          },
           "transcription_url": {
             "anyOf": [
               {
@@ -6652,6 +6660,52 @@
           "source_uri"
         ],
         "title": "SourcedKnowledgeRequest",
+        "type": "object"
+      },
+      "SpecialistCredentialGrant": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Credential Names",
+            "type": "array"
+          },
+          "role": {
+            "enum": [
+              "planner",
+              "researcher",
+              "developer",
+              "reviewer",
+              "tester",
+              "executor"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "skill_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "version": {
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "role",
+          "skill_id",
+          "version",
+          "credential_names"
+        ],
+        "title": "SpecialistCredentialGrant",
         "type": "object"
       },
       "SpecialistIdentityRequest": {

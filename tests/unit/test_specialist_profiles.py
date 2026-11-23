@@ -1,4 +1,6 @@
 import hashlib
+import json
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -168,6 +170,149 @@ def test_specialist_procedure_is_selected_and_version_snapshotted(workspace_tmp_
         connection.execute("UPDATE skills SET active_version=2 WHERE id='procedure-a'")
     profiles.set_procedure("researcher", None)
     assert TaskStore(store).records(run_id)[0]["procedure_snapshot"] == saved
+
+
+def test_specialist_credential_grant_is_explicit_and_bound_to_snapshot(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-credentials.sqlite3")
+    skill_id = str(uuid4())
+    _active_procedure(store, identity=skill_id)
+    declarations = json.dumps({"required_environment_names": ["API_TOKEN"]})
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skill_versions SET evaluation_evidence=? WHERE skill_id=? AND version=1",
+            (json.dumps({"source": {"declared_requirements": declarations}}), skill_id),
+        )
+    SpecialistProfileStore(store).set_procedure("researcher", skill_id)
+    run_id = store.create_run(
+        objective="Research with a one-run credential grant",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    with store.connection() as connection:
+        store.record_event(
+            connection,
+            run_id,
+            "specialist.procedure_credentials_granted",
+            {
+                "grants": [
+                    {
+                        "role": "researcher",
+                        "skill_id": skill_id,
+                        "version": 1,
+                        "credential_names": ["API_TOKEN"],
+                    }
+                ]
+            },
+        )
+    owner = store.acquire_lease(run_id, "fixture")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id, owner, [TaskDefinition(id="research", objective="Research", role="researcher")]
+    )
+    snapshot = tasks.records(run_id)[0]["procedure_snapshot"]
+    assert snapshot["credential_names"] == ["API_TOKEN"]
+    assert "value" not in snapshot
+    validate_specialist_procedure_snapshot(snapshot)
+
+    ungranted_run_id = store.create_run(
+        objective="Research without credentials",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    ungranted_owner = store.acquire_lease(ungranted_run_id, "fixture")
+    TaskStore(store).save_plan(
+        ungranted_run_id,
+        ungranted_owner,
+        [TaskDefinition(id="research", objective="Research", role="researcher")],
+    )
+    ungranted_snapshot = TaskStore(store).records(ungranted_run_id)[0]["procedure_snapshot"]
+    assert "credential_names" not in ungranted_snapshot
+
+
+def test_specialist_credential_api_rejects_wrong_procedure_and_undeclared_names(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-credential-api.sqlite3")
+    skill_id = str(uuid4())
+    _active_procedure(store, identity=skill_id)
+    declarations = json.dumps({"required_environment_names": ["API_TOKEN"]})
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE skill_versions SET evaluation_evidence=? WHERE skill_id=? AND version=1",
+            (json.dumps({"source": {"declared_requirements": declarations}}), skill_id),
+        )
+
+    class Credentials:
+        def __init__(self) -> None:
+            self.values: dict[str, str] = {}
+
+        def get(self, profile: str = "lm-studio") -> str | None:
+            return self.values.get(profile)
+
+        def set(self, token: str, profile: str = "lm-studio") -> None:
+            self.values[profile] = token
+
+        def delete(self, profile: str = "lm-studio") -> None:
+            self.values.pop(profile, None)
+
+    credentials = Credentials()
+    app = create_app(
+        ProfileProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,  # type: ignore[arg-type]
+    )
+    with TestClient(app) as client:
+        status_url = f"/skills/{skill_id}/versions/1/credentials"
+        saved = client.put(
+            f"{status_url}/API_TOKEN", headers=HEADERS, json={"value": "never-return-this"}
+        )
+        assert saved.status_code == 200
+        selected = client.put(
+            "/specialists/profiles/researcher/procedure",
+            headers=HEADERS,
+            json={"skill_id": skill_id},
+        )
+        assert selected.status_code == 200, selected.text
+        grant_base = {
+            "role": "researcher",
+            "skill_id": skill_id,
+            "version": 1,
+            "credential_names": ["API_TOKEN"],
+        }
+        request_base = {
+            "objective": "Test specialist procedure credential grant",
+            "mode": "workspace",
+            "workspace": str(workspace_tmp_path),
+            "command_grant": {
+                "backend": "wsl-bubblewrap-v1",
+                "distribution": "Ubuntu-24.04",
+                "profile_sha256": "a" * 64,
+                "max_seconds": 30,
+            },
+        }
+        wrong_version = client.post(
+            "/runs",
+            headers=HEADERS,
+            json={
+                **request_base,
+                "specialist_credential_grants": [{**grant_base, "version": 2}],
+            },
+        )
+        assert wrong_version.status_code == 409
+        undeclared = client.post(
+            "/runs",
+            headers=HEADERS,
+            json={
+                **request_base,
+                "specialist_credential_grants": [
+                    {**grant_base, "credential_names": ["NOT_DECLARED"]}
+                ],
+            },
+        )
+        assert undeclared.status_code == 400
 
 
 def test_specialist_procedure_python_environment_is_snapshotted_and_validated(
