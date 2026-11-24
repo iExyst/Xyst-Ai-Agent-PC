@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Render scientific spreadsheet values (2026-11-23)
+
+The bounded XLSX reader now renders common scientific number formats, including exponent sign and width, optional decimal places, and zero, while retaining raw cell values and the format code. The focused document-input suite passes (112 tests); Ruff, formatting, and targeted Pyright pass. This improves spreadsheet document reading only; formula evaluation and general workbook rendering remain unsupported, and this is not a claim of broad spreadsheet or Hermes parity. No live model inference was used.
+
 ## Assign larger imported skills to specialists (2026-11-23)
 
 Pinned skills may contain up to 80 KiB of procedure text and up to 1 MiB of linked text resources, matching the importer limits. X.A.A. snapshots and integrity checks those resources but lists only path, media type and digest in the specialist's initial context; `specialist_procedure_read_resource` retrieves bounded UTF-8 pages on demand. Tests verify a 20 KiB procedure plus 100 KiB of linked resources through task snapshot persistence, page-boundary decoding, and dynamic delegation (36 focused profile/specialist tests pass). The pinned inventory has two packages whose procedure body plus directly linked text exceed the former 80 KiB aggregate cap. Exact provider-side prompt and output context admission remains required before inference. This closes the resource-size/context coupling for specialist procedures; binary resources, broader package execution, and full Hermes parity remain separate requirements.

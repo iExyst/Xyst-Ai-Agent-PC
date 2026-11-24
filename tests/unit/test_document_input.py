@@ -1381,9 +1381,13 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
         ("1.25", "0.0#", "1.25"),
         ("1234.5", "#,##0.##", "1,234.5"),
         ("-0.125", "0.0#%", "-12.5%"),
+        ("12345", "0.00E+00", "1.23E+04"),
+        ("-0.01234", "0.0E+00", "-1.2E-02"),
+        ("1200", "0.##E-0", "1.2E3"),
+        ("0", "0.00E+000", "0.00E+000"),
     ],
 )
-def test_xlsx_numeric_display_supports_optional_decimal_places(
+def test_xlsx_numeric_display_supports_common_formats(
     value: str, format_code: str, expected: str
 ):
     assert _xlsx_numeric_display(value, format_code) == expected
@@ -1391,6 +1395,11 @@ def test_xlsx_numeric_display_supports_optional_decimal_places(
 
 def test_xlsx_numeric_display_rejects_interleaved_decimal_placeholders():
     assert _xlsx_numeric_display("1.2", "0.#0") is None
+
+
+def test_xlsx_scientific_display_rejects_nonfinite_values_and_unsupported_formats():
+    assert _xlsx_numeric_display("NaN", "0.00E+00") is None
+    assert _xlsx_numeric_display("1.2", "0.00E00") is None
 
 
 def test_extracts_xlsx_values_with_optional_decimal_display_formats():
@@ -1408,6 +1417,15 @@ def test_extracts_xlsx_values_with_optional_decimal_display_formats():
     assert "S1=1.2 [display: 1.2] [number format: 0.##]" in result
     assert "T1=1 [display: 1.0] [number format: 0.0#]" in result
     assert "U1=1234.5 [display: 1,234.5] [number format: #,##0.##]" in result
+
+
+def test_extracts_xlsx_values_with_scientific_display_formats():
+    result = extract_document_text(
+        make_xlsx(formatted_numeric_cells=(("S1", "12345", "0.00E+00"),)),
+        XLSX_TYPE,
+    )
+
+    assert "S1=12345 [display: 1.23E+04] [number format: 0.00E+00]" in result
 
 
 @pytest.mark.parametrize("sheet_state", ["hidden", "veryHidden"])

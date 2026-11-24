@@ -2306,6 +2306,37 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
     """Render common fixed-point, grouped, currency and percentage formats."""
     if not value or len(value) > 128:
         return None
+    scientific = re.fullmatch(
+        r"(?P<integer>[0#])(?:\.(?P<decimals>[0#]{1,8}))?"
+        r"[Ee](?P<sign>[+-])(?P<exponent>0{1,3})",
+        format_code,
+    )
+    if scientific is not None:
+        try:
+            number = Decimal(value)
+            if not number.is_finite():
+                return None
+            decimals = scientific.group("decimals") or ""
+            rendered = format(number, f".{len(decimals)}E")
+            mantissa, exponent = rendered.split("E", maxsplit=1)
+            required_places = len(decimals.rstrip("#"))
+            if "#" in decimals[:required_places]:
+                return None
+            if len(decimals) > required_places and "." in mantissa:
+                whole, fraction = mantissa.split(".", maxsplit=1)
+                fraction = fraction.rstrip("0")
+                if len(fraction) < required_places:
+                    fraction = fraction.ljust(required_places, "0")
+                mantissa = whole + ("." + fraction if fraction else "")
+            exponent_value = 0 if number == 0 else int(exponent)
+            exponent_sign = (
+                "-" if exponent_value < 0 else ("+" if scientific.group("sign") == "+" else "")
+            )
+            exponent_digits = str(abs(exponent_value)).zfill(len(scientific.group("exponent")))
+        except (InvalidOperation, ValueError, OverflowError):
+            return None
+        return f"{mantissa}E{exponent_sign}{exponent_digits}"
+
     match = re.fullmatch(
         r"(?P<currency>[$€£¥])?(?P<group>#,##0|0)(?:\.(?P<decimals>[0#]{1,8}))?(?P<percent>%)?",
         format_code,
