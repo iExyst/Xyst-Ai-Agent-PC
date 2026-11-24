@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Any, Literal
+
+from PIL import Image
 
 from xaa.runtime.document_input import extract_document_text, render_pdf_scanned_pages
 from xaa.storage.runs import RunStore, utc_now
@@ -17,7 +20,38 @@ MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 80 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
 MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES = 1024 * 1024
 MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES = 2 * 1024 * 1024
+MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES = 2 * 1024 * 1024
+MAX_SPECIALIST_PROCEDURE_IMAGE_DIMENSION = 1600
+MAX_SPECIALIST_PROCEDURE_IMAGE_PIXELS = 2_500_000
 SPECIALIST_IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png"})
+SPECIALIST_CONVERTIBLE_IMAGE_FORMATS = {"image/gif": "GIF", "image/webp": "WEBP"}
+
+
+def _convert_specialist_image_to_png(raw: bytes, expected_format: str) -> bytes:
+    """Convert only the first frame of a bounded GIF/WebP reference into PNG."""
+    try:
+        image = Image.open(BytesIO(raw), formats=[expected_format])
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
+        raise ValueError("Linked specialist GIF/WebP could not be safely decoded.") from None
+    with image:
+        width, height = image.size
+        if (
+            image.format != expected_format
+            or width < 1
+            or height < 1
+            or width > MAX_SPECIALIST_PROCEDURE_IMAGE_DIMENSION
+            or height > MAX_SPECIALIST_PROCEDURE_IMAGE_DIMENSION
+            or width * height > MAX_SPECIALIST_PROCEDURE_IMAGE_PIXELS
+        ):
+            raise ValueError("Linked specialist GIF/WebP exceeds the bounded image dimensions.")
+        try:
+            image.seek(0)
+            image.load()
+            output = BytesIO()
+            image.convert("RGBA").save(output, format="PNG", optimize=False)
+            return output.getvalue()
+        except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
+            raise ValueError("Linked specialist GIF/WebP could not be safely converted.") from None
 
 
 def specialist_procedure_environments(
@@ -49,7 +83,7 @@ def specialist_procedure_environments(
 def specialist_procedure_resources(
     connection: Any, skill_id: str, version: int, content_bytes: int
 ) -> list[dict[str, Any]]:
-    """Snapshot digest-checked text, text PDFs, and PNG/JPEG resources for specialists."""
+    """Snapshot digest-checked text, PDFs, and bounded image resources for specialists."""
     rows = connection.execute(
         "SELECT relative_path,media_type,size_bytes,sha256,content FROM skill_version_assets "
         "WHERE skill_id=? AND version=? ORDER BY relative_path LIMIT 33",
@@ -63,6 +97,7 @@ def specialist_procedure_resources(
     resources: list[dict[str, Any]] = []
     rendered_pdf_bytes = 0
     rendered_pdf_page_count = 0
+    converted_image_bytes = 0
     for row in rows:
         path = str(row["relative_path"])
         normalized = PurePosixPath(path)
@@ -77,10 +112,12 @@ def specialist_procedure_resources(
         raw = bytes(row["content"])
         media_type = str(row["media_type"])
         if not is_text_asset_media_type(media_type) and media_type not in (
-            SPECIALIST_IMAGE_MEDIA_TYPES | {"application/pdf"}
+            SPECIALIST_IMAGE_MEDIA_TYPES
+            | set(SPECIALIST_CONVERTIBLE_IMAGE_FORMATS)
+            | {"application/pdf"}
         ):
             raise ValueError(
-                "Specialist procedures can use linked UTF-8 text, extractable-text PDFs, PNG, and JPEG resources only."
+                "Specialist procedures can use linked UTF-8 text, PDFs, PNG, JPEG, GIF, and WebP resources only."
             )
         if (
             len(raw) > 64 * 1024
@@ -92,6 +129,7 @@ def specialist_procedure_resources(
         extracted_pdf = False
         rendered_pages: list[tuple[int, bytes]] = []
         page_images: list[dict[str, Any]] = []
+        normalized_image: bytes | None = None
         if is_text_asset_media_type(media_type):
             try:
                 content = raw.decode("utf-8")
@@ -125,6 +163,13 @@ def specialist_procedure_resources(
                         "content_base64": base64.b64encode(png).decode("ascii"),
                     }
                 )
+        elif media_type in SPECIALIST_CONVERTIBLE_IMAGE_FORMATS:
+            normalized_image = _convert_specialist_image_to_png(
+                raw, SPECIALIST_CONVERTIBLE_IMAGE_FORMATS[media_type]
+            )
+            converted_image_bytes += len(normalized_image)
+            if converted_image_bytes > MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES:
+                raise ValueError("Converted specialist GIF/WebP images exceed the 2 MiB limit.")
         else:
             signature_valid = (
                 raw.startswith(b"\x89PNG\r\n\x1a\n")
@@ -150,6 +195,14 @@ def specialist_procedure_resources(
                 resource["source_size_bytes"] = str(len(raw))
                 if page_images:
                     resource["rendered_pages"] = page_images
+        elif normalized_image is not None:
+            resource["source_size_bytes"] = str(len(raw))
+            resource["converted_image"] = {
+                "media_type": "image/png",
+                "sha256": hashlib.sha256(normalized_image).hexdigest(),
+                "content_base64": base64.b64encode(normalized_image).decode("ascii"),
+                "frame": 1,
+            }
         else:
             resource["content_base64"] = base64.b64encode(raw).decode("ascii")
         resources.append(resource)

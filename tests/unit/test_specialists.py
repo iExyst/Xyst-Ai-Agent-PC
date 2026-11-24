@@ -6,6 +6,7 @@ import time
 from io import BytesIO
 
 import pytest
+from PIL import Image
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from xaa.providers.lm_studio import (
@@ -355,6 +356,15 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
     text_pdf_bytes = make_text_pdf(pdf_text)
     extracted_pdf_text = f"[Page 1]\n{pdf_text}"
     image_bytes = b"\x89PNG\r\n\x1a\nfixture-image-data"
+    gif_output = BytesIO()
+    Image.new("RGB", (2, 2), (220, 10, 20)).save(gif_output, format="GIF")
+    gif_bytes = gif_output.getvalue()
+    with Image.open(BytesIO(gif_bytes)) as gif_image:
+        gif_image.seek(0)
+        gif_image.load()
+        normalized_output = BytesIO()
+        gif_image.convert("RGBA").save(normalized_output, format="PNG", optimize=False)
+    converted_gif = normalized_output.getvalue()
     scanned_pdf_bytes = make_blank_pdf()
     rendered_pdf_png = render_pdf_scanned_pages(scanned_pdf_bytes)[0][1]
     with store.connection() as connection:
@@ -372,6 +382,11 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
             "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
             "VALUES('procedure-resource',1,'references/guide.md','text/markdown',?,?,?)",
             (len(content_bytes), hashlib.sha256(content_bytes).hexdigest(), content_bytes),
+        )
+        connection.execute(
+            "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
+            "VALUES('procedure-resource',1,'references/animated.gif','image/gif',?,?,?)",
+            (len(gif_bytes), hashlib.sha256(gif_bytes).hexdigest(), gif_bytes),
         )
         connection.execute(
             "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
@@ -430,6 +445,13 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
                             "type": "image_url",
                             "image_url": {
                                 "url": "data:image/png;base64,"
+                                + base64.b64encode(converted_gif).decode("ascii")
+                            },
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/png;base64,"
                                 + base64.b64encode(image_bytes).decode("ascii")
                             },
                         },
@@ -447,6 +469,13 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
                 assignment = json.loads(user_text)
                 listed = assignment["specialist_procedure_untrusted"]["linked_resources"]
                 assert listed == [
+                    {
+                        "path": "references/animated.gif",
+                        "media_type": "image/gif",
+                        "sha256": hashlib.sha256(gif_bytes).hexdigest(),
+                        "attached_as_image": True,
+                        "attached_frame_number": 1,
+                    },
                     {
                         "path": "references/diagram.png",
                         "media_type": "image/png",

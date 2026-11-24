@@ -18,6 +18,7 @@ from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
 from xaa.storage.skills import is_text_asset_media_type, snapshot_digest
 from xaa.storage.specialist_profiles import (
     MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES,
+    MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES,
     MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES,
     MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES,
     SPECIALIST_IMAGE_MEDIA_TYPES,
@@ -92,6 +93,7 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
     total_resource_bytes = 0
     total_rendered_pdf_bytes = 0
     total_rendered_pdf_pages = 0
+    total_converted_image_bytes = 0
     seen_paths: set[str] = set()
     for resource_value in resources:
         if not isinstance(resource_value, dict):
@@ -101,6 +103,7 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         media_type = resource.get("media_type")
         text = resource.get("content")
         encoded = resource.get("content_base64")
+        converted_image_value = resource.get("converted_image")
         digest = resource.get("sha256")
         if (
             not isinstance(path, str)
@@ -196,10 +199,56 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
             )
             if not signature_valid:
                 raise ValueError("Saved specialist image failed its file signature check.")
+        elif media_type in {"image/gif", "image/webp"} and text is None and encoded is None:
+            source_size_value = resource.get("source_size_bytes")
+            if not isinstance(converted_image_value, dict):
+                raise ValueError("Saved converted specialist image metadata is invalid.")
+            converted_image = cast(dict[str, Any], converted_image_value)
+            if (
+                not isinstance(source_size_value, str)
+                or len(source_size_value) > 5
+                or not source_size_value.isdecimal()
+                or not 1 <= int(source_size_value) <= 64 * 1024
+                or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or set(converted_image) != {"media_type", "sha256", "content_base64", "frame"}
+                or converted_image.get("media_type") != "image/png"
+                or type(converted_image.get("frame")) is not int
+                or converted_image.get("frame") != 1
+                or not isinstance(converted_image.get("sha256"), str)
+                or re.fullmatch(r"[a-f0-9]{64}", cast(str, converted_image.get("sha256"))) is None
+                or not isinstance(converted_image.get("content_base64"), str)
+            ):
+                raise ValueError("Saved converted specialist image metadata is invalid.")
+            try:
+                raw = base64.b64decode(cast(str, converted_image["content_base64"]), validate=True)
+            except ValueError as exc:
+                raise ValueError("Saved converted specialist image is not valid base64.") from exc
+            if (
+                not raw.startswith(b"\x89PNG\r\n\x1a\n")
+                or hashlib.sha256(raw).hexdigest() != converted_image["sha256"]
+            ):
+                raise ValueError("Saved converted specialist image failed its integrity check.")
+            total_converted_image_bytes += len(raw)
+            if total_converted_image_bytes > MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES:
+                raise ValueError("Saved converted specialist images exceed the 2 MiB limit.")
+            source_size_bytes = int(source_size_value)
         else:
             raise ValueError("Saved specialist procedure resource content is invalid.")
-        if len(raw) > 64 * 1024 or (
-            media_type != "application/pdf" and hashlib.sha256(raw).hexdigest() != digest
+        if (
+            len(raw)
+            > (
+                MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES
+                if media_type in {"image/gif", "image/webp"}
+                else 64 * 1024
+            )
+            or (
+                media_type not in {"application/pdf", "image/gif", "image/webp"}
+                and hashlib.sha256(raw).hexdigest() != digest
+            )
+            or (
+                media_type in {"image/gif", "image/webp"}
+                and len(raw) > MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES
+            )
         ):
             raise ValueError("Saved specialist procedure resource failed its integrity check.")
         total_resource_bytes += source_size_bytes if source_size_bytes is not None else len(raw)

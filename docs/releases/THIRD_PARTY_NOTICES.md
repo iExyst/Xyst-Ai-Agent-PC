@@ -1,6 +1,6 @@
 # Provisional third-party notices
 
-Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies, 2026-11-09 with 23 source-hash-grouped texts covering the five omitted locked Python packages and their vendored dependencies plus the `uritemplate` direct dependency, and 2026-11-14 with the pinned `node-semver` Python port license. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
+Generated 2026-11-07 from the locked Python environment, npm runtime dependencies and Windows-target Cargo dependency sources; supplemented 2026-11-08 with exact license and NOTICE files for nine Discord adapter runtime dependencies, 2026-11-09 with 23 source-hash-grouped texts covering the five omitted locked Python packages and their vendored dependencies plus the `uritemplate` direct dependency, 2026-11-14 with the pinned `node-semver` Python port license, and 2026-11-24 with the Pillow 13.0.0 Windows wheel license. License texts are reproduced from package files, exact upstream VCS revisions, or the official MPL-2.0 text as documented below. Package groups share byte-identical license text; every package attribution in each group is retained. The supplemental dependency texts are grouped by SHA-256 and list their exact distribution metadata paths.
 
 On 2026-11-12, removed 60 scanner-generated `Additional notice: UNKNOWN` placeholders because they contained no source notice text, and removed two obsolete Python package sections for `httpx-sse` and `pydantic-settings` after the pinned MCP SDK migration. The coverage check rejects a reintroduced placeholder. This cleanup does not complete license or copyright review.
 
@@ -29325,4 +29325,43 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+### 295. Python (locked runtime dependency) — MIT-CMU
+
+**Packages:** `Pillow@13.0.0`
+
+The following license text is from `pillow-13.0.0.dist-info/licenses/LICENSE` in the pinned Windows wheel. The wheel SHA-256 in `uv.lock` is `9dda0788a9932776a75d8bcc020076edc308ce2508b51f6739a45e3158b3fc42`.
+
+```text
+The Python Imaging Library (PIL) is
+
+    Copyright © 1997-2011 by Secret Labs AB
+    Copyright © 1995-2011 by Fredrik Lundh and contributors
+
+Pillow is the friendly PIL fork. It is
+
+    Copyright © 2010 by Jeffrey 'Alex' Clark and contributors
+
+Like PIL, Pillow is licensed under the open source MIT-CMU License:
+
+By obtaining, using, and/or copying this software and/or its associated
+documentation, you agree that you have read, understood, and will comply
+with the following terms and conditions:
+
+Permission to use, copy, modify and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
+provided that the above copyright notice appears in all copies, and that
+both that copyright notice and this permission notice appear in supporting
+documentation, and that the name of Secret Labs AB or the author not be
+used in advertising or publicity pertaining to distribution of the software
+without specific, written prior permission.
+
+SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR BE LIABLE FOR ANY SPECIAL,
+INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
 ```

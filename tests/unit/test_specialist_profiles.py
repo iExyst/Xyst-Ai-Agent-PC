@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 from io import BytesIO
@@ -5,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 from pydantic import SecretStr
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
@@ -116,6 +118,68 @@ def test_specialist_procedure_rejects_malformed_linked_png(workspace_tmp_path):
     _add_resource(store, "procedure-a", "references/diagram.png", b"not a PNG", "image/png")
 
     with pytest.raises(ValueError, match="file signature"):
+        SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+
+
+@pytest.mark.parametrize(
+    ("media_type", "image_format"), [("image/gif", "GIF"), ("image/webp", "WEBP")]
+)
+def test_specialist_procedure_converts_bounded_gif_and_webp_to_first_frame_png(
+    workspace_tmp_path, media_type, image_format
+):
+    store = RunStore(workspace_tmp_path / f"specialist-procedure-{image_format.lower()}.sqlite3")
+    _active_procedure(store)
+    output = BytesIO()
+    first = Image.new("RGB", (3, 2), (220, 10, 20))
+    second = Image.new("RGB", (3, 2), (10, 20, 220))
+    if image_format == "GIF":
+        first.save(output, format=image_format, save_all=True, append_images=[second], duration=100)
+    else:
+        first.save(output, format=image_format, lossless=True)
+    source = output.getvalue()
+    _add_resource(
+        store, "procedure-a", f"references/animated.{image_format.lower()}", source, media_type
+    )
+    SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+
+    run_id = store.create_run(
+        objective="Inspect a linked image",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [TaskDefinition(id="inspect-image", objective="Inspect the image", role="researcher")],
+    )
+    resource = tasks.records(run_id)[0]["procedure_snapshot"]["linked_resources"][0]
+    converted = resource["converted_image"]
+    png = base64.b64decode(converted["content_base64"], validate=True)
+    assert resource["sha256"] == hashlib.sha256(source).hexdigest()
+    assert resource["source_size_bytes"] == str(len(source))
+    assert converted["media_type"] == "image/png"
+    assert converted["frame"] == 1
+    assert converted["sha256"] == hashlib.sha256(png).hexdigest()
+    with Image.open(BytesIO(png)) as normalized:
+        assert normalized.format == "PNG"
+        assert normalized.size == (3, 2)
+        if image_format == "GIF":
+            assert normalized.getpixel((0, 0))[:3] == (220, 10, 20)
+    validate_specialist_procedure_snapshot(tasks.records(run_id)[0]["procedure_snapshot"])
+
+
+def test_specialist_procedure_rejects_oversized_converted_image_dimensions(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-oversized-gif.sqlite3")
+    _active_procedure(store)
+    output = BytesIO()
+    Image.new("RGB", (1601, 1), (0, 0, 0)).save(output, format="GIF")
+    _add_resource(store, "procedure-a", "references/large.gif", output.getvalue(), "image/gif")
+
+    with pytest.raises(ValueError, match="bounded image dimensions"):
         SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
 
 

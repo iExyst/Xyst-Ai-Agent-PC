@@ -138,6 +138,7 @@ License expressions below are copied from package metadata without normalization
 | Python | opentelemetry-api | 1.45.2 | Apache-2.0 | https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api |
 | Python | packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | https://github.com/pypa/packaging |
 | Python | pefile | 2024.8.26 | MIT | https://github.com/erocarrera/pefile |
+| Python | Pillow | 13.0.0 | MIT-CMU | https://python-pillow.org |
 | Python | playwright | 1.64.1 | Apache-2.0 | https://github.com/Microsoft/playwright-python |
 | Python | pluggy | 1.7.0 | MIT License | https://github.com/pytest-dev/pluggy |
 | Python | propcache | 0.5.4 | Apache-2.0 | https://github.com/aio-libs/propcache |

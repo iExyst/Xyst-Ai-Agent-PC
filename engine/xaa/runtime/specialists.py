@@ -921,6 +921,16 @@ class SpecialistRunner:
             for resource in linked_resources:
                 if resource.get("media_type") in {"image/png", "image/jpeg"}:
                     procedure_images.append(resource)
+                converted_image = resource.get("converted_image")
+                if isinstance(converted_image, dict):
+                    procedure_images.append(
+                        {
+                            "path": resource["path"],
+                            "media_type": converted_image["media_type"],
+                            "sha256": converted_image["sha256"],
+                            "content_base64": converted_image["content_base64"],
+                        }
+                    )
                 for page in cast(list[dict[str, Any]], resource.get("rendered_pages", [])):
                     page_number = page["page"]
                     procedure_images.append(
@@ -934,7 +944,8 @@ class SpecialistRunner:
             procedure_text_resources = [
                 resource
                 for resource in linked_resources
-                if resource.get("media_type") not in {"image/png", "image/jpeg"}
+                if resource.get("media_type")
+                not in {"image/png", "image/jpeg", "image/gif", "image/webp"}
             ]
             procedure_prompt = {
                 key: value for key, value in procedure_snapshot.items() if key != "linked_resources"
@@ -944,9 +955,15 @@ class SpecialistRunner:
                     "path": resource["path"],
                     "media_type": resource["media_type"],
                     "sha256": resource["sha256"],
-                    "attached_as_image": resource.get("media_type") in {"image/png", "image/jpeg"}
+                    "attached_as_image": resource.get("media_type")
+                    in {"image/png", "image/jpeg", "image/gif", "image/webp"}
                     or bool(resource.get("rendered_pages")),
                 }
+                | (
+                    {"attached_frame_number": 1}
+                    if isinstance(resource.get("converted_image"), dict)
+                    else {}
+                )
                 | (
                     {
                         "attached_page_numbers": [
@@ -1788,7 +1805,12 @@ class SpecialistRunner:
                             "error": "That path is not linked by the selected procedure.",
                             "trust": "untrusted_skill_resource",
                         }
-                    elif selected_resource.get("media_type") in {"image/png", "image/jpeg"}:
+                    elif selected_resource.get("media_type") in {
+                        "image/png",
+                        "image/jpeg",
+                        "image/gif",
+                        "image/webp",
+                    }:
                         result = {
                             "status": "attached_as_image",
                             "path": parsed.path,
