@@ -6,6 +6,7 @@ import re
 from binascii import crc32
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from fractions import Fraction
 from io import BytesIO
 from math import ceil, isfinite
 from posixpath import join as join_posix
@@ -2303,9 +2304,37 @@ def _xlsx_datetime_display(value: str, format_code: str, *, date_1904: bool) -> 
 
 
 def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
-    """Render common fixed-point, grouped, currency and percentage formats."""
+    """Render common fixed-point, fraction, scientific, currency and percentage formats."""
     if not value or len(value) > 128:
         return None
+    fraction_format = re.fullmatch(
+        r"(?:(?P<whole>[0#])\s+)?(?P<numerator>\?{1,3})/(?P<denominator>\?{1,3})",
+        format_code,
+    )
+    if fraction_format is not None:
+        try:
+            number = Decimal(value)
+            if not number.is_finite() or abs(number) > Decimal(1_000_000_000_000):
+                return None
+            max_denominator = 10 ** len(fraction_format.group("denominator")) - 1
+            magnitude = abs(number)
+            sign = "-" if number < 0 else ""
+            if magnitude < Decimal(1) / (2 * max_denominator):
+                return "0"
+            approximation = Fraction(magnitude).limit_denominator(max_denominator)
+            whole, numerator = divmod(approximation.numerator, approximation.denominator)
+            if not fraction_format.group("whole"):
+                numerator = approximation.numerator
+                whole = 0
+            if numerator == 0:
+                return f"{sign}{whole}"
+            fraction_text = f"{numerator}/{approximation.denominator}"
+            if whole:
+                return f"{sign}{whole} {fraction_text}"
+            return f"{sign}{fraction_text}"
+        except (InvalidOperation, ValueError, OverflowError):
+            return None
+
     scientific = re.fullmatch(
         r"(?P<integer>[0#])(?:\.(?P<decimals>[0#]{1,8}))?"
         r"[Ee](?P<sign>[+-])(?P<exponent>0{1,3})",
