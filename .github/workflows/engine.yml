@@ -259,6 +259,9 @@ jobs:
       - name: Verify bounded shared desktop conversation turns
         run: npm run test:browser -- tests/browser/shared-chat-session.spec.ts
         timeout-minutes: 3
+      - name: Verify imported npm dependency review and devEngines warnings
+        run: npm run test:browser -- tests/browser/skills.spec.ts
+        timeout-minutes: 4
       - run: uv run pytest -q
         if: steps.python-scope.outputs.run == 'true'
       - name: Verify specialist recovery after API process death
