@@ -262,6 +262,9 @@ jobs:
       - name: Verify imported npm dependency review and devEngines warnings
         run: npm run test:browser -- tests/browser/skills.spec.ts
         timeout-minutes: 4
+      - name: Verify MCP tool, resource and prompt catalog refresh in the desktop UI
+        run: npm run test:browser -- tests/browser/mcp.spec.ts
+        timeout-minutes: 5
       - run: uv run pytest -q
         if: steps.python-scope.outputs.run == 'true'
       - name: Verify specialist recovery after API process death
