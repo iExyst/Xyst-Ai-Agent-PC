@@ -843,6 +843,33 @@ try {
   if (!downloadedAttachment.equals(attachmentBytes)) {
     throw new Error('The native saved-conversation PDF download did not preserve the artifact bytes.');
   }
+  const csvSessionId = `native-csv-${randomUUID()}`;
+  const csvBytes = Buffer.from('item,quantity\r\napples,2\r\n', 'utf8');
+  const seedCsv = seedAttachment.replaceAll(
+    'Retain a saved PDF attachment', 'Retain a saved CSV attachment',
+  ).replaceAll('native-review.pdf', 'inventory.csv').replaceAll('application/pdf', 'text/csv').replaceAll(
+    'NATIVE-SAVED-PDF-MARKER', 'NATIVE-SAVED-CSV-MARKER',
+  ).replaceAll('Review this saved PDF.', 'Review this saved CSV.').replaceAll(
+    'The PDF is retained with this conversation.', 'The CSV is retained with this conversation.',
+  );
+  const csvSeed = JSON.parse(execFileSync('uv', [
+    'run', 'python', '-c', seedCsv, database, csvSessionId, fakeModel,
+    fixtureWorkspace, csvBytes.toString('base64'),
+  ], { windowsHide: true, stdio: 'pipe', timeout: 30000, env: process.env }).toString('utf8'));
+  await second.page.locator('details.saved-conversations:visible #new-shared-chat-name').fill(csvSessionId);
+  await second.page.getByRole('button', { name: 'Start or open shared conversation' }).click();
+  const csvDownloadButton = second.page.getByRole('button', { name: 'Download CSV file' });
+  await expect(csvDownloadButton).toBeVisible();
+  const csvDownloadEvent = second.page.waitForEvent('download', { timeout: 15000 });
+  await csvDownloadButton.click();
+  const csvDownload = await csvDownloadEvent;
+  if (csvDownload.suggestedFilename() !== 'inventory.csv') {
+    throw new Error(`Unexpected native saved-CSV filename: ${csvDownload.suggestedFilename()}`);
+  }
+  const downloadedCsv = await readFile(await csvDownload.path());
+  if (!downloadedCsv.equals(csvBytes)) {
+    throw new Error('The native saved-conversation CSV download did not preserve the artifact bytes.');
+  }
   const audioSessionId = `native-audio-${randomUUID()}`;
   const audioPayload = Buffer.from([0x34, 0x12, 0xcc, 0xed]);
   const audioBytes = Buffer.alloc(44 + audioPayload.length);
@@ -923,6 +950,16 @@ try {
       media_type: audioSeed.attachment.media_type,
       size_bytes: audioSeed.attachment.size_bytes,
       download_filename: audioDownload.suggestedFilename(),
+      artifact_bytes_verified: true,
+      live_model_inference: false,
+    },
+    native_chat_csv_attachment: {
+      saved_session_id: csvSessionId,
+      run_id: csvSeed.run_id,
+      artifact_id: csvSeed.attachment.artifact_id,
+      media_type: csvSeed.attachment.media_type,
+      size_bytes: csvSeed.attachment.size_bytes,
+      download_filename: csvDownload.suggestedFilename(),
       artifact_bytes_verified: true,
       live_model_inference: false,
     },
