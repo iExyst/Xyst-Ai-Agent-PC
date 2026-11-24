@@ -13,7 +13,7 @@ import tarfile
 import time
 import uuid
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from xaa.extensions.npm_dependencies import (
@@ -113,7 +113,7 @@ def _wsl(distribution: str, *arguments: str) -> str:
     return completed.stdout.strip()
 
 
-def _wsl_node_libc(distribution: str) -> str | None:
+def _wsl_node_libc(distribution: str) -> Literal["glibc", "musl"] | None:
     probe = r"""const fs=require('node:fs');let libc;
 try{const ldd=fs.readFileSync('/usr/bin/ldd','utf8');
 if(ldd.includes('musl'))libc='musl';else if(ldd.includes('GNU C Library'))libc='glibc';else libc=null;

@@ -590,6 +590,7 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
         if not isinstance(version_range, str):
             raise TypeError(f"npm package.json engines.{name} must be a semantic-version range.")
         _require_npm_version_satisfies(version, version_range, f"required {name} runtime")
+    _verify_npm_dev_engines(manifest.get("devEngines", {}), lock)
     raw_os = manifest.get("os")
     if raw_os is not None:
         os_constraints = _npm_platform_constraints(raw_os, "os", _NPM_PLATFORM_NAME)
@@ -628,6 +629,74 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     if digest != lock.package_manifest_sha256:
         raise ValueError("npm package.json bytes do not match the bound procedure resource.")
     return digest
+
+
+def _verify_npm_dev_engines(raw: object, lock: ProcedureNpmDependencyLock) -> None:
+    """Apply npm's root devEngines checks to the selected WSL environment."""
+    if not isinstance(raw, dict):
+        raise TypeError("npm package.json devEngines must be an object.")
+    current: dict[str, tuple[str | None, str | None]] = {
+        "cpu": (lock.node_arch, None),
+        "os": ("linux", None),
+        "libc": (lock.node_libc, None),
+        "runtime": ("node", lock.node_version),
+        "packageManager": ("npm", lock.npm_version),
+    }
+    for engine, authored in cast(dict[str, Any], raw).items():
+        if engine not in current:
+            raise ValueError(f"npm package.json devEngines.{engine} is unsupported.")
+        candidates: list[object] = (
+            cast(list[object], authored) if isinstance(authored, list) else [authored]
+        )
+        if not candidates:
+            continue
+        actual_name, actual_version = current[engine]
+        if actual_name is None:
+            raise ValueError(
+                f"npm package.json devEngines.{engine} cannot be checked against the selected runtime."
+            )
+        outcomes: list[bool] = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                raise TypeError(f"npm package.json devEngines.{engine} entries must be objects.")
+            values = cast(dict[str, Any], candidate)
+            if set(values) - {"name", "version", "onFail"}:
+                raise ValueError(f"npm package.json devEngines.{engine} has an unknown property.")
+            expected_name = values.get("name")
+            if not isinstance(expected_name, str):
+                raise TypeError(f"npm package.json devEngines.{engine}.name must be a string.")
+            on_fail: object = values.get("onFail", "error")
+            if not isinstance(on_fail, str) or on_fail not in {
+                "error",
+                "warn",
+                "ignore",
+                "download",
+            }:
+                raise ValueError(f"npm package.json devEngines.{engine}.onFail is invalid.")
+            version = values.get("version")
+            if version is not None and not isinstance(version, str):
+                raise TypeError(f"npm package.json devEngines.{engine}.version must be a string.")
+            if version is not None and actual_version is None:
+                raise ValueError(
+                    f"npm package.json devEngines.{engine}.version cannot be checked for this platform field."
+                )
+            matches = expected_name == actual_name
+            if matches and version is not None:
+                assert actual_version is not None
+                if _NODE_SEMVER_VALID_RANGE(version, False) is not None:
+                    matches = _NODE_SEMVER_SATISFIES(actual_version.removeprefix("v"), version)
+                else:
+                    matches = version == actual_version
+            outcomes.append(matches)
+        if all(not outcome for outcome in outcomes):
+            last_candidate = cast(dict[str, Any], candidates[-1])
+            on_fail_value = last_candidate.get("onFail", "error")
+            # npm treats "download" as an error here; warning and ignored
+            # mismatches remain non-fatal and npm reports them during npm ci.
+            if on_fail_value in {"error", "download"}:
+                raise ValueError(
+                    f"npm package.json devEngines.{engine} does not match the selected WSL runtime."
+                )
 
 
 def _npm_platform_constraints(raw: object, field: str, name_pattern: re.Pattern[str]) -> list[str]:
