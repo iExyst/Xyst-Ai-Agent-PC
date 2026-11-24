@@ -843,6 +843,47 @@ try {
   if (!downloadedAttachment.equals(attachmentBytes)) {
     throw new Error('The native saved-conversation PDF download did not preserve the artifact bytes.');
   }
+  const audioSessionId = `native-audio-${randomUUID()}`;
+  const audioPayload = Buffer.from([0x34, 0x12, 0xcc, 0xed]);
+  const audioBytes = Buffer.alloc(44 + audioPayload.length);
+  audioBytes.write('RIFF', 0, 'ascii');
+  audioBytes.writeUInt32LE(36 + audioPayload.length, 4);
+  audioBytes.write('WAVEfmt ', 8, 'ascii');
+  audioBytes.writeUInt32LE(16, 16);
+  audioBytes.writeUInt16LE(1, 20);
+  audioBytes.writeUInt16LE(1, 22);
+  audioBytes.writeUInt32LE(8000, 24);
+  audioBytes.writeUInt32LE(16000, 28);
+  audioBytes.writeUInt16LE(2, 32);
+  audioBytes.writeUInt16LE(16, 34);
+  audioBytes.write('data', 36, 'ascii');
+  audioBytes.writeUInt32LE(audioPayload.length, 40);
+  audioPayload.copy(audioBytes, 44);
+  const seedAudio = seedAttachment.replaceAll(
+    'Retain a saved PDF attachment', 'Retain a saved WAV attachment',
+  ).replaceAll('application/pdf', 'audio/wav').replaceAll(
+    'NATIVE-SAVED-PDF-MARKER', 'NATIVE-SAVED-WAV-MARKER',
+  ).replaceAll('Review this saved PDF.', 'Review this saved WAV.').replaceAll(
+    'The PDF is retained with this conversation.', 'The WAV is retained with this conversation.',
+  );
+  const audioSeed = JSON.parse(execFileSync('uv', [
+    'run', 'python', '-c', seedAudio, database, audioSessionId, fakeModel,
+    fixtureWorkspace, audioBytes.toString('base64'),
+  ], { windowsHide: true, stdio: 'pipe', timeout: 30000, env: process.env }).toString('utf8'));
+  await second.page.locator('details.saved-conversations:visible #new-shared-chat-name').fill(audioSessionId);
+  await second.page.getByRole('button', { name: 'Start or open shared conversation' }).click();
+  const audioDownloadButton = second.page.getByRole('button', { name: 'Download WAV audio' });
+  await expect(audioDownloadButton).toBeVisible();
+  const audioDownloadEvent = second.page.waitForEvent('download', { timeout: 15000 });
+  await audioDownloadButton.click();
+  const audioDownload = await audioDownloadEvent;
+  if (audioDownload.suggestedFilename() !== 'xaa-attachment.wav') {
+    throw new Error(`Unexpected native saved-WAV filename: ${audioDownload.suggestedFilename()}`);
+  }
+  const downloadedAudio = await readFile(await audioDownload.path());
+  if (!downloadedAudio.equals(audioBytes)) {
+    throw new Error('The native saved-conversation WAV download did not preserve the artifact bytes.');
+  }
   await second.page.screenshot({ path: path.join(root, 'after-restart.png'), fullPage: true });
   report = {
     passed: true,
@@ -872,6 +913,16 @@ try {
       media_type: attachmentSeed.attachment.media_type,
       size_bytes: attachmentSeed.attachment.size_bytes,
       download_filename: attachmentDownload.suggestedFilename(),
+      artifact_bytes_verified: true,
+      live_model_inference: false,
+    },
+    native_chat_audio_attachment: {
+      saved_session_id: audioSessionId,
+      run_id: audioSeed.run_id,
+      artifact_id: audioSeed.attachment.artifact_id,
+      media_type: audioSeed.attachment.media_type,
+      size_bytes: audioSeed.attachment.size_bytes,
+      download_filename: audioDownload.suggestedFilename(),
       artifact_bytes_verified: true,
       live_model_inference: false,
     },
