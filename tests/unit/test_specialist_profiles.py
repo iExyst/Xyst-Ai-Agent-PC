@@ -151,6 +151,23 @@ def test_specialist_procedure_snapshots_scanned_pdf_as_bounded_page_image(worksp
     validate_specialist_procedure_snapshot(tasks.records(run_id)[0]["procedure_snapshot"])
 
 
+def test_specialist_procedure_caps_rendered_pages_across_linked_pdfs(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-scanned-pdf-page-cap.sqlite3")
+    _active_procedure(store)
+    pdf = _make_blank_pdf()
+    for index in range(5):
+        _add_resource(
+            store,
+            "procedure-a",
+            f"references/scanned-{index}.pdf",
+            pdf,
+            "application/pdf",
+        )
+
+    with pytest.raises(ValueError, match="at most four pages total"):
+        SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+
+
 def test_specialist_procedure_extracts_and_snapshots_bounded_text_pdf(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "specialist-procedure-text-pdf.sqlite3")
     _active_procedure(store)

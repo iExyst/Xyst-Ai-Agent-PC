@@ -62,6 +62,7 @@ def specialist_procedure_resources(
     total_bytes = 0
     resources: list[dict[str, Any]] = []
     rendered_pdf_bytes = 0
+    rendered_pdf_page_count = 0
     for row in rows:
         path = str(row["relative_path"])
         normalized = PurePosixPath(path)
@@ -110,6 +111,9 @@ def specialist_procedure_resources(
             if len(content.encode("utf-8")) > 64 * 1024:
                 raise ValueError("Extracted specialist PDF text must be 64 KiB or smaller.")
             extracted_pdf = True
+            rendered_pdf_page_count += len(rendered_pages)
+            if rendered_pdf_page_count > 4:
+                raise ValueError("Specialist procedure PDFs may render at most four pages total.")
             for page_number, png in rendered_pages:
                 rendered_pdf_bytes += len(png)
                 if rendered_pdf_bytes > MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES:

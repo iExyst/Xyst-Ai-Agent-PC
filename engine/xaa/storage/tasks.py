@@ -91,6 +91,7 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         raise ValueError("Saved specialist procedure text exceeds the 80 KiB limit.")
     total_resource_bytes = 0
     total_rendered_pdf_bytes = 0
+    total_rendered_pdf_pages = 0
     seen_paths: set[str] = set()
     for resource_value in resources:
         if not isinstance(resource_value, dict):
@@ -145,6 +146,9 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
             page_images = cast(list[Any], page_images_value)
             if len(page_images) > 4:
                 raise ValueError("Saved specialist PDF page images are invalid.")
+            total_rendered_pdf_pages += len(page_images)
+            if total_rendered_pdf_pages > 4:
+                raise ValueError("Saved specialist PDF pages exceed the four-page limit.")
             previous_page = 0
             for page_image_value in page_images:
                 if not isinstance(page_image_value, dict):
