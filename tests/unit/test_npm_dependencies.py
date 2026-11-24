@@ -237,9 +237,10 @@ def test_legacy_peer_deps_matches_npm_peer_resolution_mode() -> None:
 
     lock = parse(raw_lock, manifest=manifest, npmrc=npmrc)
     assert lock.legacy_peer_deps is True
-    assert verify_npm_package_manifest(manifest, lock, npmrc=npmrc) == hashlib.sha256(
-        manifest
-    ).hexdigest()
+    assert (
+        verify_npm_package_manifest(manifest, lock, npmrc=npmrc)
+        == hashlib.sha256(manifest).hexdigest()
+    )
 
 
 @pytest.mark.parametrize(

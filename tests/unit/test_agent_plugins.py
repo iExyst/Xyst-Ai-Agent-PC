@@ -1896,9 +1896,7 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
                 package_manifest_sha256=hashlib.sha256(package_manifest).hexdigest(),
                 **identity,
             )
-            verify_npm_package_manifest(
-                package_manifest, proposal, npmrc=identity.get("npmrc")
-            )
+            verify_npm_package_manifest(package_manifest, proposal, npmrc=identity.get("npmrc"))
             return proposal
         except Exception as exc:
             worker_errors.append(f"{type(exc).__name__}: {exc}")
@@ -1931,9 +1929,10 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         assert result["node_libc"] == "glibc"
         assert result["legacy_peer_deps"] is True
         assert result["install_links"] is False
-        assert result["npmrc_sha256"] == hashlib.sha256(
-            (skill_root / ".npmrc").read_bytes()
-        ).hexdigest()
+        assert (
+            result["npmrc_sha256"]
+            == hashlib.sha256((skill_root / ".npmrc").read_bytes()).hexdigest()
+        )
         assert result["root_dependencies"] == [
             {"name": "left-pad", "version_range": "^1.3.0", "kind": "dependencies"}
         ]

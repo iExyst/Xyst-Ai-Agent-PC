@@ -673,16 +673,10 @@ def verify_npm_package_manifest(
         if lock.npmrc_sha256 is not None:
             raise ValueError("The reviewed .npmrc resource is missing.")
     else:
-        if (
-            len(npmrc) > MAX_NPMRC_BYTES
-            or lock.npmrc_sha256 != hashlib.sha256(npmrc).hexdigest()
-        ):
+        if len(npmrc) > MAX_NPMRC_BYTES or lock.npmrc_sha256 != hashlib.sha256(npmrc).hexdigest():
             raise ValueError("The linked .npmrc does not match the reviewed lock.")
         legacy_peer_deps, install_links = parse_npmrc_install_options(npmrc)
-        if (
-            legacy_peer_deps != lock.legacy_peer_deps
-            or install_links != lock.install_links
-        ):
+        if legacy_peer_deps != lock.legacy_peer_deps or install_links != lock.install_links:
             raise ValueError("The linked .npmrc options do not match the reviewed lock.")
     warnings = _verify_npm_dev_engines(manifest.get("devEngines", {}), lock)
     if warnings != lock.dev_engine_warnings:

@@ -130,9 +130,9 @@ async def inspect_npm_package_lock_in_appcontainer(
         if len(request_bytes) > MAX_WORKER_REQUEST_BYTES:
             raise NpmLockInspectionError("npm lock inspection request exceeded its size limit.")
         snapshot_files = [
-                SnapshotFile(path="request.json", content=request_bytes),
-                SnapshotFile(path="package.json", content=package_manifest),
-                SnapshotFile(path="package-lock.json", content=package_lock),
+            SnapshotFile(path="request.json", content=request_bytes),
+            SnapshotFile(path="package.json", content=package_manifest),
+            SnapshotFile(path="package-lock.json", content=package_lock),
         ]
         if npmrc is not None:
             snapshot_files.append(SnapshotFile(path=".npmrc", content=npmrc))

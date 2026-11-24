@@ -2482,9 +2482,7 @@ def create_app(
                 status_code=409, detail="Acquire and verify exact npm tarballs before installation."
             )
         try:
-            package_manifest, package_lock, _npmrc = skill_store.npm_dependency_lock_resources(
-                lock
-            )
+            package_manifest, package_lock, _npmrc = skill_store.npm_dependency_lock_resources(lock)
             skill_store.npm_tarballs.verify(lock)
             deadline = time.monotonic() + 300
             transport = await WSLTransport.discover(

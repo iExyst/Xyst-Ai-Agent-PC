@@ -335,9 +335,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         source_sha256="a" * 64,
         package_manifest_sha256=hashlib.sha256(package_manifest).hexdigest(),
         lockfile_sha256=hashlib.sha256(package_lock).hexdigest(),
-        npmrc_sha256=hashlib.sha256(
-            b"legacy-peer-deps=true\ninstall-links=false\n"
-        ).hexdigest(),
+        npmrc_sha256=hashlib.sha256(b"legacy-peer-deps=true\ninstall-links=false\n").hexdigest(),
         legacy_peer_deps=True,
         install_links=False,
         distribution=distribution,
