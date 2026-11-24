@@ -3,8 +3,10 @@ import base64
 import hashlib
 import json
 import time
+from io import BytesIO
 
 import pytest
+from pypdf import PdfWriter
 from xaa.providers.lm_studio import (
     ContextLimitError,
     LMStudioProvider,
@@ -14,6 +16,7 @@ from xaa.providers.lm_studio import (
 from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime import specialists as specialist_module
 from xaa.runtime.coordinator import Coordinator
+from xaa.runtime.document_input import render_pdf_scanned_pages
 from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
@@ -23,6 +26,14 @@ from xaa.storage.runs import RunStore
 from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.task_workspaces import TaskWorkspaces
 from xaa.storage.tasks import TaskStore
+
+
+def make_blank_pdf() -> bytes:
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
 
 
 async def test_dependency_review_manifest_pages_all_evidence_with_bounded_results(
@@ -318,6 +329,8 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
     content = "Reference text with multibyte characters: café 🧪 " * 3
     content_bytes = content.encode("utf-8")
     image_bytes = b"\x89PNG\r\n\x1a\nfixture-image-data"
+    pdf_bytes = make_blank_pdf()
+    rendered_pdf_png = render_pdf_scanned_pages(pdf_bytes)[0][1]
     with store.connection() as connection:
         connection.execute(
             "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) "
@@ -338,6 +351,11 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
             "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
             "VALUES('procedure-resource',1,'references/diagram.png','image/png',?,?,?)",
             (len(image_bytes), hashlib.sha256(image_bytes).hexdigest(), image_bytes),
+        )
+        connection.execute(
+            "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
+            "VALUES('procedure-resource',1,'references/scanned.pdf','application/pdf',?,?,?)",
+            (len(pdf_bytes), hashlib.sha256(pdf_bytes).hexdigest(), pdf_bytes),
         )
     SpecialistProfileStore(store).set_procedure("researcher", "procedure-resource")
     tasks = TaskStore(store)
@@ -379,7 +397,14 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
                                 "url": "data:image/png;base64,"
                                 + base64.b64encode(image_bytes).decode("ascii")
                             },
-                        }
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/png;base64,"
+                                + base64.b64encode(rendered_pdf_png).decode("ascii")
+                            },
+                        },
                     ]
                     user_text = user_content[0]["text"]
                 else:
@@ -398,6 +423,13 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
                         "media_type": "text/markdown",
                         "sha256": hashlib.sha256(content_bytes).hexdigest(),
                         "attached_as_image": False,
+                    },
+                    {
+                        "path": "references/scanned.pdf",
+                        "media_type": "application/pdf",
+                        "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+                        "attached_as_image": True,
+                        "attached_page_numbers": [1],
                     },
                 ]
                 assert "content_base64" not in listed[0] and "content" not in listed[1]

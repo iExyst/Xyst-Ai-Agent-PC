@@ -18,6 +18,7 @@ from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
 from xaa.storage.skills import is_text_asset_media_type, snapshot_digest
 from xaa.storage.specialist_profiles import (
     MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES,
+    MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES,
     MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES,
     SPECIALIST_IMAGE_MEDIA_TYPES,
     specialist_procedure_resources,
@@ -89,6 +90,7 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
     if len(content.encode("utf-8")) > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
         raise ValueError("Saved specialist procedure text exceeds the 80 KiB limit.")
     total_resource_bytes = 0
+    total_rendered_pdf_bytes = 0
     seen_paths: set[str] = set()
     for resource_value in resources:
         if not isinstance(resource_value, dict):
@@ -137,6 +139,45 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
             ):
                 raise ValueError("Saved specialist PDF text failed its integrity check.")
             source_size_bytes = int(source_size_value)
+            page_images_value = resource.get("rendered_pages", [])
+            if not isinstance(page_images_value, list):
+                raise ValueError("Saved specialist PDF page images are invalid.")
+            page_images = cast(list[Any], page_images_value)
+            if len(page_images) > 4:
+                raise ValueError("Saved specialist PDF page images are invalid.")
+            previous_page = 0
+            for page_image_value in page_images:
+                if not isinstance(page_image_value, dict):
+                    raise TypeError("Saved specialist PDF page image is invalid.")
+                page_image = cast(dict[str, Any], page_image_value)
+                page_number = page_image.get("page")
+                image_digest = page_image.get("sha256")
+                image_base64 = page_image.get("content_base64")
+                if (
+                    set(page_image) != {"page", "sha256", "content_base64"}
+                    or type(page_number) is not int
+                    or not previous_page < page_number <= 50
+                    or not isinstance(image_digest, str)
+                    or re.fullmatch(r"[a-f0-9]{64}", image_digest) is None
+                    or not isinstance(image_base64, str)
+                ):
+                    raise ValueError("Saved specialist PDF page image metadata is invalid.")
+                try:
+                    image_raw = base64.b64decode(image_base64, validate=True)
+                except ValueError as exc:
+                    raise ValueError(
+                        "Saved specialist PDF page image is not valid base64."
+                    ) from exc
+                if (
+                    not image_raw.startswith(b"\x89PNG\r\n\x1a\n")
+                    or len(image_raw) > 2 * 1024 * 1024
+                    or hashlib.sha256(image_raw).hexdigest() != image_digest
+                ):
+                    raise ValueError("Saved specialist PDF page image failed its integrity check.")
+                previous_page = page_number
+                total_rendered_pdf_bytes += len(image_raw)
+                if total_rendered_pdf_bytes > MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES:
+                    raise ValueError("Saved specialist PDF page images exceed the 2 MiB limit.")
         elif (
             media_type in SPECIALIST_IMAGE_MEDIA_TYPES and isinstance(encoded, str) and text is None
         ):

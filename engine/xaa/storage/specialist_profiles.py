@@ -7,7 +7,7 @@ import hashlib
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
-from xaa.runtime.document_input import extract_document_text
+from xaa.runtime.document_input import extract_document_text, render_pdf_scanned_pages
 from xaa.storage.runs import RunStore, utc_now
 from xaa.storage.skills import is_text_asset_media_type
 
@@ -16,6 +16,7 @@ from xaa.storage.skills import is_text_asset_media_type
 MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 80 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
 MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES = 1024 * 1024
+MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES = 2 * 1024 * 1024
 SPECIALIST_IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png"})
 
 
@@ -47,7 +48,7 @@ def specialist_procedure_environments(
 
 def specialist_procedure_resources(
     connection: Any, skill_id: str, version: int, content_bytes: int
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Snapshot digest-checked text, text PDFs, and PNG/JPEG resources for specialists."""
     rows = connection.execute(
         "SELECT relative_path,media_type,size_bytes,sha256,content FROM skill_version_assets "
@@ -59,7 +60,8 @@ def specialist_procedure_resources(
     if content_bytes > MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES:
         raise ValueError("Specialist procedure text must be 80 KiB or smaller.")
     total_bytes = 0
-    resources: list[dict[str, str]] = []
+    resources: list[dict[str, Any]] = []
+    rendered_pdf_bytes = 0
     for row in rows:
         path = str(row["relative_path"])
         normalized = PurePosixPath(path)
@@ -87,21 +89,38 @@ def specialist_procedure_resources(
             raise ValueError("A linked specialist procedure resource failed its integrity check.")
         content = ""
         extracted_pdf = False
+        rendered_pages: list[tuple[int, bytes]] = []
+        page_images: list[dict[str, Any]] = []
         if is_text_asset_media_type(media_type):
             try:
                 content = raw.decode("utf-8")
             except UnicodeDecodeError as exc:
                 raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
         elif media_type == "application/pdf":
+            rendered_pages = render_pdf_scanned_pages(raw)
             try:
                 content = extract_document_text(raw, media_type)
             except ValueError as exc:
-                raise ValueError(
-                    "Linked specialist PDFs must contain bounded extractable text; scanned PDFs are not supported."
-                ) from exc
+                if rendered_pages and "PDF contains no extractable text" in str(exc):
+                    content = ""
+                else:
+                    raise ValueError(
+                        "Linked specialist PDFs must contain bounded extractable text or scanned pages."
+                    ) from exc
             if len(content.encode("utf-8")) > 64 * 1024:
                 raise ValueError("Extracted specialist PDF text must be 64 KiB or smaller.")
             extracted_pdf = True
+            for page_number, png in rendered_pages:
+                rendered_pdf_bytes += len(png)
+                if rendered_pdf_bytes > MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES:
+                    raise ValueError("Rendered specialist PDF pages exceed the 2 MiB limit.")
+                page_images.append(
+                    {
+                        "page": page_number,
+                        "sha256": hashlib.sha256(png).hexdigest(),
+                        "content_base64": base64.b64encode(png).decode("ascii"),
+                    }
+                )
         else:
             signature_valid = (
                 raw.startswith(b"\x89PNG\r\n\x1a\n")
@@ -113,7 +132,7 @@ def specialist_procedure_resources(
         total_bytes += len(raw)
         if total_bytes > MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES:
             raise ValueError("Specialist procedure linked resources must total 1 MiB or less.")
-        resource = {
+        resource: dict[str, Any] = {
             "path": path,
             "media_type": media_type,
             "sha256": str(row["sha256"]),
@@ -125,6 +144,8 @@ def specialist_procedure_resources(
                     content.encode("utf-8")
                 ).hexdigest()
                 resource["source_size_bytes"] = str(len(raw))
+                if page_images:
+                    resource["rendered_pages"] = page_images
         else:
             resource["content_base64"] = base64.b64encode(raw).decode("ascii")
         resources.append(resource)

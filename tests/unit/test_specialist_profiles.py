@@ -119,7 +119,7 @@ def test_specialist_procedure_rejects_malformed_linked_png(workspace_tmp_path):
         SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
 
 
-def test_specialist_procedure_rejects_scanned_pdf_reference(workspace_tmp_path):
+def test_specialist_procedure_snapshots_scanned_pdf_as_bounded_page_image(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "specialist-procedure-scanned-pdf.sqlite3")
     _active_procedure(store)
     _add_resource(
@@ -129,9 +129,26 @@ def test_specialist_procedure_rejects_scanned_pdf_reference(workspace_tmp_path):
         _make_blank_pdf(),
         "application/pdf",
     )
+    SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
 
-    with pytest.raises(ValueError, match="scanned PDFs are not supported"):
-        SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+    run_id = store.create_run(
+        objective="Inspect a scanned procedure reference",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [TaskDefinition(id="read-scan", objective="Inspect the scan", role="researcher")],
+    )
+    resource = tasks.records(run_id)[0]["procedure_snapshot"]["linked_resources"][0]
+    assert resource["content"] == ""
+    assert resource["rendered_pages"][0]["page"] == 1
+    validate_specialist_procedure_snapshot(tasks.records(run_id)[0]["procedure_snapshot"])
 
 
 def test_specialist_procedure_extracts_and_snapshots_bounded_text_pdf(workspace_tmp_path):
