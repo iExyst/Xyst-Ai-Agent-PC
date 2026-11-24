@@ -13,6 +13,7 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.runtime.task_graph import TaskDefinition
+from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import RunStore
 from xaa.storage.skills import snapshot_digest
 from xaa.storage.specialist_profiles import SpecialistProfileStore
@@ -291,6 +292,9 @@ def test_specialist_route_is_persisted_and_snapshotted_into_saved_task(workspace
     profiles.set_route("researcher", "research/model")
     profiles.set_instructions("researcher", "Cite sources and label uncertainty.")
     profiles.set_display_name("researcher", "Evidence Scout")
+    memory = MemoryStore(store).save_preference(
+        "specialist:researcher", "Prefer current primary sources."
+    )
     run_id = store.create_run(
         objective="Delegate research",
         acceptance_criteria=[],
@@ -304,6 +308,20 @@ def test_specialist_route_is_persisted_and_snapshotted_into_saved_task(workspace
         owner,
         [TaskDefinition(id="research", objective="Research", role="researcher")],
     )
+    tasks = TaskStore(store)
+    assert tasks.identity_memory(run_id, "research") == [
+        {"id": memory["id"], "content": "Prefer current primary sources."}
+    ]
+    assert "identity_memory" not in tasks.records(run_id)[0]
+
+    MemoryStore(store).save_preference(
+        "specialist:researcher", "Prefer a different source policy.", memory_id=memory["id"]
+    )
+    assert tasks.identity_memory(run_id, "research")[0]["content"] == (
+        "Prefer current primary sources."
+    )
+    assert MemoryStore(store).delete("specialist:researcher", memory["id"])
+    assert tasks.identity_memory(run_id, "research") == []
     assert TaskStore(store).records(run_id)[0]["model_route"] == "research/model"
     assert TaskStore(store).records(run_id)[0]["identity_name"] == "Evidence Scout"
     assert TaskStore(store).records(run_id)[0]["identity_instructions"] == (

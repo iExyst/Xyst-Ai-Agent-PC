@@ -1436,6 +1436,9 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
         parent,
         [TaskDefinition(id="research", objective="Inspect", role="researcher", max_iterations=1)],
     )
+    MemoryStore(store).save_preference(
+        "specialist:researcher", "Only use sources published after task creation."
+    )
     store.release_lease(run_id, parent)
 
     class DispatchProvider(LMStudioProvider):
@@ -1458,6 +1461,9 @@ async def test_coordinator_dispatches_saved_plan_and_receives_candidate_status(w
                 assert (
                     "Use the checked-in API contract as the source of truth."
                     in messages[1]["content"]
+                )
+                assert (
+                    "Only use sources published after task creation." not in messages[1]["content"]
                 )
                 assignment = json.loads(messages[2]["content"])
                 assert assignment["specialist_procedure_untrusted"]["content"] == (

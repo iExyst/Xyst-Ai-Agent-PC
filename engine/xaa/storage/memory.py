@@ -2,6 +2,7 @@
 
 import json
 import re
+import sqlite3
 from typing import Any
 from uuid import uuid4
 
@@ -22,18 +23,40 @@ class MemoryStore:
     ) -> dict[str, Any]:
         if max_bytes < 1:
             raise ValueError("Recall budget must be positive.")
-        expression = self._query_expression(query) if query is not None else None
         with self.runs.connection() as connection:
-            if expression is not None:
-                rows = connection.execute(
-                    "SELECT memories.id,memories.content FROM memories LEFT JOIN (SELECT id,bm25(memory_search) AS score FROM memory_search WHERE memory_search MATCH ?) AS ranked ON ranked.id=memories.id WHERE memories.scope=? AND memories.kind='preference' AND memories.provenance='user' ORDER BY CASE WHEN ranked.id IS NULL THEN 1 ELSE 0 END,ranked.score,memories.updated_at DESC,memories.id",
-                    (expression, scope),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    "SELECT id,content FROM memories WHERE scope=? AND kind='preference' AND provenance='user' ORDER BY updated_at DESC,id",
-                    (scope,),
-                ).fetchall()
+            return self.recall_preferences_from_connection(
+                connection, scope, max_bytes=max_bytes, query=query
+            )
+
+    @classmethod
+    def recall_preferences_from_connection(
+        cls,
+        connection: sqlite3.Connection,
+        scope: str,
+        *,
+        max_bytes: int = 4096,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        """Recall explicit preferences inside the caller's SQLite snapshot."""
+        if max_bytes < 1:
+            raise ValueError("Recall budget must be positive.")
+        expression = cls._query_expression(query) if query is not None else None
+        has_search_index = (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_search'"
+            ).fetchone()
+            is not None
+        )
+        if expression is not None and has_search_index:
+            rows = connection.execute(
+                "SELECT memories.id,memories.content FROM memories LEFT JOIN (SELECT id,bm25(memory_search) AS score FROM memory_search WHERE memory_search MATCH ?) AS ranked ON ranked.id=memories.id WHERE memories.scope=? AND memories.kind='preference' AND memories.provenance='user' ORDER BY CASE WHEN ranked.id IS NULL THEN 1 ELSE 0 END,ranked.score,memories.updated_at DESC,memories.id",
+                (expression, scope),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                "SELECT id,content FROM memories WHERE scope=? AND kind='preference' AND provenance='user' ORDER BY updated_at DESC,id",
+                (scope,),
+            ).fetchall()
         selected: list[dict[str, str]] = []
         used = 0
         for row in rows:

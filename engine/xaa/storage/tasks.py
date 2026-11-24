@@ -14,6 +14,7 @@ from uuid import uuid4
 from xaa.runtime.permissions import workspace_write_authorized
 from xaa.runtime.task_graph import TaskDefinition, TaskGraph, TaskStatus
 from xaa.storage.mcp import MCPRegistry
+from xaa.storage.memory import MemoryStore
 from xaa.storage.runs import RunStore, TokenBudgetExceeded, utc_now
 from xaa.storage.skills import is_text_asset_media_type, snapshot_digest
 from xaa.storage.specialist_profiles import (
@@ -289,6 +290,38 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
 class TaskStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
+
+    @staticmethod
+    def _save_identity_memory_snapshot(
+        connection: Any, task_id: str, role: str, objective: str
+    ) -> None:
+        recalled = MemoryStore.recall_preferences_from_connection(
+            connection, f"specialist:{role}", max_bytes=4096, query=objective
+        )
+        connection.executemany(
+            "INSERT INTO task_identity_memories (task_id,memory_id,ordinal,content) VALUES (?,?,?,?)",
+            [
+                (task_id, item["id"], ordinal, item["content"])
+                for ordinal, item in enumerate(recalled["items"])
+            ],
+        )
+
+    def identity_memory(self, run_id: str, task_id: str) -> list[dict[str, str]]:
+        """Read a task's frozen, role-scoped memory without exposing it in task records."""
+        identity = task_id if task_id.startswith(run_id + ":") else f"{run_id}:{task_id}"
+        with self.runs.connection() as connection:
+            rows = connection.execute(
+                "SELECT saved.memory_id AS id,saved.content FROM task_identity_memories AS saved "
+                "JOIN tasks ON tasks.id=saved.task_id WHERE tasks.id=? AND tasks.run_id=? "
+                "ORDER BY saved.ordinal",
+                (identity, run_id),
+            ).fetchall()
+            task_exists = connection.execute(
+                "SELECT 1 FROM tasks WHERE id=? AND run_id=?", (identity, run_id)
+            ).fetchone()
+        if task_exists is None:
+            raise KeyError(task_id)
+        return [{"id": str(row["id"]), "content": str(row["content"])} for row in rows]
 
     @staticmethod
     def _specialist_credential_grants(connection: Any, run_id: str) -> dict[str, dict[str, Any]]:
@@ -1095,6 +1128,9 @@ class TaskStore:
                         ),
                     )
                     saved.add(task.id)
+                    self._save_identity_memory_snapshot(
+                        connection, f"{run_id}:{task.id}", task.role, task.objective
+                    )
                     remaining.remove(task)
             for task in graph.tasks.values():
                 for dependency in task.dependencies:
@@ -1337,6 +1373,9 @@ class TaskStore:
                         ),
                     )
                     inserted.add(item.id)
+                    self._save_identity_memory_snapshot(
+                        connection, f"{run_id}:{item.id}", item.role, item.objective
+                    )
                     pending.remove(item)
             for item in normalized:
                 for dependency in item.dependencies:

@@ -43,6 +43,33 @@ def test_schema_forty_one_adds_original_artifact_filename_without_data_loss(work
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
+def test_schema_forty_one_adds_task_scoped_specialist_memory_snapshots(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-forty-one-specialist-memory.sqlite3"
+    store = RunStore(database)
+    run = store.create_run(
+        objective="Keep a queued specialist task",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )
+    owner = store.acquire_lease(run["id"], "migration-fixture")
+    TaskStore(store).save_plan(
+        run["id"], owner, [TaskDefinition(id="research", objective="Research")]
+    )
+    with store.connection() as connection:
+        connection.execute("DROP TABLE task_identity_memories")
+        connection.execute("PRAGMA user_version=41")
+
+    migrated = RunStore(database)
+    assert TaskStore(migrated).records(run["id"])[0]["objective"] == "Research"
+    assert TaskStore(migrated).identity_memory(run["id"], "research") == []
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_v1_tool_journal_migrates_without_changing_approval_references(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "legacy.sqlite3")
     run_id = store.create_run(
@@ -833,6 +860,7 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
         max_seconds=60,
     )
     with store.connection() as connection:
+        connection.execute("DROP TABLE task_identity_memories")
         connection.execute("DROP TABLE skill_python_dependency_locks")
         connection.execute("DROP TABLE skill_python_dependency_environments")
         connection.execute("DROP TABLE skill_npm_dependency_locks")
@@ -866,6 +894,7 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
     assert migrated_task["id"] == f"{run['id']}:legacy-task"
     assert migrated_task["objective"] == "Keep a legacy task"
     assert migrated_task["procedure_snapshot"] is None
+    assert TaskStore(migrated).identity_memory(run["id"], "legacy-task") == []
     with migrated.connection() as connection:
         tables = {
             row["name"]
@@ -877,6 +906,7 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
             "skill_npm_dependency_locks",
             "skill_npm_dependency_environments",
             "idempotent_schedule_requests",
+            "task_identity_memories",
         }.issubset(tables)
         profile_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(specialist_profiles)")

@@ -23,7 +23,7 @@ from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 41
+DATABASE_SCHEMA_VERSION = 42
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -844,6 +844,15 @@ class RunStore:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN identity_instructions TEXT NOT NULL DEFAULT ''"
                 )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS task_identity_memories ("
+                "task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,"
+                "memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,"
+                "ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 49),"
+                "content TEXT NOT NULL,"
+                "PRIMARY KEY(task_id,memory_id),"
+                "UNIQUE(task_id,ordinal))"
+            )
             if "identity_name" not in task_columns:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN identity_name TEXT NOT NULL DEFAULT ''"
