@@ -24,6 +24,7 @@ on:
         type: choice
         options:
           - all
+          - wsl-workspace-slice
           - wsl-node
           - wsl-python
           - wsl-specialist-profile
@@ -764,7 +765,7 @@ jobs:
           retention-days: 90
 
   wsl-procedure-acceptance:
-    if: github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'wsl-node' || inputs.acceptance == 'wsl-python' || inputs.acceptance == 'wsl-specialist-profile' || inputs.acceptance == 'wsl-procedure-credentials' || inputs.acceptance == 'wsl-specialist-credentials')
+    if: github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'wsl-workspace-slice' || inputs.acceptance == 'wsl-node' || inputs.acceptance == 'wsl-python' || inputs.acceptance == 'wsl-specialist-profile' || inputs.acceptance == 'wsl-procedure-credentials' || inputs.acceptance == 'wsl-specialist-credentials')
     runs-on: windows-latest
     timeout-minutes: 35
     env:
@@ -800,6 +801,18 @@ jobs:
           wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc 'test "$(cat /proc/1/comm)" = systemd'
           if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 systemd is not running as PID 1 under WSL.' }
         timeout-minutes: 12
+      - name: Verify the Phase 3 workspace slice through WSL
+        if: inputs.acceptance == 'wsl-workspace-slice'
+        run: uv run python scripts/workspace_vertical_slice_diagnostic.py --backend wsl-bubblewrap-v1 --distribution Ubuntu-24.04 --root .acceptance/workspace-vertical-slice-${{ github.run_id }}
+        timeout-minutes: 8
+      - uses: actions/upload-artifact@v4
+        if: always() && inputs.acceptance == 'wsl-workspace-slice'
+        with:
+          name: workspace-vertical-slice-${{ github.run_id }}
+          path: .acceptance/workspace-vertical-slice-${{ github.run_id }}/report.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
       - name: Verify offline Node procedure environments through WSL
         if: inputs.acceptance == 'wsl-node'
         run: uv run python scripts/wsl_node_environment_acceptance.py --distribution Ubuntu-24.04 --report .acceptance/wsl-node-environment-${{ github.run_id }}/report.json
