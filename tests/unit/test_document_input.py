@@ -1387,9 +1387,7 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
         ("0", "0.00E+000", "0.00E+000"),
     ],
 )
-def test_xlsx_numeric_display_supports_common_formats(
-    value: str, format_code: str, expected: str
-):
+def test_xlsx_numeric_display_supports_common_formats(value: str, format_code: str, expected: str):
     assert _xlsx_numeric_display(value, format_code) == expected
 
 
