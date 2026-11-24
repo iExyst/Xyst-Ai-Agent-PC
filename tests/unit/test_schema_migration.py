@@ -856,6 +856,9 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
     assert migrated_attachment["original_filename"] is None
     assert migrated_attachment["size_bytes"] == attachment["size_bytes"]
     assert migrated_attachment["sha256"] == attachment["sha256"]
+    assert (
+        database.parent / "artifacts" / migrated_attachment["storage_key"]
+    ).read_bytes() == b"legacy attachment bytes"
     assert ScheduleStore(migrated).get(schedule["id"])["objective"] == (
         "Keep a pre-migration schedule"
     )
