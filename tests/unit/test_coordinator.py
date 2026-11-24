@@ -505,6 +505,87 @@ def test_workspace_change_pages_cover_more_than_two_hundred_specialist_files(wor
     assert paths == [f"src/file-{index:03}.py" for index in range(205)]
 
 
+def test_workspace_change_projection_records_direct_create_and_delete_without_contents(
+    workspace_tmp_path,
+):
+    store = RunStore(workspace_tmp_path / "direct-create-delete-review.sqlite3")
+    run_id = store.create_run(
+        objective="Review direct file changes",
+        acceptance_criteria=[],
+        workspace=str(workspace_tmp_path),
+        mode="workspace",
+        model="fixture",
+    )["id"]
+    token = store.acquire_lease(run_id, "fixture")
+    created_sha = hashlib.sha256(b"created bytes").hexdigest()
+    deleted_sha = hashlib.sha256(b"deleted bytes").hexdigest()
+
+    for call_id, tool, result, internal in (
+        (
+            "create-1",
+            "workspace.create_file",
+            {"path": "src/new.py", "sha256": created_sha, "content": "private"},
+            False,
+        ),
+        (
+            "delete-1",
+            "workspace.delete_file",
+            {"path": "src/old.py", "deleted": True, "previous_sha256": deleted_sha},
+            False,
+        ),
+        (
+            "internal-1",
+            "workspace.create_file",
+            {"path": "src/internal.py", "sha256": "f" * 64},
+            True,
+        ),
+    ):
+        store.record_tool_intent(
+            run_id,
+            token,
+            call_id=call_id,
+            tool=tool,
+            version="1",
+            arguments={"path": result["path"]},
+            idempotency_key=call_id,
+            internal=internal,
+        )
+        store.record_tool_result(run_id, token, call_id, result, internal=internal)
+    store.record_tool_intent(
+        run_id,
+        token,
+        call_id="failed-delete",
+        tool="workspace.delete_file",
+        version="1",
+        arguments={"path": "src/not-deleted.py"},
+        idempotency_key="failed-delete",
+    )
+    store.record_tool_failure(
+        run_id, token, "failed-delete", code="missing_file", message="No file was deleted."
+    )
+    store.release_lease(run_id, token)
+
+    auth = "workspace-create-delete-review-token-long-enough"
+    with TestClient(create_app(LMStudioProvider(), SecretStr(auth), store=store)) as client:
+        response = client.get(
+            f"/runs/{run_id}/workspace-changes",
+            headers={"Authorization": f"Bearer {auth}"},
+        )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["total"] == 2
+    assert [
+        (item["call_id"], item["operation"], item["path"], item["sha256"]) for item in data["items"]
+    ] == [
+        ("create-1", "created", "src/new.py", created_sha),
+        ("delete-1", "deleted", "src/old.py", deleted_sha),
+    ]
+    assert "private" not in response.text
+    assert "internal.py" not in response.text
+    assert "not-deleted.py" not in response.text
+
+
 async def test_coordinator_executes_journaled_read_and_stops_for_verification(workspace_tmp_path):
     (workspace_tmp_path / "input.txt").write_text("fixture evidence", encoding="utf-8")
     store = RunStore(workspace_tmp_path / "runs.sqlite3")
