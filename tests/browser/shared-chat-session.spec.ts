@@ -144,7 +144,10 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.getByRole('button',{name:'Send message',exact:true}).click();
   await expect.poll(()=>submittedDocument.startsWith('data:application/pdf;base64,')).toBe(true);
   await page.getByRole('link',{name:/New objective/}).click();
-  await expect(page.getByRole('button',{name:'Download PDF document'})).toBeVisible();
+  const downloadEvent=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download PDF document'}).click();
+  const historicalDownload=await downloadEvent;
+  expect(historicalDownload.suggestedFilename()).toBe('xaa-attachment.pdf');
   await expect(page.getByRole('list',{name:'Conversation messages'}).getByText('Earlier reply',{exact:true})).toBeVisible();
   await expect(page.getByRole('list',{name:'Conversation messages'})).toContainText('A'.repeat(300));
   page.once('dialog',dialog=>void dialog.accept());
