@@ -7,6 +7,7 @@ count_unknown_additional_notice_placeholders = run_path(str(_SCRIPT))[
     "count_unknown_additional_notice_placeholders"
 ]
 project_license_inventory_errors = run_path(str(_SCRIPT))["project_license_inventory_errors"]
+inventory_metadata_errors = run_path(str(_SCRIPT))["inventory_metadata_errors"]
 
 
 def project_fixture(root: Path, *, cargo_license: str = "MIT") -> Path:
@@ -47,6 +48,27 @@ def test_project_license_inventory_reports_manifest_inventory_mismatch(workspace
 
     assert project_license_inventory_errors(root) == [
         "Rust/Cargo: xaa-desktop@0.1.1 declares Apache-2.0, but inventory records MIT."
+    ]
+
+
+def test_inventory_metadata_rejects_unknown_license_expression(workspace_tmp_path: Path):
+    inventory = workspace_tmp_path / "dependency-inventory.md"
+    inventory.write_text(
+        "| Python | conditional-package | 1.2.3 | UNKNOWN | https://pypi.org/project/conditional-package/ |\n",
+        encoding="utf-8",
+    )
+
+    assert inventory_metadata_errors(inventory) == [
+        "Python: conditional-package@1.2.3 has no declared license expression (line 1)."
+    ]
+
+
+def test_inventory_metadata_rejects_missing_source_reference(workspace_tmp_path: Path):
+    inventory = workspace_tmp_path / "dependency-inventory.md"
+    inventory.write_text("| Python | conditional-package | 1.2.3 | MIT | — |\n", encoding="utf-8")
+
+    assert inventory_metadata_errors(inventory) == [
+        "Python: conditional-package@1.2.3 has no source reference (line 1)."
     ]
 
 

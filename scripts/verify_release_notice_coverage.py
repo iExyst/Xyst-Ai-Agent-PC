@@ -72,6 +72,24 @@ def read_inventory(path: Path) -> dict[str, set[tuple[str, str]]]:
     return result
 
 
+def inventory_metadata_errors(path: Path) -> list[str]:
+    """Reject package rows without a declared license expression or source."""
+    row = re.compile(r"^\| (Python|npm|Rust/Cargo) \| (.+?) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|")
+    errors: list[str] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        match = row.match(line)
+        if match is None:
+            continue
+        ecosystem, name, version, license_expression, source = match.groups()
+        package = f"{ecosystem}: {name.strip()}@{version.strip()}"
+        license_value = license_expression.strip()
+        if not license_value or license_value.casefold() in {"unknown", "noassertion"}:
+            errors.append(f"{package} has no declared license expression (line {line_number}).")
+        if not source.strip() or source.strip() in {"—", "-"}:
+            errors.append(f"{package} has no source reference (line {line_number}).")
+    return errors
+
+
 def project_license_inventory_errors(root: Path) -> list[str]:
     """Ensure the release table agrees with each first-party package manifest."""
     python_project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
@@ -278,6 +296,7 @@ def main() -> int:
     }
 
     errors: list[str] = []
+    errors.extend(inventory_metadata_errors(root / "docs/releases/dependency-inventory.md"))
     errors.extend(project_license_inventory_errors(root))
     unknown_notice_placeholders = count_unknown_additional_notice_placeholders(notice_path)
     if unknown_notice_placeholders:
@@ -308,7 +327,7 @@ def main() -> int:
         + ", ".join(f"{ecosystem}={len(packages)}" for ecosystem, packages in expected.items())
     )
     print(
-        "This check validates package references only; it does not verify license text or legal completeness."
+        "This check validates package references and populated metadata fields; it does not verify license text or legal completeness."
     )
     return 0
 

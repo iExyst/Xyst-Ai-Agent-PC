@@ -34,7 +34,7 @@ License expressions below are copied from package metadata without normalization
 | npm | @oxc-project/types | 0.156.0 | MIT | https://github.com/oxc-project/oxc |
 | npm | @playwright/test | 1.64.1 | Apache-2.0 | https://github.com/microsoft/playwright |
 | npm | @redocly/ajv | 8.11.2 | MIT | https://github.com/ajv-validator/ajv |
-| npm | @redocly/config | 0.22.0 | MIT | — |
+| npm | @redocly/config | 0.22.0 | MIT | https://registry.npmjs.org/@redocly/config/-/config-0.22.0.tgz |
 | npm | @redocly/openapi-core | 1.34.23 | MIT | https://github.com/Redocly/redocly-cli |
 | npm | @rolldown/binding-win32-x64-msvc | 1.2.16 | MIT | https://github.com/rolldown/rolldown |
 | npm | @rolldown/pluginutils | 1.0.1 | MIT | https://github.com/rolldown/plugins |
@@ -87,7 +87,7 @@ License expressions below are copied from package metadata without normalization
 | npm | typescript | 5.9.3 | Apache-2.0 | https://github.com/microsoft/TypeScript |
 | npm | uri-js-replace | 1.0.2 | MIT | https://github.com/andreinwald/uri-js-replace |
 | npm | vite | 8.3.5 | MIT | https://github.com/vitejs/vite |
-| npm | xaa-workspace | 0.1.1 | MIT | repository source |
+| npm | xaa-workspace | 0.1.1 | MIT | https://github.com/iExyst/Xyst-Ai-Agent-PC |
 | npm | yaml-ast-parser | 0.0.43 | Apache-2.0 | https://github.com/mulesoft-labs/yaml-ast-parser |
 | npm | yargs-parser | 21.1.1 | ISC | https://github.com/yargs/yargs-parser |
 | Python | agent-client-protocol | 0.9.0 | Apache-2.0 (upstream repository; PyPI metadata omits license) | https://github.com/agentclientprotocol/python-sdk
@@ -580,7 +580,7 @@ License expressions below are copied from package metadata without normalization
 | Rust/Cargo | wry | 0.57.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/wry |
 | Rust/Cargo | x11 | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git |
 | Rust/Cargo | x11-dl | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git |
-| Rust/Cargo | xaa-desktop | 0.1.1 | MIT | — |
+| Rust/Cargo | xaa-desktop | 0.1.1 | MIT | https://github.com/iExyst/Xyst-Ai-Agent-PC |
 | Rust/Cargo | yoke | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | Rust/Cargo | yoke-derive | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | Rust/Cargo | zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
