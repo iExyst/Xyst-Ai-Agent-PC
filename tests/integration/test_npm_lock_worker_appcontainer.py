@@ -75,6 +75,30 @@ async def test_npm_lock_parser_isolated_from_the_api_process(frozen_worker: bool
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("frozen_worker", [False, True])
+async def test_npm_lock_worker_binds_supported_npmrc_install_options(frozen_worker: bool):
+    package_manifest, package_lock = _fixtures()
+    npmrc = b"legacy-peer-deps=true\ninstall-links=false\n"
+    lock = await inspect_npm_package_lock_in_appcontainer(
+        package_manifest,
+        package_lock,
+        skill_id="12345678-1234-4234-8234-123456789abc",
+        skill_version=1,
+        source_sha256="a" * 64,
+        distribution="Ubuntu-24.04",
+        node_version="v22.2.0",
+        npm_version="10.8.1",
+        requirements=("left-pad@^1.3.0",),
+        npmrc=npmrc,
+        test_worker_executable=_frozen_executable(frozen_worker),
+    )
+
+    assert lock.npmrc_sha256 == hashlib.sha256(npmrc).hexdigest()
+    assert lock.legacy_peer_deps is True
+    assert lock.install_links is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("frozen_worker", [False, True])
 async def test_npm_v1_lock_parser_isolated_from_the_api_process(frozen_worker: bool):
     package_manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"}}'
     archive_digest = base64.b64encode(hashlib.sha512(b"fixture tarball").digest()).decode("ascii")

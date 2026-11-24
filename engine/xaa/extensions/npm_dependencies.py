@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 MAX_LOCKFILE_BYTES = 2 * 1024 * 1024
 MAX_PACKAGE_MANIFEST_BYTES = 1024 * 1024
+MAX_NPMRC_BYTES = 16 * 1024
 MAX_LOCKED_PACKAGES = 512
 MAX_NPM_DEPENDENCY_EDGES = 20_000
 MAX_PACKAGE_PATH_BYTES = 1024
@@ -111,6 +112,7 @@ class ProcedureNpmDependencyLock(BaseModel):
     source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     package_manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     lockfile_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    npmrc_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     node_version: str = Field(min_length=5, max_length=128)
     npm_version: str = Field(min_length=5, max_length=128)
@@ -120,6 +122,8 @@ class ProcedureNpmDependencyLock(BaseModel):
         Field(default=(), max_length=5)
     )
     engine_warnings: tuple[Literal["node", "npm"], ...] = Field(default=(), max_length=2)
+    legacy_peer_deps: bool | None = None
+    install_links: bool | None = None
     requirements: tuple[str, ...] = Field(default=(), max_length=128)
     root_dependencies: tuple[NpmRootDependency, ...] = Field(max_length=512)
     packages: tuple[NpmLockedPackage, ...] = Field(max_length=MAX_LOCKED_PACKAGES)
@@ -163,6 +167,10 @@ class ProcedureNpmDependencyLock(BaseModel):
             raise ValueError("Node and npm versions must be semantic versions.")
         if self.node_libc is not None and self.node_arch is None:
             raise ValueError("A verified Node architecture is required with a libc family.")
+        if self.npmrc_sha256 is None and (
+            self.legacy_peer_deps is not None or self.install_links is not None
+        ):
+            raise ValueError("npm install options require a source-bound .npmrc resource.")
         paths = [item.package_path for item in self.packages]
         if len(paths) != len(set(paths)):
             raise ValueError("npm lock package paths must be unique.")
@@ -195,6 +203,12 @@ class ProcedureNpmDependencyLock(BaseModel):
             values.pop("dev_engine_warnings", None)
         if not self.engine_warnings:
             values.pop("engine_warnings", None)
+        if self.npmrc_sha256 is None:
+            values.pop("npmrc_sha256", None)
+        if self.legacy_peer_deps is None:
+            values.pop("legacy_peer_deps", None)
+        if self.install_links is None:
+            values.pop("install_links", None)
         return json.dumps(values, sort_keys=True, separators=(",", ":"))
 
 
@@ -305,6 +319,7 @@ def parse_npm_package_lock(
     node_libc: Literal["glibc", "musl"] | None = None,
     requirements: Iterable[str] = (),
     package_manifest: bytes | None = None,
+    npmrc: bytes | None = None,
 ) -> ProcedureNpmDependencyLock:
     """Parse a supported npm lockfile proposal; reject links and non-registry sources."""
     if not raw or len(raw) > MAX_LOCKFILE_BYTES:
@@ -319,6 +334,9 @@ def parse_npm_package_lock(
     lockfile_version = document.get("lockfileVersion")
     if type(lockfile_version) is not int or lockfile_version not in {1, 2, 3}:
         raise ValueError("Only npm package-lock.json format versions 1, 2, and 3 are supported.")
+    legacy_peer_deps, install_links = (
+        parse_npmrc_install_options(npmrc) if npmrc is not None else (None, None)
+    )
     if lockfile_version == 1:
         if package_manifest is None:
             raise ValueError("npm package-lock.json v1 requires its linked package.json resource.")
@@ -381,7 +399,13 @@ def parse_npm_package_lock(
                 integrity=integrity,
             )
         )
-    _validate_npm_dependency_graph(root, raw_packages, root_dependencies, packages)
+    _validate_npm_dependency_graph(
+        root,
+        raw_packages,
+        root_dependencies,
+        packages,
+        legacy_peer_deps=legacy_peer_deps is True,
+    )
     proposal = ProcedureNpmDependencyLock(
         schema_version=1,
         skill_id=skill_id,
@@ -389,15 +413,26 @@ def parse_npm_package_lock(
         source_sha256=source_sha256,
         package_manifest_sha256=package_manifest_sha256,
         lockfile_sha256=hashlib.sha256(raw).hexdigest(),
+        npmrc_sha256=hashlib.sha256(npmrc).hexdigest() if npmrc is not None else None,
         distribution=distribution,
         node_version=node_version,
         npm_version=npm_version,
         node_arch=node_arch,
         node_libc=node_libc,
+        legacy_peer_deps=legacy_peer_deps,
+        install_links=install_links,
         requirements=tuple(requirements),
         root_dependencies=tuple(root_dependencies),
         packages=tuple(packages),
     )
+    if npmrc is not None:
+        legacy_peer_deps, install_links = parse_npmrc_install_options(npmrc)
+        proposal = proposal.model_copy(
+            update={
+                "legacy_peer_deps": legacy_peer_deps,
+                "install_links": install_links,
+            }
+        )
     if package_manifest is not None:
         try:
             manifest_value: object = json.loads(package_manifest, object_pairs_hook=_unique_object)
@@ -464,6 +499,8 @@ def _validate_npm_dependency_graph(
     raw_packages: dict[str, Any],
     root_dependencies: list[NpmRootDependency],
     packages: list[NpmLockedPackage],
+    *,
+    legacy_peer_deps: bool = False,
 ) -> None:
     """Require every lock edge to resolve to a locked version satisfying npm SemVer."""
     package_by_path = {package.package_path: package for package in packages}
@@ -473,9 +510,11 @@ def _validate_npm_dependency_graph(
     while pending:
         parent_path, record, is_root = pending.pop()
         if is_root:
-            dependencies = _root_dependency_edges(root_dependencies, record)
+            dependencies = _root_dependency_edges(
+                root_dependencies, record, include_peers=not legacy_peer_deps
+            )
         else:
-            dependencies = _dependency_edges(record)
+            dependencies = _dependency_edges(record, include_peers=not legacy_peer_deps)
         for name, version_range, optional in dependencies:
             edges_seen += 1
             if edges_seen > MAX_NPM_DEPENDENCY_EDGES:
@@ -498,7 +537,9 @@ def _validate_npm_dependency_graph(
         raise ValueError("npm package-lock.json contains packages outside the dependency graph.")
 
 
-def _dependency_edges(record: dict[str, Any]) -> list[tuple[str, str, bool]]:
+def _dependency_edges(
+    record: dict[str, Any], *, include_peers: bool = True
+) -> list[tuple[str, str, bool]]:
     declarations: dict[str, tuple[str, bool]] = {}
     for field, optional in (("dependencies", False), ("optionalDependencies", True)):
         values = record.get(field, {})
@@ -528,12 +569,16 @@ def _dependency_edges(record: dict[str, Any]) -> list[tuple[str, str, bool]]:
         is_optional: object = metadata.get("optional", False)
         if not isinstance(is_optional, bool):
             raise TypeError("npm package-lock.json peer optional flag is invalid.")
-        edges.append((name, version_range or "*", is_optional))
+        if include_peers:
+            edges.append((name, version_range or "*", is_optional))
     return edges
 
 
 def _root_dependency_edges(
-    root_dependencies: list[NpmRootDependency], root_record: dict[str, Any]
+    root_dependencies: list[NpmRootDependency],
+    root_record: dict[str, Any],
+    *,
+    include_peers: bool = True,
 ) -> list[tuple[str, str, bool]]:
     required = [
         (item.name, item.version_range, False)
@@ -562,7 +607,8 @@ def _root_dependency_edges(
         peer_is_optional: object = metadata.get("optional", False)
         if not isinstance(peer_is_optional, bool):
             raise TypeError("npm package-lock.json root peer optional flag is invalid.")
-        required.append((dependency.name, dependency.version_range, peer_is_optional))
+        if include_peers:
+            required.append((dependency.name, dependency.version_range, peer_is_optional))
     required = [edge for edge in required if edge[0] not in optional_overrides]
     return required + [
         (name, range_, is_optional) for name, (range_, is_optional) in optional_overrides.items()
@@ -603,7 +649,12 @@ def _require_npm_version_satisfies(version: str, version_range: str, package_nam
         raise ValueError(f"locked npm package {package_name!r} does not satisfy {version_range!r}.")
 
 
-def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) -> str:
+def verify_npm_package_manifest(
+    raw: bytes,
+    lock: ProcedureNpmDependencyLock,
+    *,
+    npmrc: bytes | None = None,
+) -> str:
     """Match dependency declarations and runtime constraints to the reviewed lock."""
     if not raw or len(raw) > MAX_PACKAGE_MANIFEST_BYTES:
         raise ValueError("npm package.json is empty or exceeds its size limit.")
@@ -618,6 +669,21 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     engine_warnings = _verify_npm_engines(manifest.get("engines", {}), lock)
     if engine_warnings != lock.engine_warnings:
         raise ValueError("npm package.json engines warnings do not match the reviewed lock.")
+    if npmrc is None:
+        if lock.npmrc_sha256 is not None:
+            raise ValueError("The reviewed .npmrc resource is missing.")
+    else:
+        if (
+            len(npmrc) > MAX_NPMRC_BYTES
+            or lock.npmrc_sha256 != hashlib.sha256(npmrc).hexdigest()
+        ):
+            raise ValueError("The linked .npmrc does not match the reviewed lock.")
+        legacy_peer_deps, install_links = parse_npmrc_install_options(npmrc)
+        if (
+            legacy_peer_deps != lock.legacy_peer_deps
+            or install_links != lock.install_links
+        ):
+            raise ValueError("The linked .npmrc options do not match the reviewed lock.")
     warnings = _verify_npm_dev_engines(manifest.get("devEngines", {}), lock)
     if warnings != lock.dev_engine_warnings:
         raise ValueError("npm package.json devEngines warnings do not match the reviewed lock.")
@@ -684,6 +750,30 @@ def _verify_npm_package_manager(raw: object, lock: ProcedureNpmDependencyLock) -
         raise ValueError(
             "npm package.json packageManager version does not match the selected WSL npm runtime."
         )
+
+
+def parse_npmrc_install_options(raw: bytes) -> tuple[bool | None, bool | None]:
+    """Parse only the two tree-shaping npm options X.A.A. can reproduce offline."""
+    if len(raw) > MAX_NPMRC_BYTES:
+        raise ValueError("Linked .npmrc exceeds its size limit.")
+    try:
+        text = raw.decode("utf-8-sig", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Linked .npmrc must be UTF-8 text.") from exc
+    values: dict[str, bool] = {}
+    allowed = {"legacy-peer-deps", "install-links"}
+    for line in text.splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith(("#", ";")):
+            continue
+        if "=" not in entry:
+            raise ValueError("Linked .npmrc contains an unsupported npm setting.")
+        key, raw_value = entry.split("=", 1)
+        key, value = key.strip().casefold(), raw_value.strip().casefold()
+        if key not in allowed or value not in {"true", "false"}:
+            raise ValueError("Linked .npmrc contains an unsupported npm setting.")
+        values[key] = value == "true"
+    return values.get("legacy-peer-deps"), values.get("install-links")
 
 
 def _verify_npm_engines(

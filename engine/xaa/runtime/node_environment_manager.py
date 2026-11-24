@@ -40,7 +40,7 @@ for path in (project, cache, temp): path.mkdir(mode=0o777)
 shutil.copyfile('/source/package.json', project / 'package.json')
 shutil.copyfile('/source/package-lock.json', project / 'package-lock.json')
 os.environ['TMPDIR'] = str(temp)
-expected_node, expected_npm, expected_arch, expected_libc, packages = json.loads(sys.argv[1])
+expected_node, expected_npm, expected_arch, expected_libc, packages, legacy_peer_deps, install_links = json.loads(sys.argv[1])
 def run(args, timeout=30):
     result = subprocess.run(args, cwd=project, capture_output=True, timeout=timeout)
     if result.returncode:
@@ -70,7 +70,9 @@ for filename in packages:
     run(['/usr/bin/npm', 'cache', 'add', '/tarballs/' + filename,
          '--offline', '--ignore-scripts', '--cache', str(cache)], timeout=60)
 run(['/usr/bin/npm', 'ci', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
-     '--engine-strict=false', '--cache', str(cache), '--prefix', str(project)], timeout=180)
+     '--engine-strict=false', '--legacy-peer-deps=' + str(legacy_peer_deps).lower(),
+     '--install-links=' + str(install_links).lower(), '--cache', str(cache),
+     '--prefix', str(project)], timeout=180)
 shutil.rmtree(temp)
 """
 
@@ -396,6 +398,10 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
         not isinstance(node_libc, str) or node_libc not in {"glibc", "musl"} or node_arch is None
     ):
         raise TypeError("Reviewed Node libc family is invalid.")
+    legacy_peer_deps = lock.get("legacy_peer_deps", False)
+    install_links = lock.get("install_links", False)
+    if type(legacy_peer_deps) is not bool or type(install_links) is not bool:
+        raise TypeError("Reviewed npm install configuration is invalid.")
     _private_root()
     target = ROOT / digest
     unit = f"xaa-nodeenv-{digest[:32]}.service"
@@ -515,6 +521,8 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
                         node_arch,
                         node_libc,
                         [item["filename"] for item in tarballs],
+                        legacy_peer_deps,
+                        install_links,
                     ]
                 ),
             ]

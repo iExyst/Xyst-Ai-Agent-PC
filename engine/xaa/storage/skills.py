@@ -1785,7 +1785,7 @@ class SkillStore:
 
     def npm_dependency_lock_resources(
         self, lock: ProcedureNpmDependencyLock
-    ) -> tuple[bytes, bytes]:
+    ) -> tuple[bytes, bytes, bytes | None]:
         """Return exact source-bound npm files after checking metadata and byte hashes."""
         manifest = self.version(lock.skill_id, lock.skill_version)
         evidence_value = manifest.get("evaluation_evidence")
@@ -1831,7 +1831,7 @@ class SkillStore:
             if not isinstance(path_value, str):
                 continue
             basename = path_value.rsplit("/", 1)[-1]
-            if basename not in {"package.json", "package-lock.json"}:
+            if basename not in {"package.json", "package-lock.json", ".npmrc"}:
                 continue
             encoded, asset_hash = asset.get("content_base64"), asset.get("sha256")
             if not isinstance(encoded, str) or not isinstance(asset_hash, str):
@@ -1843,16 +1843,21 @@ class SkillStore:
             if hashlib.sha256(content).hexdigest() != asset_hash or basename in asset_by_name:
                 raise SkillConflict("Linked npm resource integrity failed or names are ambiguous.")
             asset_by_name[basename] = (content, asset_hash)
-        if set(asset_by_name) != {"package.json", "package-lock.json"}:
+        if not {"package.json", "package-lock.json"}.issubset(asset_by_name) or set(
+            asset_by_name
+        ) - {"package.json", "package-lock.json", ".npmrc"}:
             raise SkillConflict("The imported procedure must link one package manifest and lock.")
         package_manifest, manifest_hash = asset_by_name["package.json"]
         package_lock, _lock_hash = asset_by_name["package-lock.json"]
+        npmrc = asset_by_name.get(".npmrc", (None, ""))[0]
         if (
             lock.package_manifest_sha256 != manifest_hash
             or lock.lockfile_sha256 != hashlib.sha256(package_lock).hexdigest()
+            or lock.npmrc_sha256
+            != (hashlib.sha256(npmrc).hexdigest() if npmrc is not None else None)
         ):
             raise SkillConflict("The npm lock hashes do not match the linked package resources.")
-        return package_manifest, package_lock
+        return package_manifest, package_lock, npmrc
 
     def save_npm_dependency_lock(self, lock: ProcedureNpmDependencyLock) -> dict[str, Any]:
         """Persist a proposal after the API validates its exact graph in AppContainer."""

@@ -3942,6 +3942,10 @@ export interface components {
              * @default []
              */
             engine_warnings: ("node" | "npm")[];
+            /** Install Links */
+            install_links?: boolean | null;
+            /** Legacy Peer Deps */
+            legacy_peer_deps?: boolean | null;
             /** Lockfile Sha256 */
             lockfile_sha256: string;
             /** Node Arch */
@@ -3952,6 +3956,8 @@ export interface components {
             node_version: string;
             /** Npm Version */
             npm_version: string;
+            /** Npmrc Sha256 */
+            npmrc_sha256?: string | null;
             /** Package Manifest Sha256 */
             package_manifest_sha256: string;
             /** Packages */

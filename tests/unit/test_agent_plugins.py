@@ -1810,7 +1810,8 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
     skill_file = skill_root / "SKILL.md"
     skill_file.write_text(
         skill_file.read_text(encoding="utf-8")
-        + "\n[Script](scripts/run.mjs) [Manifest](package.json) [Lock](package-lock.json)\n",
+        + "\n[Script](scripts/run.mjs) [Manifest](package.json) [Lock](package-lock.json) "
+        "[npm config](.npmrc)\n",
         encoding="utf-8",
     )
     (skill_root / "scripts").mkdir()
@@ -1819,6 +1820,9 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         '{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},'
         '"engines":{"node":">=20 <23","npm":">=10"}}',
         encoding="utf-8",
+    )
+    (skill_root / ".npmrc").write_text(
+        "legacy-peer-deps=true\ninstall-links=false\n", encoding="utf-8"
     )
     tarball_output = io.BytesIO()
     package_metadata = (
@@ -1892,7 +1896,9 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
                 package_manifest_sha256=hashlib.sha256(package_manifest).hexdigest(),
                 **identity,
             )
-            verify_npm_package_manifest(package_manifest, proposal)
+            verify_npm_package_manifest(
+                package_manifest, proposal, npmrc=identity.get("npmrc")
+            )
             return proposal
         except Exception as exc:
             worker_errors.append(f"{type(exc).__name__}: {exc}")
@@ -1923,6 +1929,11 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         assert result["npm_version"] == "10.8.1"
         assert result["node_arch"] == "x64"
         assert result["node_libc"] == "glibc"
+        assert result["legacy_peer_deps"] is True
+        assert result["install_links"] is False
+        assert result["npmrc_sha256"] == hashlib.sha256(
+            (skill_root / ".npmrc").read_bytes()
+        ).hexdigest()
         assert result["root_dependencies"] == [
             {"name": "left-pad", "version_range": "^1.3.0", "kind": "dependencies"}
         ]

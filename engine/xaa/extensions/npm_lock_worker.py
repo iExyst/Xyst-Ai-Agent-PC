@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from xaa.extensions.npm_dependencies import (
     MAX_LOCKFILE_BYTES,
+    MAX_NPMRC_BYTES,
     MAX_PACKAGE_MANIFEST_BYTES,
     ProcedureNpmDependencyLock,
     parse_npm_package_lock,
@@ -38,6 +39,17 @@ def _read_file(name: str, maximum: int) -> bytes:
     if not content or len(content) > maximum:
         raise ValueError("npm lock worker input exceeded its size limit.")
     return content
+
+
+def _read_optional_npmrc() -> bytes | None:
+    path = Path.cwd() / ".npmrc"
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return None
+    if path.is_symlink() or not path.is_file() or info.st_size > MAX_NPMRC_BYTES:
+        raise ValueError("npm lock worker .npmrc input is invalid.")
+    return path.read_bytes()
 
 
 def _read_request() -> dict[str, Any]:
@@ -96,6 +108,7 @@ def _read_request() -> dict[str, Any]:
 def _inspect(request: dict[str, Any]) -> ProcedureNpmDependencyLock:
     manifest = _read_file("package.json", MAX_PACKAGE_MANIFEST_BYTES)
     lockfile = _read_file("package-lock.json", MAX_LOCKFILE_BYTES)
+    npmrc = _read_optional_npmrc()
     proposal = parse_npm_package_lock(
         lockfile,
         skill_id=request["skill_id"],
@@ -109,8 +122,9 @@ def _inspect(request: dict[str, Any]) -> ProcedureNpmDependencyLock:
         node_libc=request["node_libc"],
         requirements=cast(list[str], request["requirements"]),
         package_manifest=manifest,
+        npmrc=npmrc,
     )
-    verify_npm_package_manifest(manifest, proposal)
+    verify_npm_package_manifest(manifest, proposal, npmrc=npmrc)
     return proposal
 
 

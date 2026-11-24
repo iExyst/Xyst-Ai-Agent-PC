@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from xaa.extensions.npm_dependencies import (
     MAX_LOCKFILE_BYTES,
+    MAX_NPMRC_BYTES,
     MAX_PACKAGE_MANIFEST_BYTES,
     ProcedureNpmDependencyLock,
 )
@@ -53,6 +54,7 @@ async def inspect_npm_package_lock_in_appcontainer(
     node_arch: str | None = None,
     node_libc: str | None = None,
     requirements: tuple[str, ...] | list[str],
+    npmrc: bytes | None = None,
     test_worker_executable: Path | None = None,
 ) -> ProcedureNpmDependencyLock:
     """Validate exact linked assets in a network-denied Windows AppContainer worker."""
@@ -62,6 +64,8 @@ async def inspect_npm_package_lock_in_appcontainer(
         raise NpmLockInspectionError("Linked npm package.json exceeds its size limit.")
     if not package_lock or len(package_lock) > MAX_LOCKFILE_BYTES:
         raise NpmLockInspectionError("Linked npm package-lock.json exceeds its size limit.")
+    if npmrc is not None and len(npmrc) > MAX_NPMRC_BYTES:
+        raise NpmLockInspectionError("Linked .npmrc exceeds its size limit.")
     if (
         not requirements
         or len(requirements) > 128
@@ -125,12 +129,15 @@ async def inspect_npm_package_lock_in_appcontainer(
         request_bytes = json.dumps(request, separators=(",", ":")).encode("utf-8")
         if len(request_bytes) > MAX_WORKER_REQUEST_BYTES:
             raise NpmLockInspectionError("npm lock inspection request exceeded its size limit.")
-        snapshot = WorkspaceSnapshot(
-            files=(
+        snapshot_files = [
                 SnapshotFile(path="request.json", content=request_bytes),
                 SnapshotFile(path="package.json", content=package_manifest),
                 SnapshotFile(path="package-lock.json", content=package_lock),
-            ),
+        ]
+        if npmrc is not None:
+            snapshot_files.append(SnapshotFile(path=".npmrc", content=npmrc))
+        snapshot = WorkspaceSnapshot(
+            files=tuple(snapshot_files),
             directories=(),
         )
         try:
@@ -183,6 +190,8 @@ async def inspect_npm_package_lock_in_appcontainer(
         or proposal.node_arch != node_arch
         or proposal.node_libc != node_libc
         or proposal.requirements != tuple(requirements)
+        or proposal.npmrc_sha256
+        != (hashlib.sha256(npmrc).hexdigest() if npmrc is not None else None)
     ):
         raise NpmLockInspectionError("The isolated npm lock worker returned a mismatched identity.")
     return proposal

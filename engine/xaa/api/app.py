@@ -2064,7 +2064,7 @@ def create_app(
             if not isinstance(path_value, str):
                 continue
             basename = path_value.rsplit("/", 1)[-1]
-            if basename not in {"package.json", "package-lock.json"}:
+            if basename not in {"package.json", "package-lock.json", ".npmrc"}:
                 continue
             encoded = asset.get("content_base64")
             expected_hash = asset.get("sha256")
@@ -2083,7 +2083,9 @@ def create_app(
                     status_code=409, detail="Linked npm resource names are ambiguous."
                 )
             asset_by_name[basename] = (content, expected_hash)
-        if set(asset_by_name) != {"package.json", "package-lock.json"}:
+        if not {"package.json", "package-lock.json"}.issubset(asset_by_name) or set(
+            asset_by_name
+        ) - {"package.json", "package-lock.json", ".npmrc"}:
             raise HTTPException(
                 status_code=409,
                 detail="Link exactly one package.json and package-lock.json to inspect npm dependencies.",
@@ -2098,6 +2100,7 @@ def create_app(
             )
         package_manifest, _manifest_hash = asset_by_name["package.json"]
         package_lock, _lock_asset_hash = asset_by_name["package-lock.json"]
+        npmrc = asset_by_name.get(".npmrc", (None, ""))[0]
         try:
             proposal = await inspect_npm_package_lock_in_appcontainer(
                 package_manifest,
@@ -2111,6 +2114,7 @@ def create_app(
                 node_arch=readiness.node_arch,
                 node_libc=readiness.node_libc,
                 requirements=requirements,
+                npmrc=npmrc,
             )
         except (NpmLockInspectionError, TypeError, ValueError):
             raise HTTPException(
@@ -2153,7 +2157,9 @@ def create_app(
                 detail="The selected WSL Node/npm runtime changed; inspect the npm lock again.",
             )
         try:
-            package_manifest, package_lock = skill_store.npm_dependency_lock_resources(request)
+            package_manifest, package_lock, npmrc = skill_store.npm_dependency_lock_resources(
+                request
+            )
             validated = await inspect_npm_package_lock_in_appcontainer(
                 package_manifest,
                 package_lock,
@@ -2166,6 +2172,7 @@ def create_app(
                 node_arch=request.node_arch,
                 node_libc=request.node_libc,
                 requirements=request.requirements,
+                npmrc=npmrc,
             )
             if validated != request:
                 raise HTTPException(
@@ -2475,7 +2482,9 @@ def create_app(
                 status_code=409, detail="Acquire and verify exact npm tarballs before installation."
             )
         try:
-            package_manifest, package_lock = skill_store.npm_dependency_lock_resources(lock)
+            package_manifest, package_lock, _npmrc = skill_store.npm_dependency_lock_resources(
+                lock
+            )
             skill_store.npm_tarballs.verify(lock)
             deadline = time.monotonic() + 300
             transport = await WSLTransport.discover(

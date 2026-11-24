@@ -335,6 +335,11 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         source_sha256="a" * 64,
         package_manifest_sha256=hashlib.sha256(package_manifest).hexdigest(),
         lockfile_sha256=hashlib.sha256(package_lock).hexdigest(),
+        npmrc_sha256=hashlib.sha256(
+            b"legacy-peer-deps=true\ninstall-links=false\n"
+        ).hexdigest(),
+        legacy_peer_deps=True,
+        install_links=False,
         distribution=distribution,
         node_version=node_version,
         npm_version=npm_version,
@@ -1246,6 +1251,10 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "offline_locked_module_loaded": module_value,
             "procedure_run_module_loaded": True,
             "advisory_engine_mismatch_installed": True,
+            "reviewed_npmrc_install_options_applied": {
+                "legacy_peer_deps": lock.legacy_peer_deps,
+                "install_links": lock.install_links,
+            },
             "removal_refused_while_active": removal_refused_while_active,
             "lifecycle_script_marker_absent": True,
             "idempotent_install": True,
