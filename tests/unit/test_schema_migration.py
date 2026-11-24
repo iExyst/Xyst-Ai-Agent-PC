@@ -2,6 +2,7 @@ import json
 
 import pytest
 from xaa.runtime.task_graph import TaskDefinition
+from xaa.storage.backup_bundle import create_backup_bundle, restore_backup_bundle
 from xaa.storage.mcp import MCPRegistry, MCPServerSpec
 from xaa.storage.restore import restore_database
 from xaa.storage.runs import DATABASE_SCHEMA_VERSION, RunStore, utc_now
@@ -189,10 +190,14 @@ def test_v1_tool_journal_migrates_without_changing_approval_references(workspace
         store.record_event(
             connection, run_id, "tool.completed", {"call_id": "legacy-call", "internal": False}
         )
+    portable_bundle = create_backup_bundle(store)
+    portable_database = restore_backup_bundle(
+        portable_bundle, workspace_tmp_path / "portable-restored"
+    )
     snapshot = store.backup()
     destination = workspace_tmp_path / "restored" / "runs.sqlite3"
     restore_database(snapshot, destination)
-    for database in (store.path, destination):
+    for database in (store.path, destination, portable_database):
         migrated = RunStore(database)
         assert migrated.get_run(run_id)["objective"] == "Legacy"
         assert migrated.conversation_messages(run_id) == [
@@ -207,7 +212,7 @@ def test_v1_tool_journal_migrates_without_changing_approval_references(workspace
         migrated_attachment = migrated.get_artifact(attachment["id"])
         assert migrated_attachment is not None
         assert migrated_attachment["original_filename"] is None
-        if database == store.path:
+        if database in {store.path, portable_database}:
             assert (
                 database.parent / "artifacts" / migrated_attachment["storage_key"]
             ).read_bytes() == b"schema one attachment"

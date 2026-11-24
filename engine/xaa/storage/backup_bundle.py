@@ -36,6 +36,7 @@ def create_backup_bundle(store: RunStore) -> Path:
             raise ValueError("Backup exceeds the configured total size limit.")
         connection = sqlite3.connect(database)
         try:
+            schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
             rows = connection.execute(
                 "SELECT storage_key,size_bytes,sha256 FROM artifacts ORDER BY storage_key"
             ).fetchall()
@@ -64,7 +65,7 @@ def create_backup_bundle(store: RunStore) -> Path:
         database_bytes = database.read_bytes()
         manifest = {
             "format": FORMAT,
-            "schema_version": DATABASE_SCHEMA_VERSION,
+            "schema_version": schema_version,
             "database": {
                 "path": "xaa.sqlite3",
                 "size_bytes": len(database_bytes),
@@ -164,6 +165,8 @@ def restore_backup_bundle(bundle: Path, destination: Path) -> Path:
                 version = connection.execute("PRAGMA user_version").fetchone()[0]
                 if version < 1 or version > DATABASE_SCHEMA_VERSION:
                     raise ValueError("Backup database schema is unsupported.")
+                if manifest.get("schema_version") != version:
+                    raise ValueError("Backup schema version does not match its database.")
                 if not {
                     row[0]
                     for row in connection.execute(

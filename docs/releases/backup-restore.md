@@ -15,7 +15,7 @@ uv run xaa restore-bundle C:\path\to\backup.xaa-backup --destination C:\new-data
 $env:XAA_DATA_DIR = 'C:\new-data'
 ```
 
-The CLI restore validates archive membership, database integrity and foreign keys, schema compatibility, and each artifact's size and digest before publishing a new directory containing `xaa.sqlite3` and `artifacts/`. The destination must not already exist. With `XAA_DATA_DIR=C:\new-data`, the engine uses `C:\new-data\XAA\xaa.sqlite3` and its adjacent `artifacts/`, matching the restored directory. The older `xaa restore` command remains available for database-only `.sqlite3` snapshots; it does not recover artifact contents.
+The CLI restore validates archive membership, database integrity and foreign keys, schema compatibility, manifest/database schema-version agreement, and each artifact's size and digest before publishing a new directory containing `xaa.sqlite3` and `artifacts/`. The destination must not already exist. With `XAA_DATA_DIR=C:\new-data`, the engine uses `C:\new-data\XAA\xaa.sqlite3` and its adjacent `artifacts/`, matching the restored directory. A populated schema-1 regression verifies migration after portable restore and exact preservation of managed attachment bytes. The older `xaa restore` command remains available for database-only `.sqlite3` snapshots; it does not recover artifact contents.
 
 Bundles contain conversation and task data, so store them with the same care as the application data directory. This procedure is an offline snapshot/restore operation, not a live migration, cloud backup, retention policy, or tested disaster-recovery guarantee. Keep an independent copy and periodically perform a restore into a new directory.
 
