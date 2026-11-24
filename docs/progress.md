@@ -1,6 +1,6 @@
 ## Keep MCP catalog refresh in hosted desktop checks (2026-11-24)
 
-The MCP desktop regression for `tools/list_changed`, `resources/list_changed`, and `prompts/list_changed` was covered locally but omitted from the hosted Windows browser steps. Added it as a dedicated CI check. The local Playwright scenario passes (1); it confirms the refreshed catalogs appear and newly discovered tools retain default-deny permission. Hosted source verification is pending. No live MCP server, model inference, or external service is used.
+The MCP desktop regression for `tools/list_changed`, `resources/list_changed`, and `prompts/list_changed` was covered locally but omitted from the hosted Windows browser steps. Added it as a dedicated CI check. The local Playwright scenario passes (1); it confirms the refreshed catalogs appear and newly discovered tools retain default-deny permission. Exact-source Windows workflow [45450531436](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45450531436) passed the new browser step and all configured source gates. The overall run passed; pytest was skipped by the workflow's changed-input filter because this change only modified workflow and documentation files. No live MCP server, model inference, or external service is used.
 
 ## Exercise the npm lock worker in the installed Windows package (2026-11-24)
 
