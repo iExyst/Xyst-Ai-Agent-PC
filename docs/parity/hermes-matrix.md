@@ -931,6 +931,3 @@ The current SQLite schema is version 40. A new populated schema-35 regression mi
 ## Verify the hosted Windows package (2026-11-24)
 
 The exact-source unsigned Windows installer for `83339c77` passed hosted install/upgrade, AppContainer, onboarding/recovery, specialist, OAuth, and uninstall/data-choice acceptance; the manifest-bound 0.1.1 artifact is [available here](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45309412032/artifacts/14883192031). Local deterministic fixtures were used without live-model inference. This strengthens the Windows package gate but does not establish signing, clean-customer-machine coverage, real provider reliability, or full Hermes parity.
-## Match imported npm engines to npm's advisory behavior (2026-11-24)
-
-Imported procedure root `engines.node` and `engines.npm` ranges are syntax-checked, and incompatible versions are exposed as advisory warnings because npm defaults to `engine-strict=false`. The network-denied lock worker carries the warning into the reviewed lock; the offline installer pins that behavior explicitly, and the desktop shows the warning. Focused source/frozen worker, unit and browser checks plus Ubuntu 24.04 offline installation with a deliberately incompatible Node engine pass. This covers one dependency-management compatibility behavior; it does not claim general npm support or Hermes parity.
