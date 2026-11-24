@@ -34,8 +34,9 @@ Supported checks are:
 - `state_equals`: the exported run state matches `expected`. A `verifying` result is a candidate awaiting user review; it does not mean the user accepted it.
 - `artifact_count_equals`: the number of entries in the versioned artifact manifest equals the decimal `expected` count. This verifies that artifacts were recorded, not that their contents satisfy a semantic requirement.
 - `artifact_sha256_exists`: at least one artifact manifest entry records the exact lowercase 64-character SHA-256 in `expected`. This checks the recorded identity only; it does not download the artifact or check its semantic contents.
+- `artifact_media_type_exists`: at least one artifact manifest entry records the exact media type in `expected`, such as `image/png` or `text/plain`. This checks manifest metadata only; it does not inspect artifact bytes.
 
-When a case has checks, `batch.json` records each check result and marks the case `passed` only when all checks pass. Cases without checks are `not_evaluated`. These checks cover exact text, substring, call proposal, successful tool completion, saved state, artifact count, and recorded artifact digest; they do not interpret free-form acceptance criteria or replace user review.
+When a case has checks, `batch.json` records each check result and marks the case `passed` only when all checks pass. Cases without checks are `not_evaluated`. These checks cover exact text, substring, call proposal, successful tool completion, saved state, artifact count, recorded artifact digest, and recorded artifact media type; they do not interpret free-form acceptance criteria or replace user review.
 
 ## Run and resume
 

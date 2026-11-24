@@ -453,6 +453,42 @@ def test_batch_artifact_sha256_check_rejects_invalid_digest(expected: str) -> No
         BatchCheck(kind="artifact_sha256_exists", expected=expected)
 
 
+@pytest.mark.parametrize(
+    ("media_type", "expected", "passed"),
+    [("image/png", "image/png", True), ("text/plain", "image/png", False)],
+)
+def test_batch_can_check_exported_artifact_media_type(
+    media_type: str, expected: str, passed: bool
+) -> None:
+    case = BatchCase(
+        id="checked",
+        objective="Produce an image",
+        acceptance_criteria=[],
+        checks=[BatchCheck(kind="artifact_media_type_exists", expected=expected)],
+    )
+    trajectory = {
+        "format": "xaa-trajectory",
+        "format_version": 1,
+        "run": {"id": "fixture-run", "objective": "Produce an image", "state": "completed"},
+        "events": [],
+        "artifacts": [
+            {
+                "id": "artifact-1",
+                "media_type": media_type,
+                "size_bytes": 7,
+                "sha256": "a" * 64,
+                "provenance": "workspace.write_file",
+                "created_at": "2026-11-24T00:00:00Z",
+            }
+        ],
+    }
+
+    [result] = batch_module.score_trajectory(case, json_bytes(trajectory))
+
+    assert result.actual is passed
+    assert result.passed is passed
+
+
 def _training_fixture(batch_dir: Path) -> None:
     batch_dir.mkdir()
     (batch_dir / "trajectories").mkdir()
