@@ -168,7 +168,8 @@ def test_package_manifest_rejects_malformed_engine_constraints() -> None:
     with pytest.raises(TypeError, match="engines must be an object"):
         verify_npm_package_manifest(manifest, lock)
 
-    for value in (23, [], {"node": ""}):
+    malformed_engine_values: tuple[object, ...] = (23, [], {"node": ""})
+    for value in malformed_engine_values:
         manifest = json.dumps(
             {
                 "name": "fixture",
@@ -179,6 +180,42 @@ def test_package_manifest_rejects_malformed_engine_constraints() -> None:
         lock = parse(package_lock(), manifest=manifest)
         with pytest.raises((TypeError, ValueError)):
             verify_npm_package_manifest(manifest, lock)
+
+
+@pytest.mark.parametrize(
+    ("platforms", "compatible"),
+    [
+        (["linux"], True),
+        (["darwin", "linux"], True),
+        (["!darwin"], True),
+        (["win32"], False),
+        (["!linux"], False),
+        (["linux", "!linux"], False),
+    ],
+)
+def test_package_manifest_checks_target_wsl_os(platforms: list[str], compatible: bool) -> None:
+    manifest = json.dumps(
+        {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "os": platforms},
+        separators=(",", ":"),
+    ).encode()
+    lock = parse(package_lock(), manifest=manifest)
+
+    if compatible:
+        assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
+    else:
+        with pytest.raises(ValueError, match="target Linux WSL"):
+            verify_npm_package_manifest(manifest, lock)
+
+
+@pytest.mark.parametrize("platforms", ["linux", [], ["!"], ["Linux"], ["linux", 3], ["linux"] * 33])
+def test_package_manifest_rejects_malformed_os_constraints(platforms: object) -> None:
+    manifest = json.dumps(
+        {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "os": platforms},
+        separators=(",", ":"),
+    ).encode()
+    lock = parse(package_lock(), manifest=manifest)
+    with pytest.raises(ValueError, match="os must be a bounded list"):
+        verify_npm_package_manifest(manifest, lock)
 
 
 def test_package_manifest_must_match_lockfile_root_dependencies() -> None:

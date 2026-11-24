@@ -31,6 +31,7 @@ MAX_NPM_TARBALL_EXPANDED_BYTES = 256 * 1024 * 1024
 MAX_NPM_TARBALL_STREAM_BYTES = 320 * 1024 * 1024
 MAX_NPM_TARBALL_PACKAGE_JSON_BYTES = 1024 * 1024
 _NPM_NAME = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]{0,127}/)?[a-z0-9][a-z0-9._-]{0,127}$")
+_NPM_PLATFORM_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _SEMVER = re.compile(
     r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
     r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
@@ -575,6 +576,26 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
         if not isinstance(version_range, str):
             raise TypeError(f"npm package.json engines.{name} must be a semantic-version range.")
         _require_npm_version_satisfies(version, version_range, f"required {name} runtime")
+    raw_os = manifest.get("os")
+    if raw_os is not None:
+        if not isinstance(raw_os, list):
+            raise ValueError("npm package.json os must be a bounded list of platform names.")
+        raw_os_values = cast(list[object], raw_os)
+        if (
+            not raw_os_values
+            or len(raw_os_values) > 32
+            or any(
+                not isinstance(value, str)
+                or _NPM_PLATFORM_NAME.fullmatch(value.removeprefix("!")) is None
+                for value in raw_os_values
+            )
+        ):
+            raise ValueError("npm package.json os must be a bounded list of platform names.")
+        os_constraints = cast(list[str], raw_os_values)
+        allowed_os = {value for value in os_constraints if not value.startswith("!")}
+        blocked_os = {value[1:] for value in os_constraints if value.startswith("!")}
+        if "linux" in blocked_os or (allowed_os and "linux" not in allowed_os):
+            raise ValueError("npm package does not support the target Linux WSL environment.")
     declared: list[NpmRootDependency] = []
     for kind in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
         values = manifest.get(kind, {})

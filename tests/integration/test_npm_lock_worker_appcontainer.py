@@ -135,6 +135,27 @@ async def test_npm_lock_worker_rejects_incompatible_declared_runtime(frozen_work
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("frozen_worker", [False, True])
+async def test_npm_lock_worker_rejects_incompatible_root_os(frozen_worker: bool):
+    _package_manifest, package_lock = _fixtures()
+    manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"os":["win32"]}'
+
+    with pytest.raises(NpmLockInspectionError):
+        await inspect_npm_package_lock_in_appcontainer(
+            manifest,
+            package_lock,
+            skill_id="12345678-1234-4234-8234-123456789abc",
+            skill_version=1,
+            source_sha256="a" * 64,
+            distribution="Ubuntu-24.04",
+            node_version="v22.2.0",
+            npm_version="10.8.1",
+            requirements=("left-pad@^1.3.0",),
+            test_worker_executable=_frozen_executable(frozen_worker),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("frozen_worker", [False, True])
 async def test_npm_lock_worker_rejects_manifest_lock_mismatch(frozen_worker: bool):
     _package_manifest, package_lock = _fixtures()
     mismatched_manifest = b'{"name":"fixture","dependencies":{"left-pad":"^2.0.0"}}'
