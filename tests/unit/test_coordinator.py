@@ -9,7 +9,7 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.states import RunState
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillDraft, SkillStore, host_platform_name
+from xaa.storage.skills import SkillDraft, SkillStore
 
 
 class FixtureValidationTransport:
@@ -652,7 +652,9 @@ def test_scanned_pdf_ocr_text_replaces_model_image_input_but_keeps_untrusted_bou
 async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedure(
     workspace_tmp_path,
 ):
-    store = RunStore(workspace_tmp_path / "procedure-catalog.sqlite3")
+    state_dir = workspace_tmp_path / "state"
+    state_dir.mkdir()
+    store = RunStore(state_dir / "procedure-catalog.sqlite3")
     procedure = SkillStore(store).create(
         SkillDraft(
             name="Catalog fixture",
@@ -687,15 +689,16 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
             },
         )
 
-    current_platform = host_platform_name()
-    other_platform = next(
-        platform for platform in ("windows", "macos", "linux") if platform != current_platform
-    )
+    # The run's explicit WSL grant selects Linux procedure metadata even when
+    # the coordinator itself is hosted on Windows.
+    current_platform = "linux"
+    other_platform = "windows"
 
     expected_visible = {
         "Catalog fixture",
         "Requires files",
         "Requires read file",
+        "Needs unavailable terminal",
         "Unknown fallback stays visible",
         "Always visible",
         "Current platform",
@@ -711,12 +714,19 @@ async def test_model_catalog_lists_untrusted_metadata_without_selecting_procedur
     add_imported("Current platform", {"platforms": [current_platform]})
     add_imported("Other platform", {"platforms": [other_platform]})
 
+    command_workspace = workspace_tmp_path / "command-workspace"
+    command_workspace.mkdir()
     run_id = store.create_run(
         objective="Find a reusable procedure",
         acceptance_criteria=[],
-        workspace=str(workspace_tmp_path),
-        mode="observe",
+        workspace=str(command_workspace),
+        mode="workspace",
         model="fixture",
+        command_grant={
+            "backend": "wsl-bubblewrap-v1",
+            "distribution": "Ubuntu-24.04",
+            "profile_sha256": "a" * 64,
+        },
     )["id"]
 
     class CatalogProvider(LMStudioProvider):

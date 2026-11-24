@@ -681,12 +681,21 @@ class Coordinator:
                 for item in tools
                 if isinstance(item["function"].get("name"), str)
             }
+            command_grant = run.get("command_grant")
+            execution_platform = None
+            if isinstance(command_grant, dict):
+                backend = command_grant.get("backend")
+                if backend == "wsl-bubblewrap-v1":
+                    execution_platform = "linux"
+                elif backend == "windows-appcontainer-v1":
+                    execution_platform = "windows"
             result = SkillStore(self.store).catalog(
                 limit=catalog_args.limit,
                 offset=catalog_args.offset,
                 category=catalog_args.category,
                 available_tools=available_tools,
                 toolsets=available_toolsets(available_tools),
+                current_platform=execution_platform,
             )
             result = bounded_procedure_catalog(result)
             self.store.record_tool_result(run_id, token, call["id"], result)

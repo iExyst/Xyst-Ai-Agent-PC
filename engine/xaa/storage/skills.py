@@ -2411,6 +2411,7 @@ class SkillStore:
         category: str | None = None,
         available_tools: set[str] | None = None,
         toolsets: set[str] | None = None,
+        current_platform: str | None = None,
     ) -> dict[str, Any]:
         """Return bounded discovery metadata; procedure text is never included."""
         if not 1 <= limit <= 50 or not 0 <= offset <= 99:
@@ -2446,6 +2447,7 @@ class SkillStore:
                         cast(dict[str, Any], decoded_requirements),
                         available_tools=available_tools,
                         toolsets=toolsets,
+                        current_platform=current_platform,
                     ):
                         continue
             description = str(evidence.get("description") or source.get("description", "")).strip()
