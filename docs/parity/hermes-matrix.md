@@ -2,7 +2,7 @@
 
 ## Render scientific spreadsheet values (2026-11-23)
 
-The bounded XLSX reader now renders common scientific number formats, including exponent sign and width, optional decimal places, and zero, while retaining raw cell values and the format code. The focused document-input suite passes (112 tests); Ruff, formatting, and targeted Pyright pass. This improves spreadsheet document reading only; formula evaluation and general workbook rendering remain unsupported, and this is not a claim of broad spreadsheet or Hermes parity. No live model inference was used.
+The bounded XLSX reader now renders common scientific number formats, including exponent sign and width, optional decimal places, and zero, while retaining raw cell values and the format code. The focused document-input suite passes (112 tests); Ruff, formatting, and targeted Pyright pass. Exact-source Windows workflow [45295545573](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45295545573) passed on `71636585` with 1,541 Python tests (20 skipped), Windows browser and desktop checks, static analysis, API contracts, and recovery acceptance. This improves spreadsheet document reading only; formula evaluation and general workbook rendering remain unsupported, and this is not a claim of broad spreadsheet or Hermes parity. No live model inference was used.
 
 ## Assign larger imported skills to specialists (2026-11-23)
 

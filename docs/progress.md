@@ -5,7 +5,7 @@ A manager-only model response containing multiple `procedure_draft` calls now va
 
 ## Render scientific XLSX number formats (2026-11-23)
 
-XLSX extraction now renders common scientific formats such as `0.00E+00` and `0.##E-0` beside the original cached numeric value and number-format code. It handles positive and negative exponents, exponent-width padding, optional fractional digits, rounding, and zero. Unsupported or malformed patterns remain raw-only; formula evaluation and general Excel rendering are still unsupported. The focused document-input suite passes (112 tests); Ruff, formatting, targeted Pyright, and `git diff --check` pass. No live model inference was used.
+XLSX extraction now renders common scientific formats such as `0.00E+00` and `0.##E-0` beside the original cached numeric value and number-format code. It handles positive and negative exponents, exponent-width padding, optional fractional digits, rounding, and zero. Unsupported or malformed patterns remain raw-only; formula evaluation and general Excel rendering are still unsupported. The focused document-input suite passes (112 tests); Ruff, formatting, targeted Pyright, and `git diff --check` pass. Exact-source Windows workflow [45295545573](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45295545573) passed on `71636585`, including 1,541 Python tests (20 skipped), configured browser and desktop flows, static analysis, API contracts, and recovery checks. WSL procedure and installer jobs were skipped because packaging and WSL inputs were unchanged. No live model inference was used.
 
 ## Assign larger pinned skills to specialists (2026-11-23)
 
