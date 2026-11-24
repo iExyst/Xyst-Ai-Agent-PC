@@ -186,15 +186,16 @@ def test_mixed_draft_revision_transaction_rolls_back_draft_on_revision_denial(
     assert owner
 
     with pytest.raises(PermissionError, match="exceeds the selected run grant"):
-        skills.create_model_draft_and_revision_batch_from_run(
+        skills.create_model_draft_and_edit_batch_from_run(
             run_id,
             owner,
             [("draft-call", _draft("New candidate"))],
             "revision-call",
-            SkillContentRevision(
+            [("revision-call", "procedure_revise", {"expected_version": 2})],
+            [("revision-call", {"expected_version": 2})],
+            content_revision=SkillContentRevision(
                 skill_id=str(selected["id"]), expected_version=2, content="Revised content."
             ),
-            [("revision-call", {"expected_version": 2})],
         )
 
     assert [procedure["name"] for procedure in skills.list()] == ["Existing procedure"]
@@ -439,7 +440,7 @@ async def test_coordinator_commits_same_response_draft_batch_as_one_storage_unit
 
 
 @pytest.mark.asyncio
-async def test_coordinator_commits_mixed_draft_and_revision_batch_atomically(
+async def test_coordinator_commits_mixed_draft_and_edit_batch_atomically(
     workspace_tmp_path: Path,
 ) -> None:
     store = RunStore(workspace_tmp_path / "procedure-draft-mixed-batch.sqlite3")
@@ -455,6 +456,7 @@ async def test_coordinator_commits_mixed_draft_and_revision_batch_atomically(
             procedure_trial={"skill_id": selected["id"], "version": 1},
             allow_procedure_drafting=True,
             allow_procedure_revision=True,
+            allow_procedure_resource_revision=True,
         )["id"]
     )
     calls = [
@@ -481,6 +483,21 @@ async def test_coordinator_commits_mixed_draft_and_revision_batch_atomically(
                 ),
             },
         },
+        {
+            "id": "mixed-resource-call",
+            "type": "function",
+            "function": {
+                "name": "procedure_resource_revise",
+                "arguments": json.dumps(
+                    {
+                        "skill_id": selected["id"],
+                        "expected_version": 1,
+                        "path": "references/current.txt",
+                        "content": "Current reference.",
+                    }
+                ),
+            },
+        },
     ]
 
     class MixedManagerProvider(LMStudioProvider):
@@ -500,7 +517,11 @@ async def test_coordinator_commits_mixed_draft_and_revision_batch_atomically(
             self.requests += 1
             if self.requests == 1:
                 available = {item["function"]["name"] for item in (tools or [])}
-                assert {"procedure_draft", "procedure_revise"} <= available
+                assert {
+                    "procedure_draft",
+                    "procedure_revise",
+                    "procedure_resource_revise",
+                } <= available
                 return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
             return {"choices": [{"message": {"role": "assistant", "content": "Batch committed."}}]}
 
@@ -513,6 +534,7 @@ async def test_coordinator_commits_mixed_draft_and_revision_batch_atomically(
     assert len(skills.list()) == 2
     assert skills.get(selected["id"])["latest_version"] == 2
     assert "approved configuration" in skills.version(selected["id"], 2)["content"]
+    assert skills.version(selected["id"], 2)["assets"][0]["path"] == "references/current.txt"
     assert any(skill["name"] == "New candidate" for skill in skills.list())
     with store.connection() as connection:
         failures = connection.execute(
@@ -521,6 +543,7 @@ async def test_coordinator_commits_mixed_draft_and_revision_batch_atomically(
         ).fetchall()
     assert [(row["provider_call_id"], row["state"]) for row in failures] == [
         ("mixed-draft-call", "completed"),
+        ("mixed-resource-call", "completed"),
         ("mixed-revision-call", "completed"),
     ]
     assert all(row["error"] is None for row in failures)

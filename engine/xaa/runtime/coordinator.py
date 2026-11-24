@@ -1455,12 +1455,14 @@ class Coordinator:
             "procedure_revise",
         }
         manager_call_names = {call["function"]["name"] for call in calls}
-        mixed_draft_revision_batch = (
+        resource_tool_names = {"procedure_resource_revise", "procedure_resource_remove"}
+        mixed_draft_edit_batch = (
             len(calls) > 1
-            and manager_call_names <= {"procedure_draft", "procedure_revise"}
-            and manager_call_names == {"procedure_draft", "procedure_revise"}
+            and manager_call_names <= manager_names
+            and "procedure_draft" in manager_call_names
+            and bool(manager_call_names & (resource_tool_names | {"procedure_revise"}))
         )
-        if mixed_draft_revision_batch:
+        if mixed_draft_edit_batch:
             if any(
                 not any(tool["function"]["name"] == name for tool in tools)
                 for name in manager_call_names
@@ -1468,6 +1470,9 @@ class Coordinator:
                 raise PermissionError("Tool is not authorized in the current catalog.")
             drafts: list[tuple[str, SkillDraft]] = []
             revision_calls: list[tuple[str, dict[str, Any]]] = []
+            edit_calls: list[tuple[str, str, dict[str, Any]]] = []
+            resources: list[SkillResourceText] = []
+            removals: list[str] = []
             selected_id: str | None = None
             selected_version: int | None = None
             current_content: str | None = None
@@ -1481,43 +1486,62 @@ class Coordinator:
                     if name == "procedure_draft":
                         drafts.append((call["id"], SkillDraft.model_validate(arguments)))
                         continue
-                    content_edit = SkillContentRevision.model_validate(arguments)
-                    if selected_id is None:
-                        selected_id = content_edit.skill_id
-                        selected_version = content_edit.expected_version
-                        current_content = str(
-                            SkillStore(self.store).version(
-                                content_edit.skill_id, content_edit.expected_version
-                            )["content"]
+                    if name == "procedure_revise":
+                        content_edit = SkillContentRevision.model_validate(arguments)
+                        skill_id = content_edit.skill_id
+                        expected_version = content_edit.expected_version
+                    elif name == "procedure_resource_revise":
+                        resource_edit = SkillResourceRevision.model_validate(arguments)
+                        resources.extend(
+                            [
+                                SkillResourceText(
+                                    path=resource_edit.path, content=resource_edit.content
+                                ),
+                                *resource_edit.additional_resources,
+                            ]
                         )
-                    if (
-                        content_edit.skill_id != selected_id
-                        or content_edit.expected_version != selected_version
-                    ):
-                        raise ValueError(
-                            "All revision calls must target the same selected version."
-                        )
-                    if content_edit.content is not None:
-                        current_content = content_edit.content
+                        removals.extend(resource_edit.remove_paths)
+                        skill_id = resource_edit.skill_id
+                        expected_version = resource_edit.expected_version
                     else:
-                        assert current_content is not None
-                        assert content_edit.old_string is not None
-                        assert content_edit.new_string is not None
-                        count = current_content.count(content_edit.old_string)
-                        if count == 0:
-                            raise SkillConflict(
-                                "Exact old_string text was not found in the pending revision."
+                        resource_removal = SkillResourceRemoval.model_validate(arguments)
+                        removals.append(resource_removal.path)
+                        skill_id = resource_removal.skill_id
+                        expected_version = resource_removal.expected_version
+                    if selected_id is None:
+                        selected_id = skill_id
+                        selected_version = expected_version
+                    if skill_id != selected_id or expected_version != selected_version:
+                        raise ValueError("All edit calls must target the same selected version.")
+                    if name == "procedure_revise":
+                        content_edit = SkillContentRevision.model_validate(arguments)
+                        if current_content is None:
+                            current_content = str(
+                                SkillStore(self.store).version(skill_id, expected_version)[
+                                    "content"
+                                ]
                             )
-                        if count != 1 and not content_edit.replace_all:
-                            raise SkillConflict(
-                                "Exact old_string occurs more than once; confirm replace_all to change every occurrence."
+                        if content_edit.content is not None:
+                            current_content = content_edit.content
+                        else:
+                            assert content_edit.old_string is not None
+                            assert content_edit.new_string is not None
+                            count = current_content.count(content_edit.old_string)
+                            if count == 0:
+                                raise SkillConflict(
+                                    "Exact old_string text was not found in the pending revision."
+                                )
+                            if count != 1 and not content_edit.replace_all:
+                                raise SkillConflict(
+                                    "Exact old_string occurs more than once; confirm replace_all to change every occurrence."
+                                )
+                            current_content = current_content.replace(
+                                content_edit.old_string,
+                                content_edit.new_string,
+                                -1 if content_edit.replace_all else 1,
                             )
-                        current_content = current_content.replace(
-                            content_edit.old_string,
-                            content_edit.new_string,
-                            -1 if content_edit.replace_all else 1,
-                        )
-                    revision_calls.append((call["id"], arguments))
+                        revision_calls.append((call["id"], arguments))
+                    edit_calls.append((call["id"], name, arguments))
                 selected = run.get("procedure_trial")
                 if (
                     selected is None
@@ -1527,24 +1551,66 @@ class Coordinator:
                     raise ValueError("Revision batch must target the selected procedure version.")
                 if not run.get("allow_procedure_drafting"):
                     raise PermissionError("This run has no grant to draft procedures.")
-                if not run.get("allow_procedure_revision"):
+                if revision_calls and not run.get("allow_procedure_revision"):
                     raise PermissionError("This run has no grant to revise procedure text.")
-                if selected_id is None or selected_version is None or current_content is None:
+                if resources and not run.get("allow_procedure_resource_revision"):
+                    raise PermissionError("This run has no grant to revise procedure resources.")
+                if removals and not run.get("allow_procedure_resource_removal"):
+                    raise PermissionError("This run has no grant to remove procedure resources.")
+                if len(removals) > 1 or len(resources) + len(removals) > 8:
+                    raise ValueError(
+                        "Resource edits permit at most eight operations and one removal."
+                    )
+                if not resources and not revision_calls:
+                    raise ValueError(
+                        "A mixed draft batch must include a content or resource write."
+                    )
+                if removals and not resources:
+                    raise ValueError("A removal batch must include a resource write operation.")
+                if selected_id is None or selected_version is None:
                     raise ValueError("Mixed procedure batch is missing its selected revision.")
-                primary_revision = SkillContentRevision(
-                    skill_id=selected_id,
-                    expected_version=selected_version,
-                    content=current_content,
+                content_revision = (
+                    SkillContentRevision(
+                        skill_id=selected_id,
+                        expected_version=selected_version,
+                        content=current_content,
+                    )
+                    if current_content is not None
+                    else None
+                )
+                resource_revision = (
+                    SkillResourceRevision(
+                        skill_id=selected_id,
+                        expected_version=selected_version,
+                        path=resources[0].path,
+                        content=resources[0].content,
+                        additional_resources=resources[1:],
+                        remove_paths=removals,
+                    )
+                    if resources
+                    else None
+                )
+                edit_call_id = next(
+                    call["id"]
+                    for call in calls
+                    if call["function"]["name"]
+                    in (
+                        resource_tool_names
+                        if resource_revision is not None
+                        else {"procedure_revise"}
+                    )
                 )
                 result_by_call_id = SkillStore(
                     self.store
-                ).create_model_draft_and_revision_batch_from_run(
+                ).create_model_draft_and_edit_batch_from_run(
                     run_id,
                     token,
                     drafts,
-                    revision_calls[0][0],
-                    primary_revision,
+                    edit_call_id,
+                    edit_calls,
                     revision_calls,
+                    resource_revision=resource_revision,
+                    content_revision=content_revision,
                 )
             except PermissionError:
                 raise
@@ -1569,20 +1635,6 @@ class Coordinator:
                 return True
             append_batch_results(calls, [result_by_call_id[call["id"]] for call in calls])
             return True
-        if (
-            len(calls) > 1
-            and all(call.get("function", {}).get("name") in manager_names for call in calls)
-            and "procedure_draft" in manager_call_names
-            and len(manager_call_names) > 1
-        ):
-            results = record_batch_failure(
-                calls,
-                "incompatible_procedure_manager_batch",
-                "Procedure creation and edits must be handled in separate model batches.",
-            )
-            append_batch_results(calls, results)
-            return True
-
         resource_tool_names = {"procedure_resource_revise", "procedure_resource_remove"}
         manager_edit_names = resource_tool_names | {"procedure_revise"}
         call_names = {call["function"]["name"] for call in calls}

@@ -790,40 +790,55 @@ class SkillStore:
                 results.append(result)
         return results
 
-    def create_model_draft_and_revision_batch_from_run(
+    def create_model_draft_and_edit_batch_from_run(
         self,
         run_id: str,
         owner: str,
         drafts: list[tuple[str, SkillDraft]],
-        revision_call_id: str,
-        revision: SkillContentRevision,
+        edit_call_id: str,
+        edit_calls: list[tuple[str, str, dict[str, Any]]],
         revision_calls: list[tuple[str, dict[str, Any]]],
+        *,
+        resource_revision: SkillResourceRevision | None = None,
+        content_revision: SkillContentRevision | None = None,
     ) -> dict[str, dict[str, Any]]:
-        """Commit new candidates and one selected-procedure revision as one unit."""
+        """Commit new candidates and compatible selected-procedure edits as one unit."""
         all_call_ids = [call_id for call_id, _draft in drafts] + [
-            call_id for call_id, _arguments in revision_calls
+            call_id for call_id, _name, _arguments in edit_calls
         ]
         if (
             not drafts
-            or not revision_calls
-            or revision_call_id not in {call_id for call_id, _ in revision_calls}
+            or not edit_calls
+            or edit_call_id not in {call_id for call_id, _name, _arguments in edit_calls}
             or len(all_call_ids) > 8
             or len(set(all_call_ids)) != len(all_call_ids)
+            or (resource_revision is None and content_revision is None)
         ):
-            raise ValueError("Mixed procedure draft and revision batch identities are invalid.")
+            raise ValueError("Mixed procedure draft and edit batch identities are invalid.")
         with self.runs.atomic_connection():
             draft_results = self.create_model_draft_batch_from_run(run_id, owner, drafts)
-            revision_result = self.create_model_revision_from_run(
-                run_id,
-                owner,
-                revision_call_id,
-                revision,
-                batch_calls=revision_calls,
-            )
+            if resource_revision is not None:
+                edit_result = self.create_model_resource_revision_from_run(
+                    run_id,
+                    owner,
+                    edit_call_id,
+                    resource_revision,
+                    batch_calls=edit_calls,
+                    content_revision=content_revision,
+                )
+            else:
+                assert content_revision is not None
+                edit_result = self.create_model_revision_from_run(
+                    run_id,
+                    owner,
+                    edit_call_id,
+                    content_revision,
+                    batch_calls=revision_calls,
+                )
         results = {
             call_id: result for (call_id, _draft), result in zip(drafts, draft_results, strict=True)
         }
-        results.update({call_id: revision_result for call_id, _arguments in revision_calls})
+        results.update({call_id: edit_result for call_id, _name, _args in edit_calls})
         return results
 
     def create_model_revision_from_run(
