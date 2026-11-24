@@ -1,3 +1,7 @@
+## Match imported npm package manager declarations to WSL (2026-11-24)
+
+Imported procedure inspection now checks a declared root `packageManager` against the managed installer. X.A.A. accepts npm with the exact selected npm version (and an optional Corepack SHA-224 suffix); it rejects a different manager, a missing or non-exact version, or a version mismatch. The network-denied AppContainer worker performs the check during review, and manifest revalidation repeats it before install. Focused npm parser tests pass (105); source and rebuilt frozen AppContainer worker tests pass as part of the 125-test parser/worker run. The engine rebuild, Ruff, formatting, targeted strict Pyright, and `git diff --check` pass locally. No model inference or registry access was used. This checks one root toolchain declaration and does not claim broad npm compatibility or Hermes parity.
+
 ## Document schema 40-to-41 attachment-name migration (2026-11-24)
 
 The release migration guide now matches `DATABASE_SCHEMA_VERSION=41` and records the nullable `artifacts.original_filename` migration: existing bytes, digests, and metadata remain unchanged, with historical names left `NULL`. The targeted migration regression passes (1 test), including integrity and foreign-key checks. This is a documentation correction for the current release candidate; it does not claim every historical database or clean-machine recovery has been verified.

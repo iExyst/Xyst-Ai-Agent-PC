@@ -397,6 +397,9 @@ def parse_npm_package_lock(
             raise ValueError("Linked npm package.json is invalid.") from exc
         if not isinstance(manifest_value, dict):
             raise TypeError("Linked npm package.json must be an object.")
+        _verify_npm_package_manager(
+            cast(dict[str, Any], manifest_value).get("packageManager"), proposal
+        )
         warnings = _verify_npm_dev_engines(
             cast(dict[str, Any], manifest_value).get("devEngines", {}), proposal
         )
@@ -598,6 +601,7 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     if not isinstance(parsed_json, dict):
         raise TypeError("npm package.json must be a JSON object.")
     manifest = cast(dict[str, Any], parsed_json)
+    _verify_npm_package_manager(manifest.get("packageManager"), lock)
     raw_engines = manifest.get("engines", {})
     if not isinstance(raw_engines, dict):
         raise TypeError("npm package.json engines must be an object.")
@@ -653,6 +657,31 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     if digest != lock.package_manifest_sha256:
         raise ValueError("npm package.json bytes do not match the bound procedure resource.")
     return digest
+
+
+def _verify_npm_package_manager(raw: object, lock: ProcedureNpmDependencyLock) -> None:
+    """Require an authored package-manager identity to match the fixed npm installer."""
+    if raw is None:
+        return
+    if not isinstance(raw, str) or len(raw) > 256:
+        raise TypeError("npm package.json packageManager must be a bounded string.")
+    if not raw.startswith("npm@"):
+        raise ValueError("npm package.json packageManager must declare npm as the package manager.")
+
+    declared = raw.removeprefix("npm@")
+    version, hash_separator, integrity_hash = declared.partition("+sha224.")
+    if hash_separator and (
+        not integrity_hash
+        or len(integrity_hash) > 128
+        or re.fullmatch(r"[A-Za-z0-9+/=]+", integrity_hash) is None
+    ):
+        raise ValueError("npm package.json packageManager integrity hash is invalid.")
+    if _SEMVER.fullmatch(version) is None:
+        raise ValueError("npm package.json packageManager must include an exact npm version.")
+    if version != lock.npm_version:
+        raise ValueError(
+            "npm package.json packageManager version does not match the selected WSL npm runtime."
+        )
 
 
 def _verify_npm_dev_engines(

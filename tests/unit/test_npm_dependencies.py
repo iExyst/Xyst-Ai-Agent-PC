@@ -169,6 +169,49 @@ def test_package_manifest_checks_node_and_npm_engine_ranges(
             verify_npm_package_manifest(manifest, lock)
 
 
+@pytest.mark.parametrize(
+    ("package_manager", "compatible"),
+    [
+        ("npm@10.8.1", True),
+        ("npm@10.8.1+sha224.YWJjZA==", True),
+        ("npm@10.8.2", False),
+        ("pnpm@10.8.1", False),
+        ("npm", False),
+        ("npm@latest", False),
+        (23, False),
+    ],
+)
+def test_package_manifest_checks_declared_package_manager(
+    package_manager: object, compatible: bool
+) -> None:
+    manifest = json.dumps(
+        {
+            "name": "fixture",
+            "dependencies": {"left-pad": "^1.3.0"},
+            "packageManager": package_manager,
+        },
+        separators=(",", ":"),
+    ).encode()
+    if not compatible:
+        with pytest.raises((TypeError, ValueError), match="packageManager"):
+            parse(package_lock(), manifest=manifest)
+        return
+
+    lock = parse(package_lock(), manifest=manifest)
+    assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
+
+
+def test_package_manager_mismatch_is_rechecked_before_install() -> None:
+    unpinned_manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"}}'
+    lock = parse(package_lock(), manifest=unpinned_manifest)
+    changed_manifest = (
+        b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"packageManager":"pnpm@10.8.1"}'
+    )
+
+    with pytest.raises(ValueError, match="must declare npm"):
+        verify_npm_package_manifest(changed_manifest, lock)
+
+
 def test_package_manifest_rejects_malformed_engine_constraints() -> None:
     manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"engines":[]}'
     lock = parse(package_lock(), manifest=manifest)
