@@ -2113,7 +2113,10 @@ def create_app(
         except (NpmLockInspectionError, TypeError, ValueError):
             raise HTTPException(
                 status_code=409,
-                detail="The linked npm package manifest and lockfile could not be validated.",
+                detail=(
+                    "The linked npm manifest and lockfile are invalid or require a different "
+                    "Node.js/npm runtime."
+                ),
             ) from None
         return proposal
 
@@ -2161,7 +2164,10 @@ def create_app(
             if validated != request:
                 raise HTTPException(
                     status_code=409,
-                    detail="The submitted npm lock differs from its linked source resources.",
+                    detail=(
+                        "The submitted npm lock differs from its linked source resources or the "
+                        "declared Node.js/npm engine requirements."
+                    ),
                 )
             return skill_store.save_npm_dependency_lock(request)
         except NpmLockInspectionError:

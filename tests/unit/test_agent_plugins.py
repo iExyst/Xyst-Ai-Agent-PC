@@ -1816,7 +1816,9 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
     (skill_root / "scripts").mkdir()
     (skill_root / "scripts" / "run.mjs").write_text("console.log('fixture');\n", encoding="utf-8")
     (skill_root / "package.json").write_text(
-        '{"name":"fixture","dependencies":{"left-pad":"^1.3.0"}}', encoding="utf-8"
+        '{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},'
+        '"engines":{"node":">=20 <23","npm":">=10"}}',
+        encoding="utf-8",
     )
     tarball_output = io.BytesIO()
     package_metadata = (
@@ -1851,14 +1853,15 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "npm.sqlite3"))
     headers = {"Authorization": f"Bearer {TOKEN}"}
     readiness_requests: list[str] = []
+    node_runtime = {"node_version": "v22.2.0", "npm_version": "10.8.1"}
 
     async def check_node_runtime(self, request):
         readiness_requests.append(request.distribution)
         return SkillNodeRuntimeReadinessResult(
             distribution=request.distribution,
             state="ready",
-            node_version="v22.2.0",
-            npm_version="10.8.1",
+            node_version=node_runtime["node_version"],
+            npm_version=node_runtime["npm_version"],
             npm_available=True,
             checked_at=datetime.now(UTC),
         )
@@ -1918,10 +1921,15 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         assert readiness_requests == ["Ubuntu-24.04"]
         assert len(worker_requests) == 1
         base = f"/skills/{created.json()['id']}/versions/1/npm-dependency-locks"
+        node_runtime["node_version"] = "v23.0.0"
+        incompatible = client.post(endpoint, headers=headers, json={"distribution": "Ubuntu-24.04"})
+        assert incompatible.status_code == 409
+        assert "different Node.js/npm runtime" in incompatible.json()["detail"]
+        node_runtime["node_version"] = "v22.2.0"
         saved = client.put(base, headers=headers, json=result)
         assert saved.status_code == 200, saved.text
-        assert readiness_requests == ["Ubuntu-24.04", "Ubuntu-24.04"]
-        assert len(worker_requests) == 2
+        assert readiness_requests == ["Ubuntu-24.04"] * 3
+        assert len(worker_requests) == 3
         proposal = saved.json()
         assert proposal["decision"] == "pending_review"
         assert proposal["tarballs_present"] is False

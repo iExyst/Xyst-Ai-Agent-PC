@@ -138,6 +138,49 @@ def test_npm_v1_lock_is_bound_to_manifest_and_transitive_dependency_tree() -> No
     verify_npm_package_manifest(MANIFEST, lock)
 
 
+@pytest.mark.parametrize(
+    ("engines", "compatible"),
+    [
+        ({"node": ">=18 <23", "npm": "^10.0.0"}, True),
+        ({"node": ">=23"}, False),
+        ({"npm": "<10"}, False),
+    ],
+)
+def test_package_manifest_checks_node_and_npm_engine_ranges(
+    engines: dict[str, str], compatible: bool
+) -> None:
+    manifest = json.dumps(
+        {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "engines": engines},
+        separators=(",", ":"),
+    ).encode()
+    lock = parse(package_lock(), manifest=manifest)
+
+    if compatible:
+        assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
+    else:
+        with pytest.raises(ValueError, match="does not satisfy"):
+            verify_npm_package_manifest(manifest, lock)
+
+
+def test_package_manifest_rejects_malformed_engine_constraints() -> None:
+    manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"engines":[]}'
+    lock = parse(package_lock(), manifest=manifest)
+    with pytest.raises(TypeError, match="engines must be an object"):
+        verify_npm_package_manifest(manifest, lock)
+
+    for value in (23, [], {"node": ""}):
+        manifest = json.dumps(
+            {
+                "name": "fixture",
+                "dependencies": {"left-pad": "^1.3.0"},
+                "engines": {"node": value},
+            }
+        ).encode()
+        lock = parse(package_lock(), manifest=manifest)
+        with pytest.raises((TypeError, ValueError)):
+            verify_npm_package_manifest(manifest, lock)
+
+
 def test_package_manifest_must_match_lockfile_root_dependencies() -> None:
     lock = parse(package_lock())
     manifest = MANIFEST

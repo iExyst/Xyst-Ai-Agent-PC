@@ -551,7 +551,7 @@ def _require_npm_version_satisfies(version: str, version_range: str, package_nam
 
 
 def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) -> str:
-    """Match package.json dependency declarations to the root entry in the reviewed lock."""
+    """Match dependency declarations and runtime constraints to the reviewed lock."""
     if not raw or len(raw) > MAX_PACKAGE_MANIFEST_BYTES:
         raise ValueError("npm package.json is empty or exceeds its size limit.")
     try:
@@ -561,6 +561,20 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     if not isinstance(parsed_json, dict):
         raise TypeError("npm package.json must be a JSON object.")
     manifest = cast(dict[str, Any], parsed_json)
+    raw_engines = manifest.get("engines", {})
+    if not isinstance(raw_engines, dict):
+        raise TypeError("npm package.json engines must be an object.")
+    engines = cast(dict[str, Any], raw_engines)
+    for name, version in (
+        ("node", lock.node_version.removeprefix("v")),
+        ("npm", lock.npm_version),
+    ):
+        version_range = engines.get(name)
+        if version_range is None:
+            continue
+        if not isinstance(version_range, str):
+            raise TypeError(f"npm package.json engines.{name} must be a semantic-version range.")
+        _require_npm_version_satisfies(version, version_range, f"required {name} runtime")
     declared: list[NpmRootDependency] = []
     for kind in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
         values = manifest.get(kind, {})
