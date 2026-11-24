@@ -1,0 +1,46 @@
+{
+  "version": "0.1.1",
+  "target": "x86_64-pc-windows-msvc",
+  "signed": false,
+  "binary_patching": false,
+  "install_mode": "currentUser",
+  "artifacts": {
+    "installer": {
+      "filename": "Xyst AI Agent_0.1.1_x64-setup.exe",
+      "bytes": 85746376,
+      "sha256": "e6c4e45acf733750e95c624e52d256791918e9895dabd8f130e36130222e3586"
+    },
+    "desktop": {
+      "filename": "xaa-desktop.exe",
+      "bytes": 9754624,
+      "sha256": "1935bead660d3bf3d32409ce9be0385411db5e4f76e20c1119f579e52b34ce84"
+    },
+    "engine": {
+      "filename": "xaa-engine-x86_64-pc-windows-msvc.exe",
+      "bytes": 84150558,
+      "sha256": "c10d4e96f6c3e0197e494a1b66364fc58876ba2fd990aea90e02e32622305f09"
+    }
+  },
+  "notices": {
+    "LICENSE": {
+      "filename": "LICENSE",
+      "bytes": 1073,
+      "sha256": "b80dd72db8fe8aaab5d309dbe14354dd041ab0b9236151dc22f56d6c386aa8d4"
+    },
+    "THIRD_PARTY_NOTICES.md": {
+      "filename": "THIRD_PARTY_NOTICES.md",
+      "bytes": 1456753,
+      "sha256": "05208af6a554993986163325076745138f765d6d80db4a21b674c7089b4b9afc"
+    },
+    "dependency-inventory.md": {
+      "filename": "dependency-inventory.md",
+      "bytes": 61291,
+      "sha256": "8715f9037106a6a3c0e29e18708aa5f7844588108f6a633e155b9401fda4a4f8"
+    },
+    "release-notes-0.1.1.md": {
+      "filename": "0.1.1.md",
+      "bytes": 4201,
+      "sha256": "56c303fd0bb8db2cc1085a184b5315d81dde3a3ca30ffd1868cbc370350cfe03"
+    }
+  }
+}

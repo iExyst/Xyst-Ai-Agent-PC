@@ -1,0 +1,101 @@
+{
+  "passed": true,
+  "scope": "Windows Tauri desktop plus bundled engine process death and same-profile restart; deterministic loopback OpenAI-compatible fixture; no LM Studio or external provider",
+  "run_id": "2e15d20d-53d5-43da-a13b-1200051a72eb",
+  "model_requests": 12,
+  "tool_diagnostic_round_trips": 2,
+  "streamed_candidates": 6,
+  "harmless_tool_diagnostic_verified": true,
+  "recovery_event": {
+    "state": "queued",
+    "reason": "expired_worker"
+  },
+  "streamed_command_output_restored_after_restart": true,
+  "restored_command_output_marker": "NATIVE-REPLAY-OUTPUT-b8271a2b-6b0d-49e1-83c9-70e5ceefaff9",
+  "candidate_count": 1,
+  "final_state": "verifying",
+  "tool_effects": 0,
+  "native_chat_continuation": {
+    "prior_turn_context_verified": true,
+    "saved_user_and_assistant_turn": true,
+    "coordinator_run_state": "verifying",
+    "live_provider_inference": false,
+    "tool_effects": 0
+  },
+  "native_chat_attachment": {
+    "saved_session_id": "native-attachment-25114928-4e5b-496f-9549-40dbfd6e0614",
+    "run_id": "eb7d98d1-bbfb-45db-8de8-13c0bac71d16",
+    "artifact_id": "9030f8c6-bb96-4ce1-9dde-dbeb23f7ea92",
+    "media_type": "application/pdf",
+    "size_bytes": 48,
+    "download_filename": "native-review.pdf",
+    "artifact_bytes_verified": true,
+    "live_model_inference": false
+  },
+  "native_chat_audio_attachment": {
+    "saved_session_id": "native-audio-7622b5ad-bf4f-4abe-944e-6960e2b6bd32",
+    "run_id": "c6c9831c-418b-43e8-b5a0-58ba141c8894",
+    "artifact_id": "c367dddb-c6a5-4f2e-aafd-e83bb85f9734",
+    "media_type": "audio/wav",
+    "size_bytes": 48,
+    "download_filename": "native-note.wav",
+    "artifact_bytes_verified": true,
+    "live_model_inference": false
+  },
+  "native_chat_csv_attachment": {
+    "saved_session_id": "native-csv-90ed6c5d-b7de-4c9c-a0b6-2b7eca93daf2",
+    "run_id": "ed612d56-721c-4f63-9ffa-8436c04d70b3",
+    "artifact_id": "06bfd5d7-432b-43cd-aea7-442f4e005e02",
+    "media_type": "text/csv",
+    "size_bytes": 25,
+    "download_filename": "inventory.csv",
+    "artifact_bytes_verified": true,
+    "live_model_inference": false
+  },
+  "native_chat_document_attachments": [
+    {
+      "saved_session_id": "native-document-0-47e444cc-eb2d-4094-b575-08a9f84182c0",
+      "run_id": "21cbc359-5e2e-4824-8e81-f47925f7ceb6",
+      "artifact_id": "5dd37a89-e041-4ae2-8e31-55072b9c42eb",
+      "media_type": "text/plain",
+      "size_bytes": 30,
+      "download_filename": "notes.txt",
+      "artifact_bytes_verified": true,
+      "live_model_inference": false
+    },
+    {
+      "saved_session_id": "native-document-1-98885254-f93c-496c-8f26-5e4584a3b657",
+      "run_id": "cb7562e5-ed34-4673-9498-2344b1ded50f",
+      "artifact_id": "c1e9151e-461b-4498-b3fe-7b53ba122a1c",
+      "media_type": "text/markdown",
+      "size_bytes": 43,
+      "download_filename": "notes.md",
+      "artifact_bytes_verified": true,
+      "live_model_inference": false
+    },
+    {
+      "saved_session_id": "native-document-2-5758f6b5-0418-450f-b1b6-244bbcb27581",
+      "run_id": "5f61535e-d86e-4517-9ccc-64e978b86732",
+      "artifact_id": "4b4bf149-e409-42db-8b47-785178c36b51",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "size_bytes": 32,
+      "download_filename": "brief.docx",
+      "artifact_bytes_verified": true,
+      "live_model_inference": false
+    },
+    {
+      "saved_session_id": "native-document-3-43b2786a-0ead-4205-8973-38c8d4aa030e",
+      "run_id": "f5270e6b-9052-43c0-a5bf-24737420f867",
+      "artifact_id": "3f5dd975-1b36-4316-8812-a53c75801b15",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "size_bytes": 32,
+      "download_filename": "budget.xlsx",
+      "artifact_bytes_verified": true,
+      "live_model_inference": false
+    }
+  ],
+  "workspace_unchanged": true,
+  "launch_credentials_cleaned": true,
+  "desktop_sha256": "1935bead660d3bf3d32409ce9be0385411db5e4f76e20c1119f579e52b34ce84",
+  "engine_sha256": "c10d4e96f6c3e0197e494a1b66364fc58876ba2fd990aea90e02e32622305f09"
+}

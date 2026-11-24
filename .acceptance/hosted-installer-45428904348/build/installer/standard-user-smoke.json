@@ -1,0 +1,33 @@
+{
+  "binaries_removed": true,
+  "account_profile_verified": true,
+  "config_preserved": true,
+  "roaming_app_data": "C:\\Users\\xaa_ci_6b6024de\\AppData\\Roaming",
+  "installed_hashes": {
+    "desktop": "1935BEAD660D3BF3D32409CE9BE0385411DB5E4F76E20C1119F579E52B34CE84",
+    "engine": "C10D4E96F6C3E0197E494A1B66364FC58876BA2FD990AEA90E02E32622305F09"
+  },
+  "installer_exit_code": 0,
+  "install_scope": "currentUser",
+  "app_data_preserved": true,
+  "account_sid": "S-1-5-21-3414932011-3134797172-3625386099-1003",
+  "installed_binary_hashes_match": true,
+  "default_per_user_directory_verified": true,
+  "install_directory": "C:\\Users\\xaa_ci_6b6024de\\AppData\\Local\\Xyst AI Agent",
+  "local_app_data": "C:\\Users\\xaa_ci_6b6024de\\AppData\\Local",
+  "user_profile": "C:\\Users\\xaa_ci_6b6024de",
+  "passed": true,
+  "expected_hashes": {
+    "engine": "c10d4e96f6c3e0197e494a1b66364fc58876ba2fd990aea90e02e32622305f09",
+    "desktop": "1935bead660d3bf3d32409ce9be0385411db5e4f76e20c1119f579e52b34ce84"
+  },
+  "model_inference_requested": false,
+  "bundled_engine_cli_verified": true,
+  "standard_user": true,
+  "account_is_administrator": false,
+  "uninstaller_exit_code": 0,
+  "runner_account_is_administrator": true,
+  "acceptance_account_sid_matches": true,
+  "standard_user_profile_removed": true,
+  "standard_user_account_removed": true
+}

@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "scenario": "fresh Windows Tauri profile connects through the desktop UI, completes the harmless diagnostic, reads a real workspace file with owner review, and reaches completed",
+  "provider": "deterministic local OpenAI-compatible fixture; no live LM Studio or external provider inference",
+  "live_model_inference": false,
+  "initial_profile_empty": true,
+  "default_endpoint": "http://127.0.0.1:1234",
+  "configured_endpoint": "http://127.0.0.1:53424",
+  "discovered_model": "xaa-native-onboarding-fixture",
+  "harmless_tool_round_trip": true,
+  "onboarding_read_tool": "workspace.read_file",
+  "exact_read_evidence": true,
+  "observe_mode": "observe",
+  "command_grant": null,
+  "owner_final_review": true,
+  "final_run_state": "completed",
+  "workspace_unchanged": true,
+  "desktop_sha256": "1935bead660d3bf3d32409ce9be0385411db5e4f76e20c1119f579e52b34ce84",
+  "engine_sha256": "c10d4e96f6c3e0197e494a1b66364fc58876ba2fd990aea90e02e32622305f09",
+  "launch_credentials_cleaned": true
+}
