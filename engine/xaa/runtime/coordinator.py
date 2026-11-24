@@ -1473,6 +1473,7 @@ class Coordinator:
             edit_calls: list[tuple[str, str, dict[str, Any]]] = []
             resources: list[SkillResourceText] = []
             removals: list[str] = []
+            resource_removal_operation: SkillResourceRemoval | None = None
             selected_id: str | None = None
             selected_version: int | None = None
             current_content: str | None = None
@@ -1506,6 +1507,7 @@ class Coordinator:
                     else:
                         resource_removal = SkillResourceRemoval.model_validate(arguments)
                         removals.append(resource_removal.path)
+                        resource_removal_operation = resource_removal
                         skill_id = resource_removal.skill_id
                         expected_version = resource_removal.expected_version
                     if selected_id is None:
@@ -1561,11 +1563,11 @@ class Coordinator:
                     raise ValueError(
                         "Resource edits permit at most eight operations and one removal."
                     )
-                if not resources and not revision_calls:
+                if not resources and not revision_calls and resource_removal_operation is None:
                     raise ValueError(
                         "A mixed draft batch must include a content or resource write."
                     )
-                if removals and not resources:
+                if removals and not resources and resource_removal_operation is None:
                     raise ValueError("A removal batch must include a resource write operation.")
                 if selected_id is None or selected_version is None:
                     raise ValueError("Mixed procedure batch is missing its selected revision.")
@@ -1596,7 +1598,7 @@ class Coordinator:
                     if call["function"]["name"]
                     in (
                         resource_tool_names
-                        if resource_revision is not None
+                        if resource_revision is not None or resource_removal_operation is not None
                         else {"procedure_revise"}
                     )
                 )
@@ -1610,6 +1612,7 @@ class Coordinator:
                     edit_calls,
                     revision_calls,
                     resource_revision=resource_revision,
+                    resource_removal=(resource_removal_operation if not resources else None),
                     content_revision=content_revision,
                 )
             except PermissionError:

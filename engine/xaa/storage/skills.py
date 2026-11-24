@@ -800,6 +800,7 @@ class SkillStore:
         revision_calls: list[tuple[str, dict[str, Any]]],
         *,
         resource_revision: SkillResourceRevision | None = None,
+        resource_removal: SkillResourceRemoval | None = None,
         content_revision: SkillContentRevision | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Commit new candidates and compatible selected-procedure edits as one unit."""
@@ -812,7 +813,8 @@ class SkillStore:
             or edit_call_id not in {call_id for call_id, _name, _arguments in edit_calls}
             or len(all_call_ids) > 8
             or len(set(all_call_ids)) != len(all_call_ids)
-            or (resource_revision is None and content_revision is None)
+            or (resource_revision is None and resource_removal is None and content_revision is None)
+            or (resource_revision is not None and resource_removal is not None)
         ):
             raise ValueError("Mixed procedure draft and edit batch identities are invalid.")
         with self.runs.atomic_connection():
@@ -825,6 +827,15 @@ class SkillStore:
                     resource_revision,
                     batch_calls=edit_calls,
                     content_revision=content_revision,
+                )
+            elif resource_removal is not None:
+                edit_result = self.create_model_resource_removal_from_run(
+                    run_id,
+                    owner,
+                    edit_call_id,
+                    resource_removal,
+                    content_revision=content_revision,
+                    batch_calls=edit_calls,
                 )
             else:
                 assert content_revision is not None
@@ -1372,17 +1383,47 @@ class SkillStore:
         return result
 
     def create_model_resource_removal_from_run(
-        self, run_id: str, owner: str, call_id: str, removal: SkillResourceRemoval
+        self,
+        run_id: str,
+        owner: str,
+        call_id: str,
+        removal: SkillResourceRemoval,
+        *,
+        content_revision: SkillContentRevision | None = None,
+        batch_calls: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         """Create an unevaluated candidate version without one granted package resource."""
         if self.runs.task_scope is not None:
             raise PermissionError("Specialists cannot remove user-library procedure resources.")
         if not call_id or len(call_id) > 128:
             raise ValueError("Procedure resource removal call identity is invalid.")
+        calls = batch_calls or [
+            (call_id, "procedure_resource_remove", removal.model_dump(mode="json"))
+        ]
+        call_ids = [item_id for item_id, _name, _arguments in calls]
+        removal_calls = [
+            item_id for item_id, name, _args in calls if name == "procedure_resource_remove"
+        ]
+        content_calls = [item_id for item_id, name, _args in calls if name == "procedure_revise"]
+        if (
+            call_id not in call_ids
+            or len(call_ids) > 8
+            or len(set(call_ids)) != len(call_ids)
+            or len(removal_calls) != 1
+            or removal_calls[0] != call_id
+            or (content_revision is not None) != bool(content_calls)
+            or any(
+                not item_id
+                or len(item_id) > 128
+                or name not in {"procedure_revise", "procedure_resource_remove"}
+                for item_id, name, _arguments in calls
+            )
+        ):
+            raise ValueError("Procedure resource removal batch identities are invalid.")
         now = utc_now()
-        encoded_arguments = json.dumps(removal.model_dump(mode="json"), sort_keys=True)
         with self.runs.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, owner)
             grants = connection.execute(
                 "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.resource_removal_granted'",
@@ -1406,11 +1447,30 @@ class SkillStore:
                 or json.loads(selected[0][0]).get("version") != removal.expected_version
             ):
                 raise PermissionError("Procedure resource removal exceeds the selected run grant.")
-            if connection.execute(
-                "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
-                (run_id, call_id),
-            ).fetchone():
-                raise SkillConflict("The model procedure-resource removal call was already used.")
+            if content_revision is not None:
+                content_grants = connection.execute(
+                    "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.revision_granted'",
+                    (run_id,),
+                ).fetchall()
+                if len(content_grants) != 1:
+                    raise PermissionError(
+                        "Combined resource removal requires a separate content-revision grant."
+                    )
+                content_grant = json.loads(content_grants[0][0])
+                if (
+                    content_grant.get("actor") != "local_user"
+                    or content_grant.get("skill_id") != removal.skill_id
+                    or content_grant.get("expected_version") != removal.expected_version
+                    or content_revision.skill_id != removal.skill_id
+                    or content_revision.expected_version != removal.expected_version
+                ):
+                    raise PermissionError("Content revision exceeds the selected run grant.")
+            for item_id in call_ids:
+                if connection.execute(
+                    "SELECT 1 FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                    (run_id, item_id),
+                ).fetchone():
+                    raise SkillConflict("A model procedure-edit call was already used.")
             entry = connection.execute(
                 "SELECT name,lifecycle_state,active_version FROM skills WHERE id=?",
                 (removal.skill_id,),
@@ -1454,10 +1514,31 @@ class SkillStore:
                     "The selected procedure version has no linked resource at that path."
                 )
             del asset_map[removal.path]
+            revised_content = str(latest["content"])
+            if content_revision is not None:
+                if content_revision.content is not None:
+                    revised_content = content_revision.content
+                else:
+                    assert content_revision.old_string is not None
+                    assert content_revision.new_string is not None
+                    replacement_count = revised_content.count(content_revision.old_string)
+                    if replacement_count == 0:
+                        raise SkillConflict(
+                            "Exact old_string text was not found in the selected procedure."
+                        )
+                    if replacement_count != 1 and not content_revision.replace_all:
+                        raise SkillConflict(
+                            "Exact old_string occurs more than once; confirm replace_all to change every occurrence."
+                        )
+                    revised_content = revised_content.replace(
+                        content_revision.old_string,
+                        content_revision.new_string,
+                        -1 if content_revision.replace_all else 1,
+                    )
             try:
                 draft = SkillDraft(
                     name=entry["name"],
-                    content=latest["content"],
+                    content=revised_content,
                     description=prior_evidence.get("description", ""),
                     category=prior_evidence.get("category", ""),
                     required_tools=json.loads(latest["required_tools"]),
@@ -1470,7 +1551,11 @@ class SkillStore:
                 ) from exc
             evidence: dict[str, Any] = {
                 "state": "candidate",
-                "provenance": "model_resource_removal",
+                "provenance": (
+                    "model_mixed_revision"
+                    if content_revision is not None
+                    else "model_resource_removal"
+                ),
                 "source": {
                     **{
                         str(key): value
@@ -1479,6 +1564,16 @@ class SkillStore:
                     },
                     "resource_removal_run_id": run_id,
                     "resource_removal_call_id": call_id,
+                    "resource_removal_call_ids": json.dumps(
+                        [
+                            item_id
+                            for item_id, name, _args in calls
+                            if name == "procedure_resource_remove"
+                        ]
+                    ),
+                    "content_revision_call_ids": json.dumps(
+                        [item_id for item_id, name, _args in calls if name == "procedure_revise"]
+                    ),
                     "parent_version": str(current_version),
                     "parent_provenance": str(prior_evidence.get("provenance", "user")),
                 },
@@ -1501,39 +1596,52 @@ class SkillStore:
                 "procedure": summary,
                 "version": next_version,
                 "removed_resource_path": removal.path,
-                "trust": "untrusted_model_resource_removal",
+                "trust": (
+                    "untrusted_model_mixed_revision"
+                    if content_revision is not None
+                    else "untrusted_model_resource_removal"
+                ),
                 "requires_user_review": True,
             }
+            if len(call_ids) > 1:
+                cast(dict[str, Any], result)["batch_call_ids"] = call_ids
             ensure_model_procedure_result_bounded(result)
-            connection.execute(
-                "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) "
-                "VALUES (?,NULL,?,'procedure.resource_remove','1',?,?,'completed',?,NULL,?,?,?)",
-                (
-                    str(uuid4()),
+            for item_id, name, arguments in calls:
+                tool_name = name.replace("_", ".", 1)
+                connection.execute(
+                    "INSERT INTO tool_calls (id,task_id,run_id,tool_name,tool_version,arguments,idempotency_key,state,result,error,created_at,updated_at,provider_call_id) "
+                    "VALUES (?,NULL,?,?,'1',?,?,'completed',?,NULL,?,?,?)",
+                    (
+                        str(uuid4()),
+                        run_id,
+                        tool_name,
+                        json.dumps(arguments, sort_keys=True),
+                        item_id,
+                        json.dumps(result),
+                        now,
+                        now,
+                        item_id,
+                    ),
+                )
+                self.runs.record_event(
+                    connection,
                     run_id,
-                    encoded_arguments,
-                    call_id,
-                    json.dumps(result),
-                    now,
-                    now,
-                    call_id,
-                ),
-            )
+                    "tool.intended",
+                    {"call_id": item_id, "tool": tool_name, "internal": False},
+                )
             self.runs.record_event(
                 connection,
                 run_id,
-                "tool.intended",
-                {"call_id": call_id, "tool": "procedure.resource_remove", "internal": False},
-            )
-            self.runs.record_event(
-                connection,
-                run_id,
-                "procedure.version_drafted",
+                "procedure.mixed_version_drafted"
+                if content_revision is not None
+                else "procedure.version_drafted",
                 {
                     "skill_id": removal.skill_id,
                     "version": next_version,
                     "parent_version": current_version,
                     "call_id": call_id,
+                    "call_ids": call_ids,
+                    "content_changed": content_revision is not None,
                 },
             )
             self.runs.record_event(
@@ -1547,9 +1655,13 @@ class SkillStore:
                     "call_id": call_id,
                 },
             )
-            self.runs.record_event(
-                connection, run_id, "tool.completed", {"call_id": call_id, "internal": False}
-            )
+            for item_id in call_ids:
+                self.runs.record_event(
+                    connection,
+                    run_id,
+                    "tool.completed",
+                    {"call_id": item_id, "internal": False},
+                )
         return result
 
     def import_agent_plugin(

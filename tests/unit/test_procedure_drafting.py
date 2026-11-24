@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -12,9 +14,11 @@ from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
 from xaa.storage.skills import (
+    SkillAsset,
     SkillConflict,
     SkillContentRevision,
     SkillDraft,
+    SkillResourceRemoval,
     SkillStore,
     SkillTool,
 )
@@ -207,6 +211,65 @@ def test_mixed_draft_revision_transaction_rolls_back_draft_on_revision_denial(
             ).fetchone()[0]
             == 0
         )
+
+
+def test_mixed_draft_and_resource_removal_commit_in_one_transaction(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-removal.sqlite3")
+    skills = SkillStore(store)
+    original = _draft("Existing procedure")
+    content = b"obsolete reference"
+    original.assets = [
+        SkillAsset(
+            path="references/obsolete.txt",
+            media_type="text/plain",
+            sha256=hashlib.sha256(content).hexdigest(),
+            content_base64=base64.b64encode(content).decode("ascii"),
+        )
+    ]
+    selected = skills.create(original)
+    run = store.create_run(
+        objective="Draft a candidate and remove an obsolete selected-procedure resource.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": selected["id"], "version": 1},
+        allow_procedure_drafting=True,
+        allow_procedure_resource_removal=True,
+    )
+    run_id = str(run["id"])
+    owner = store.acquire_lease(run_id, "mixed-draft-resource-removal")
+    assert owner
+    removal = SkillResourceRemoval(
+        skill_id=str(selected["id"]), expected_version=1, path="references/obsolete.txt"
+    )
+
+    results = skills.create_model_draft_and_edit_batch_from_run(
+        run_id,
+        owner,
+        [("draft-call", _draft("New candidate"))],
+        "remove-call",
+        [("remove-call", "procedure_resource_remove", removal.model_dump(mode="json"))],
+        [],
+        resource_removal=removal,
+    )
+
+    assert set(results) == {"draft-call", "remove-call"}
+    assert results["draft-call"]["status"] == "candidate_created"
+    assert results["remove-call"]["removed_resource_path"] == "references/obsolete.txt"
+    assert skills.version(str(selected["id"]), 2)["assets"] == []
+    assert {item["name"] for item in skills.list()} == {"Existing procedure", "New candidate"}
+    with store.connection() as connection:
+        calls = connection.execute(
+            "SELECT provider_call_id,state FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
+            (run_id,),
+        ).fetchall()
+    assert [(row["provider_call_id"], row["state"]) for row in calls] == [
+        ("draft-call", "completed"),
+        ("remove-call", "completed"),
+    ]
 
 
 def test_rejected_tool_batch_failure_journal_rolls_back_as_a_unit(
