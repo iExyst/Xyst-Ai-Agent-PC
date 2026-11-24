@@ -1,3 +1,7 @@
+## Account for reservations during dynamic specialist delegation (2026-11-24)
+
+Phase 4 delegation now checks measured run usage, outstanding exact prompt/output holds, and the remaining allowances of active tasks in the same budget calculation. Unknown active inference usage without a durable hold refuses plan expansion. The deterministic regressions pass in `tests/unit/test_task_claims.py`; exact hosted verification is pending. The specialist-delegation matrix status remains partial because broader model reliability, resource accounting and Hermes parity remain open. See [`progress.md`](../progress.md#reserve-shared-token-capacity-during-dynamic-delegation-2026-11-24) and [`token-thresholds.md`](../architecture/token-thresholds.md).
+
 ## Match imported npm engines to npm's advisory behavior (2026-11-24)
 
 Imported procedure root `engines.node` and `engines.npm` ranges are syntax-checked, and incompatible versions are exposed as advisory warnings because npm defaults to `engine-strict=false`. The network-denied lock worker carries the warning into the reviewed lock; the offline installer pins that behavior explicitly, and the desktop shows the warning. Focused source/frozen worker, unit and browser checks plus Ubuntu 24.04 offline installation with a deliberately incompatible Node engine pass. This covers one dependency-management compatibility behavior; it does not claim general npm support or Hermes parity.

@@ -1025,3 +1025,81 @@ def test_dynamic_delegation_cannot_expand_permissions_or_leave_partial_tasks(wor
             ).fetchone()[0]
             == 0
         )
+
+
+@pytest.mark.parametrize(
+    "exact_reservations,expected_error",
+    [(True, "shared token budget"), (False, "usage is unmeasured")],
+)
+def test_dynamic_delegation_accounts_for_shared_inference_holds(
+    workspace_tmp_path, exact_reservations, expected_error
+):
+    runs = RunStore(workspace_tmp_path / "dynamic-delegation-token-holds.sqlite3")
+    run_id = runs.create_run(
+        objective="Keep dynamically delegated work within the aggregate token budget",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=20,
+        max_seconds=1000,
+        max_total_tokens=100,
+        pre_inference_token_reservations=exact_reservations,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "coordinator")
+    runs.append_worker_event(
+        run_id,
+        parent,
+        "diagnostic.inference.completed",
+        {
+            "inference_id": "planning-diagnostic",
+            "usage": {"prompt_tokens": 30, "completion_tokens": 10, "total_tokens": 40},
+        },
+    )
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(id="lead", objective="Delegate a review", max_total_tokens=30),
+            TaskDefinition(id="sibling", objective="Inspect independently", max_total_tokens=30),
+        ],
+    )
+    claims = {
+        claim["task"]["local_id"]: claim
+        for claim in (tasks.claim_ready(run_id, parent), tasks.claim_ready(run_id, parent))
+        if claim is not None
+    }
+    assert set(claims) == {"lead", "sibling"}
+    for local_id, claim in claims.items():
+        inference_id = tasks.reserve_inference(run_id, parent, local_id, claim["token"])
+        if exact_reservations:
+            tasks.reserve_tokens(
+                run_id,
+                parent,
+                inference_id,
+                prompt_tokens=5,
+                output_tokens=5,
+                task_id=local_id,
+                task_token=claim["token"],
+            )
+
+    with pytest.raises(ValueError, match=expected_error):
+        tasks.delegate_subtasks(
+            run_id,
+            parent,
+            "lead",
+            claims["lead"]["token"],
+            "delegate-token-budget-call",
+            "Reserve one more token for a child review",
+            [
+                TaskDefinition(
+                    id="review",
+                    objective="Review the independent inspection",
+                    max_total_tokens=1,
+                )
+            ],
+        )
+
+    assert {row["local_id"] for row in tasks.records(run_id)} == {"lead", "sibling"}
+    assert not runs.unresolved_tool_calls(run_id)

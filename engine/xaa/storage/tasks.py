@@ -555,6 +555,33 @@ class TaskStore:
         measured = [event for event in answers if event["payload"].get("usage") is not None]
         measured_tokens = sum(event["payload"]["usage"]["total_tokens"] for event in measured)
         usage_measured = attempts == len(measured) and len(answers) == len(measured)
+        answered_ids = {
+            event["payload"].get("inference_id")
+            for event in measured
+            if isinstance(event["payload"].get("inference_id"), str)
+        }
+        held = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "tokens.reserved"
+            and isinstance(event["payload"].get("inference_id"), str)
+            and event["payload"].get("inference_id") not in answered_ids
+        ]
+        held_ids = {item["inference_id"] for item in held}
+        attempt_ids = {
+            event["payload"].get("inference_id")
+            for event in events
+            if event["event_type"] == "task.inference.started"
+        }
+        # A durable exact hold accounts for an in-flight request even though its
+        # final usage has not arrived. An unheld attempt remains unknown and must
+        # not free room for more delegated work.
+        allocation_known = (
+            len(attempt_ids) == attempts
+            and all(identity in answered_ids or identity in held_ids for identity in attempt_ids)
+            and len(answers) == len(measured)
+        )
+        held_tokens = sum(item.get("reserved_tokens", 0) for item in held)
         iteration_cap = budgets["max_iterations"]
         time_cap = budgets["max_seconds"]
         elapsed = cls._task_elapsed_seconds(events)
@@ -566,8 +593,8 @@ class TaskStore:
             "seconds_remaining": max(0.0, time_cap - elapsed),
             "measured_tokens": measured_tokens,
             "tokens_remaining": (
-                max(0, token_cap - measured_tokens)
-                if token_cap is not None and usage_measured
+                max(0, token_cap - measured_tokens - held_tokens)
+                if token_cap is not None and allocation_known
                 else None
             ),
             "usage_measured": usage_measured,
@@ -1249,8 +1276,12 @@ class TaskStore:
                 active_iterations += usage["iterations_remaining"]
                 active_seconds += usage["seconds_remaining"]
                 token_cap = item["budgets"].get("max_total_tokens")
-                if token_cap is not None and usage["usage_measured"]:
-                    active_tokens += usage["tokens_remaining"] or 0
+                if token_cap is not None:
+                    if usage["tokens_remaining"] is None:
+                        raise ValueError(
+                            "Cannot delegate while active specialist token usage is unmeasured."
+                        )
+                    active_tokens += usage["tokens_remaining"]
 
             remaining_iterations = max(
                 0,
@@ -1291,13 +1322,16 @@ class TaskStore:
 
             run_token_limit = run["limits"]["max_total_tokens"]
             if run_token_limit is not None:
-                run_tokens_used = self.runs.token_usage(run_id)["total_tokens"]
+                run_usage = self.runs.usage_report(run_id)
+                run_tokens_accounted = (
+                    run_usage["total_tokens"] + run_usage["outstanding_reserved_tokens"]
+                )
                 added_tokens = sum(
                     value["max_total_tokens"] or 0
                     for task_id_value, value in effective.items()
                     if task_id_value in proposed_ids
                 )
-                if active_tokens + added_tokens > max(0, run_token_limit - run_tokens_used):
+                if active_tokens + added_tokens > max(0, run_token_limit - run_tokens_accounted):
                     raise ValueError("Delegated subtasks exceed the remaining shared token budget.")
 
             specialist_credential_grants = self._specialist_credential_grants(connection, run_id)
