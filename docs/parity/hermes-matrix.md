@@ -10,7 +10,7 @@ The bounded XLSX reader renders mixed fractions for common custom and built-in f
 
 ## Render parenthesized negative spreadsheet values (2026-11-23)
 
-The XLSX reader renders the bounded two-section number patterns used by built-in formats 37–40, using parentheses for negative values and ignoring the optional red-color tag in text output. Positive and negative values preserve their raw numeric cells. Focused parser tests (125), Ruff, formatting, and targeted Pyright pass. Conditional formats and other section patterns remain unsupported; this is a narrow document-reading improvement, not broad spreadsheet or Hermes parity. No live model inference was used.
+The XLSX reader renders the bounded two-section number patterns used by built-in formats 37–40, using parentheses for negative values and ignoring the optional red-color tag in text output. Positive and negative values preserve their raw numeric cells. Focused parser tests (125), Ruff, formatting, and targeted Pyright pass. Exact-source Windows workflow [45300495477](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45300495477) passed on `97f38a5a`, including 1,554 Python tests (20 skipped), browser and desktop checks, static analysis, API contracts, and recovery acceptance. Conditional formats and other section patterns remain unsupported; this is a narrow document-reading improvement, not broad spreadsheet or Hermes parity. No live model inference was used.
 
 ## Assign larger imported skills to specialists (2026-11-23)
 

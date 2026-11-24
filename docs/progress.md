@@ -13,7 +13,7 @@ XLSX extraction now renders mixed fractions for common patterns such as `# ?/?` 
 
 ## Render parenthesized negative XLSX values (2026-11-23)
 
-The XLSX reader now applies the common two-section numeric patterns used by built-in formats 37–40: positive values use the first section, negative values use the parenthesized second section, and the optional `[Red]` marker is ignored for plain-text extraction. It retains the original numeric value and only handles the bounded supported pattern; other conditional/sectioned formats remain raw-only. Focused document-input tests pass (125); Ruff, formatting, targeted Pyright, and `git diff --check` pass. No live model inference was used.
+The XLSX reader now applies the common two-section numeric patterns used by built-in formats 37–40: positive values use the first section, negative values use the parenthesized second section, and the optional `[Red]` marker is ignored for plain-text extraction. It retains the original numeric value and only handles the bounded supported pattern; other conditional/sectioned formats remain raw-only. Focused document-input tests pass (125); Ruff, formatting, targeted Pyright, and `git diff --check` pass. Exact-source Windows workflow [45300495477](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45300495477) passed on `97f38a5a`, including 1,554 Python tests (20 skipped), configured browser and desktop checks, static analysis, API contracts, and process-recovery checks. WSL and installer jobs were skipped because their inputs were unchanged. No live model inference was used.
 
 ## Assign larger pinned skills to specialists (2026-11-23)
 
