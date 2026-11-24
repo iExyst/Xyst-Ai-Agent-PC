@@ -107,6 +107,7 @@ def test_npm_v3_lock_is_bound_to_procedure_assets_and_runtime() -> None:
     assert "node_arch" not in json.loads(lock.canonical_json())
     assert "node_libc" not in json.loads(lock.canonical_json())
     assert "dev_engine_warnings" not in json.loads(lock.canonical_json())
+    assert "engine_warnings" not in json.loads(lock.canonical_json())
     assert lock.lockfile_sha256 == hashlib.sha256(raw).hexdigest()
     assert lock.packages[0].name == "left-pad"
     assert lock.packages[0].version == "1.3.0"
@@ -146,15 +147,16 @@ def test_npm_v1_lock_is_bound_to_manifest_and_transitive_dependency_tree() -> No
 
 
 @pytest.mark.parametrize(
-    ("engines", "compatible"),
+    ("engines", "warnings"),
     [
-        ({"node": ">=18 <23", "npm": "^10.0.0"}, True),
-        ({"node": ">=23"}, False),
-        ({"npm": "<10"}, False),
+        ({"node": ">=18 <23", "npm": "^10.0.0"}, ()),
+        ({"node": ">=23"}, ("node",)),
+        ({"npm": "<10"}, ("npm",)),
+        ({"node": ">=23", "npm": "<10"}, ("node", "npm")),
     ],
 )
 def test_package_manifest_checks_node_and_npm_engine_ranges(
-    engines: dict[str, str], compatible: bool
+    engines: dict[str, str], warnings: tuple[str, ...]
 ) -> None:
     manifest = json.dumps(
         {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "engines": engines},
@@ -162,11 +164,21 @@ def test_package_manifest_checks_node_and_npm_engine_ranges(
     ).encode()
     lock = parse(package_lock(), manifest=manifest)
 
-    if compatible:
-        assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
-    else:
-        with pytest.raises(ValueError, match="does not satisfy"):
-            verify_npm_package_manifest(manifest, lock)
+    assert lock.engine_warnings == warnings
+    assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
+    if warnings:
+        assert json.loads(lock.canonical_json())["engine_warnings"] == list(warnings)
+
+
+def test_package_engines_warning_is_rechecked_before_install() -> None:
+    unpinned_manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"}}'
+    lock = parse(package_lock(), manifest=unpinned_manifest)
+    changed_manifest = (
+        b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"engines":{"node":">=23"}}'
+    )
+
+    with pytest.raises(ValueError, match="engines warnings do not match"):
+        verify_npm_package_manifest(changed_manifest, lock)
 
 
 @pytest.mark.parametrize(
@@ -214,9 +226,8 @@ def test_package_manager_mismatch_is_rechecked_before_install() -> None:
 
 def test_package_manifest_rejects_malformed_engine_constraints() -> None:
     manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"engines":[]}'
-    lock = parse(package_lock(), manifest=manifest)
     with pytest.raises(TypeError, match="engines must be an object"):
-        verify_npm_package_manifest(manifest, lock)
+        parse(package_lock(), manifest=manifest)
 
     malformed_engine_values: tuple[object, ...] = (23, [], {"node": ""})
     for value in malformed_engine_values:
@@ -227,9 +238,8 @@ def test_package_manifest_rejects_malformed_engine_constraints() -> None:
                 "engines": {"node": value},
             }
         ).encode()
-        lock = parse(package_lock(), manifest=manifest)
         with pytest.raises((TypeError, ValueError)):
-            verify_npm_package_manifest(manifest, lock)
+            parse(package_lock(), manifest=manifest)
 
 
 @pytest.mark.parametrize(

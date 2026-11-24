@@ -4065,6 +4065,19 @@
             "title": "Distribution",
             "type": "string"
           },
+          "engine_warnings": {
+            "default": [],
+            "items": {
+              "enum": [
+                "node",
+                "npm"
+              ],
+              "type": "string"
+            },
+            "maxItems": 2,
+            "title": "Engine Warnings",
+            "type": "array"
+          },
           "lockfile_sha256": {
             "pattern": "^[a-f0-9]{64}$",
             "title": "Lockfile Sha256",

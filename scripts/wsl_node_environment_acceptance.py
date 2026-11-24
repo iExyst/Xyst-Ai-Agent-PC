@@ -29,7 +29,11 @@ from xaa.runtime.wsl_transport import WSLTransport
 
 
 def _tarball(
-    *, extra_file_count: int = 0, version: str = "1.0.0", module_value: str = "offline-ready"
+    *,
+    extra_file_count: int = 0,
+    version: str = "1.0.0",
+    module_value: str = "offline-ready",
+    node_engine: str | None = None,
 ) -> bytes:
     package = {
         "name": "xaa-offline-fixture",
@@ -38,6 +42,8 @@ def _tarball(
         "bin": {"xaa-offline-cli": "cli.js"},
         "scripts": {"install": "node install.js"},
     }
+    if node_engine is not None:
+        package["engines"] = {"node": node_engine}
     members = {
         "package/package.json": json.dumps(package, separators=(",", ":")).encode(),
         "package/index.js": f"module.exports = {json.dumps(module_value)};\n".encode(),
@@ -290,7 +296,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     incompatible_cpu = {"x64": "arm64", "arm64": "x64"}.get(node_arch)
     if incompatible_cpu is None:
         raise RuntimeError(f"Unsupported WSL Node architecture for this fixture: {node_arch}")
-    archive = _tarball(extra_file_count=4096)
+    archive = _tarball(extra_file_count=4096, node_engine=">=200")
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(archive).digest()).decode("ascii")
     resolved = "https://registry.npmjs.org/xaa-offline-fixture/-/xaa-offline-fixture-1.0.0.tgz"
     package_manifest = json.dumps(
@@ -1239,6 +1245,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "file_count": installed["file_count"],
             "offline_locked_module_loaded": module_value,
             "procedure_run_module_loaded": True,
+            "advisory_engine_mismatch_installed": True,
             "removal_refused_while_active": removal_refused_while_active,
             "lifecycle_script_marker_absent": True,
             "idempotent_install": True,

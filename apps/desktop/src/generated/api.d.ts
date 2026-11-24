@@ -3937,6 +3937,11 @@ export interface components {
             dev_engine_warnings: ("cpu" | "os" | "libc" | "runtime" | "packageManager")[];
             /** Distribution */
             distribution: string;
+            /**
+             * Engine Warnings
+             * @default []
+             */
+            engine_warnings: ("node" | "npm")[];
             /** Lockfile Sha256 */
             lockfile_sha256: string;
             /** Node Arch */

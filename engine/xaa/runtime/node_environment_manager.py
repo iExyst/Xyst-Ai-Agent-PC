@@ -70,7 +70,7 @@ for filename in packages:
     run(['/usr/bin/npm', 'cache', 'add', '/tarballs/' + filename,
          '--offline', '--ignore-scripts', '--cache', str(cache)], timeout=60)
 run(['/usr/bin/npm', 'ci', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
-     '--cache', str(cache), '--prefix', str(project)], timeout=180)
+     '--engine-strict=false', '--cache', str(cache), '--prefix', str(project)], timeout=180)
 shutil.rmtree(temp)
 """
 

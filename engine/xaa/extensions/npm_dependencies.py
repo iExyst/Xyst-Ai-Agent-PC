@@ -119,6 +119,7 @@ class ProcedureNpmDependencyLock(BaseModel):
     dev_engine_warnings: tuple[Literal["cpu", "os", "libc", "runtime", "packageManager"], ...] = (
         Field(default=(), max_length=5)
     )
+    engine_warnings: tuple[Literal["node", "npm"], ...] = Field(default=(), max_length=2)
     requirements: tuple[str, ...] = Field(default=(), max_length=128)
     root_dependencies: tuple[NpmRootDependency, ...] = Field(max_length=512)
     packages: tuple[NpmLockedPackage, ...] = Field(max_length=MAX_LOCKED_PACKAGES)
@@ -131,6 +132,11 @@ class ProcedureNpmDependencyLock(BaseModel):
     @field_validator("dev_engine_warnings", mode="before")
     @classmethod
     def freeze_dev_engine_warnings(cls, values: object) -> object:
+        return tuple(cast(list[str], values)) if isinstance(values, list) else values
+
+    @field_validator("engine_warnings", mode="before")
+    @classmethod
+    def freeze_engine_warnings(cls, values: object) -> object:
         return tuple(cast(list[str], values)) if isinstance(values, list) else values
 
     @field_validator("root_dependencies", mode="before")
@@ -187,6 +193,8 @@ class ProcedureNpmDependencyLock(BaseModel):
             values.pop("node_libc", None)
         if not self.dev_engine_warnings:
             values.pop("dev_engine_warnings", None)
+        if not self.engine_warnings:
+            values.pop("engine_warnings", None)
         return json.dumps(values, sort_keys=True, separators=(",", ":"))
 
 
@@ -400,10 +408,15 @@ def parse_npm_package_lock(
         _verify_npm_package_manager(
             cast(dict[str, Any], manifest_value).get("packageManager"), proposal
         )
+        engine_warnings = _verify_npm_engines(
+            cast(dict[str, Any], manifest_value).get("engines", {}), proposal
+        )
         warnings = _verify_npm_dev_engines(
             cast(dict[str, Any], manifest_value).get("devEngines", {}), proposal
         )
-        proposal = proposal.model_copy(update={"dev_engine_warnings": warnings})
+        proposal = proposal.model_copy(
+            update={"dev_engine_warnings": warnings, "engine_warnings": engine_warnings}
+        )
     return proposal
 
 
@@ -602,20 +615,9 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
         raise TypeError("npm package.json must be a JSON object.")
     manifest = cast(dict[str, Any], parsed_json)
     _verify_npm_package_manager(manifest.get("packageManager"), lock)
-    raw_engines = manifest.get("engines", {})
-    if not isinstance(raw_engines, dict):
-        raise TypeError("npm package.json engines must be an object.")
-    engines = cast(dict[str, Any], raw_engines)
-    for name, version in (
-        ("node", lock.node_version.removeprefix("v")),
-        ("npm", lock.npm_version),
-    ):
-        version_range = engines.get(name)
-        if version_range is None:
-            continue
-        if not isinstance(version_range, str):
-            raise TypeError(f"npm package.json engines.{name} must be a semantic-version range.")
-        _require_npm_version_satisfies(version, version_range, f"required {name} runtime")
+    engine_warnings = _verify_npm_engines(manifest.get("engines", {}), lock)
+    if engine_warnings != lock.engine_warnings:
+        raise ValueError("npm package.json engines warnings do not match the reviewed lock.")
     warnings = _verify_npm_dev_engines(manifest.get("devEngines", {}), lock)
     if warnings != lock.dev_engine_warnings:
         raise ValueError("npm package.json devEngines warnings do not match the reviewed lock.")
@@ -682,6 +684,33 @@ def _verify_npm_package_manager(raw: object, lock: ProcedureNpmDependencyLock) -
         raise ValueError(
             "npm package.json packageManager version does not match the selected WSL npm runtime."
         )
+
+
+def _verify_npm_engines(
+    raw: object, lock: ProcedureNpmDependencyLock
+) -> tuple[Literal["node", "npm"], ...]:
+    """Validate root engines ranges and retain npm's default non-fatal mismatches."""
+    if not isinstance(raw, dict):
+        raise TypeError("npm package.json engines must be an object.")
+    engines = cast(dict[str, Any], raw)
+    current = {"node": lock.node_version.removeprefix("v"), "npm": lock.npm_version}
+    warnings: list[Literal["node", "npm"]] = []
+    for name, version in current.items():
+        version_range = engines.get(name)
+        if version_range is None:
+            continue
+        if not isinstance(version_range, str):
+            raise TypeError(f"npm package.json engines.{name} must be a semantic-version range.")
+        if (
+            len(version_range) > 128
+            or not version_range.strip()
+            or _RANGE.fullmatch(version_range) is None
+            or _NODE_SEMVER_VALID_RANGE(version_range, False) is None
+        ):
+            raise ValueError(f"npm package.json engines.{name} must be a semantic-version range.")
+        if not _NODE_SEMVER_SATISFIES(version, version_range):
+            warnings.append(cast(Literal["node", "npm"], name))
+    return tuple(warnings)
 
 
 def _verify_npm_dev_engines(
