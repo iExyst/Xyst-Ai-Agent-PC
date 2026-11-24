@@ -4336,6 +4336,8 @@ def create_app(
         try:
             image_bytes: bytes | None = None
             image_type: str | None = None
+            image_source_bytes: bytes | None = None
+            image_source_type: str | None = None
             document_bytes: bytes | None = None
             document_type: str | None = None
             document_text: str | None = None
@@ -4373,21 +4375,14 @@ def create_app(
                     raise ValueError(
                         "The selected LM Studio model does not advertise vision support."
                     )
-                if not payload.image.startswith(
-                    ("data:image/png;base64,", "data:image/jpeg;base64,")
-                ):
-                    raise ValueError("Run image must be a PNG or JPEG data URL.")
-                header, encoded = payload.image.split(",", 1)
-                image_type = "image/png" if header.startswith("data:image/png;") else "image/jpeg"
-                try:
-                    image_bytes = base64.b64decode(encoded, validate=True)
-                except (ValueError, binascii.Error):
-                    raise ValueError("Run image data is invalid.") from None
-                if not image_bytes or len(image_bytes) > 3 * 1024 * 1024:
-                    raise ValueError("Run image must be between 1 byte and 3 MiB.")
-                signature = b"\x89PNG\r\n\x1a\n" if image_type == "image/png" else b"\xff\xd8\xff"
-                if not image_bytes.startswith(signature):
-                    raise ValueError("Run image content does not match its declared type.")
+                from xaa.runtime.image_input import decode_run_image_data_url
+
+                (
+                    image_bytes,
+                    image_type,
+                    image_source_bytes,
+                    image_source_type,
+                ) = decode_run_image_data_url(payload.image)
             if payload.document is not None:
                 from xaa.runtime.document_input import (
                     extract_document_text,
@@ -4607,6 +4602,8 @@ def create_app(
                 approved_mcp_sampling_servers=payload.approved_mcp_sampling_servers,
                 image_bytes=image_bytes,
                 image_media_type=image_type,
+                image_source_bytes=image_source_bytes,
+                image_source_media_type=image_source_type,
                 document_bytes=document_bytes,
                 document_media_type=document_type,
                 document_text=document_text,

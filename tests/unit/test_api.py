@@ -1293,6 +1293,68 @@ def test_run_image_is_validated_stored_as_artifact_and_reconstructed(workspace_t
         assert rejected.status_code == 409
 
 
+@pytest.mark.parametrize(
+    ("media_type", "image_format"),
+    [("image/gif", "GIF"), ("image/webp", "WEBP")],
+)
+def test_run_animated_image_is_retained_and_normalized_for_model(
+    workspace_tmp_path, media_type, image_format
+):
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    source_image = Image.new("RGB", (2, 1), (220, 30, 10))
+    second_frame = Image.new("RGB", (2, 1), (10, 30, 220))
+    output = BytesIO()
+    source_image.save(
+        output,
+        format=image_format,
+        save_all=True,
+        append_images=[second_frame],
+        duration=100,
+        loop=0,
+    )
+    original = output.getvalue()
+    encoded = f"data:{media_type};base64," + base64.b64encode(original).decode("ascii")
+    store = RunStore(workspace_tmp_path / f"run-{image_format}.sqlite3")
+
+    class VisionProvider(FakeProvider):
+        async def models(self) -> list[ModelInfo]:
+            return [ModelInfo(id="fixture", capabilities=ModelCapabilities(vision=True))]
+
+    with TestClient(create_app(VisionProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+            json={"objective": "Describe this image", "model": "fixture", "image": encoded},
+        )
+        assert response.status_code == 201
+        run_id = response.json()["id"]
+        assert store.image_data_url(run_id).startswith("data:image/png;base64,")
+        artifacts = client.get(
+            f"/runs/{run_id}/artifacts", headers={"Authorization": f"Bearer {TOKEN}"}
+        ).json()
+        assert {item["provenance"]: item["media_type"] for item in artifacts} == {
+            "user.input_image": "image/png",
+            "user.input_image_original": media_type,
+        }
+        source_artifact = next(
+            item for item in artifacts if item["provenance"] == "user.input_image_original"
+        )
+        downloaded = client.get(
+            f"/artifacts/{source_artifact['id']}", headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+        assert downloaded.content == original
+        assigned = store.assigned_image_data_urls(run_id, [source_artifact["id"]])
+        assert assigned[0]["data_url"].startswith("data:image/png;base64,")
+        normalized = base64.b64decode(store.image_data_url(run_id).split(",", 1)[1])
+        with Image.open(BytesIO(normalized)) as image:
+            assert image.format == "PNG"
+            assert image.getpixel((0, 0))[0] > image.getpixel((0, 0))[2]
+
+
 def test_run_text_document_is_extracted_and_persisted_for_recovery(workspace_tmp_path):
     import base64
 

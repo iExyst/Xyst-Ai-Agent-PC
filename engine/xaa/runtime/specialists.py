@@ -902,7 +902,8 @@ class SpecialistRunner:
         image_input_ids = [
             artifact_id
             for artifact_id in task["input_artifacts"]
-            if assigned_artifacts[artifact_id]["media_type"] in {"image/png", "image/jpeg"}
+            if assigned_artifacts[artifact_id]["media_type"]
+            in {"image/png", "image/jpeg", "image/gif", "image/webp"}
         ]
         if len(text_input_ids) + len(image_input_ids) != len(task["input_artifacts"]):
             raise ValueError("A task has an unsupported assigned input artifact type.")

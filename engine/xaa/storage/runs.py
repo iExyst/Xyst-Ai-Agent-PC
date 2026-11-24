@@ -1093,6 +1093,8 @@ class RunStore:
         allow_procedure_resource_removal: bool = False,
         image_bytes: bytes | None = None,
         image_media_type: str | None = None,
+        image_source_bytes: bytes | None = None,
+        image_source_media_type: str | None = None,
         document_bytes: bytes | None = None,
         document_media_type: str | None = None,
         document_text: str | None = None,
@@ -1167,6 +1169,16 @@ class RunStore:
             raise ValueError("Run images must be PNG or JPEG.")
         if image_bytes is not None and (not image_bytes or len(image_bytes) > 3 * 1024 * 1024):
             raise ValueError("Run images must be between 1 byte and 3 MiB.")
+        if (image_source_bytes is None) != (image_source_media_type is None):
+            raise ValueError("Original image bytes and media type must be supplied together.")
+        if image_source_media_type not in {None, "image/gif", "image/webp"}:
+            raise ValueError("Original normalized image sources must be GIF or WebP.")
+        if image_source_bytes is not None and (
+            not image_source_bytes or len(image_source_bytes) > 3 * 1024 * 1024
+        ):
+            raise ValueError("Original image sources must be between 1 byte and 3 MiB.")
+        if image_source_bytes is not None and image_bytes is None:
+            raise ValueError("An original image source requires its normalized model image.")
         document_values = (document_bytes, document_media_type, document_text)
         document_page_images = document_page_images or []
         if any(value is not None for value in document_values) and not all(
@@ -1261,6 +1273,8 @@ class RunStore:
             extension = {
                 "image/png": "png",
                 "image/jpeg": "jpg",
+                "image/gif": "gif",
+                "image/webp": "webp",
                 "application/pdf": "pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
@@ -1279,6 +1293,8 @@ class RunStore:
 
         if image_bytes is not None and image_media_type is not None:
             stage_artifact(image_bytes, image_media_type, "user.input_image")
+        if image_source_bytes is not None and image_source_media_type is not None:
+            stage_artifact(image_source_bytes, image_source_media_type, "user.input_image_original")
         if (
             document_bytes is not None
             and document_media_type is not None
@@ -1670,11 +1686,17 @@ class RunStore:
         root = (self.path.parent / "artifacts").resolve(strict=True)
         result: list[dict[str, str]] = []
         total_bytes = 0
+        total_normalized_bytes = 0
         for artifact_id in artifact_ids:
             row = by_id[artifact_id]
             if row["task_id"] is not None:
                 raise PermissionError("Assigned image is no longer an unowned run artifact.")
-            if row["media_type"] not in {"image/png", "image/jpeg"}:
+            if row["media_type"] not in {
+                "image/png",
+                "image/jpeg",
+                "image/gif",
+                "image/webp",
+            }:
                 raise ValueError("Assigned artifact is not a supported image.")
             if row["size_bytes"] > 3 * 1024 * 1024:
                 raise ValueError("Assigned image exceeds the 3 MiB specialist limit.")
@@ -1693,10 +1715,24 @@ class RunStore:
                 or hashlib.sha256(content).hexdigest() != row["sha256"]
             ):
                 raise ValueError("Assigned image failed artifact integrity verification.")
+            media_type = row["media_type"]
+            if media_type in {"image/gif", "image/webp"}:
+                from xaa.runtime.image_input import (
+                    CONVERTIBLE_IMAGE_FORMATS,
+                    convert_animated_image_to_png,
+                )
+
+                content = convert_animated_image_to_png(
+                    content, CONVERTIBLE_IMAGE_FORMATS[media_type]
+                )
+                media_type = "image/png"
+            total_normalized_bytes += len(content)
+            if total_normalized_bytes > 6 * 1024 * 1024:
+                raise ValueError("Normalized assigned images exceed the 6 MiB combined limit.")
             result.append(
                 {
                     "artifact_id": artifact_id,
-                    "data_url": f"data:{row['media_type']};base64,"
+                    "data_url": f"data:{media_type};base64,"
                     + base64.b64encode(content).decode("ascii"),
                 }
             )

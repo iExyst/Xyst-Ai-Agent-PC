@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
-from PIL import Image
-
 from xaa.runtime.document_input import extract_document_text, render_pdf_scanned_pages
+from xaa.runtime.image_input import (
+    CONVERTIBLE_IMAGE_FORMATS,
+    MAX_CONVERTED_IMAGE_BYTES,
+    convert_animated_image_to_png,
+)
 from xaa.storage.runs import RunStore, utc_now
 from xaa.storage.skills import is_text_asset_media_type
 
@@ -20,38 +22,9 @@ MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 80 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
 MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES = 1024 * 1024
 MAX_SPECIALIST_PROCEDURE_RENDERED_PDF_BYTES = 2 * 1024 * 1024
-MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES = 2 * 1024 * 1024
-MAX_SPECIALIST_PROCEDURE_IMAGE_DIMENSION = 1600
-MAX_SPECIALIST_PROCEDURE_IMAGE_PIXELS = 2_500_000
 SPECIALIST_IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png"})
-SPECIALIST_CONVERTIBLE_IMAGE_FORMATS = {"image/gif": "GIF", "image/webp": "WEBP"}
-
-
-def _convert_specialist_image_to_png(raw: bytes, expected_format: str) -> bytes:
-    """Convert only the first frame of a bounded GIF/WebP reference into PNG."""
-    try:
-        image = Image.open(BytesIO(raw), formats=[expected_format])
-    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
-        raise ValueError("Linked specialist GIF/WebP could not be safely decoded.") from None
-    with image:
-        width, height = image.size
-        if (
-            image.format != expected_format
-            or width < 1
-            or height < 1
-            or width > MAX_SPECIALIST_PROCEDURE_IMAGE_DIMENSION
-            or height > MAX_SPECIALIST_PROCEDURE_IMAGE_DIMENSION
-            or width * height > MAX_SPECIALIST_PROCEDURE_IMAGE_PIXELS
-        ):
-            raise ValueError("Linked specialist GIF/WebP exceeds the bounded image dimensions.")
-        try:
-            image.seek(0)
-            image.load()
-            output = BytesIO()
-            image.convert("RGBA").save(output, format="PNG", optimize=False)
-            return output.getvalue()
-        except (OSError, SyntaxError, ValueError, Image.DecompressionBombError):
-            raise ValueError("Linked specialist GIF/WebP could not be safely converted.") from None
+MAX_SPECIALIST_PROCEDURE_CONVERTED_IMAGE_BYTES = MAX_CONVERTED_IMAGE_BYTES
+SPECIALIST_CONVERTIBLE_IMAGE_FORMATS = CONVERTIBLE_IMAGE_FORMATS
 
 
 def specialist_procedure_environments(
@@ -164,7 +137,7 @@ def specialist_procedure_resources(
                     }
                 )
         elif media_type in SPECIALIST_CONVERTIBLE_IMAGE_FORMATS:
-            normalized_image = _convert_specialist_image_to_png(
+            normalized_image = convert_animated_image_to_png(
                 raw, SPECIALIST_CONVERTIBLE_IMAGE_FORMATS[media_type]
             )
             converted_image_bytes += len(normalized_image)

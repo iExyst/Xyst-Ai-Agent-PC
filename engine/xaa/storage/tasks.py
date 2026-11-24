@@ -909,10 +909,11 @@ class TaskStore:
             if any(row["task_id"] is not None for row in rows):
                 raise ValueError("Task inputs must be unowned artifacts from the same run.")
             if any(
-                row["media_type"] not in {"text/plain", "image/png", "image/jpeg"}
+                row["media_type"]
+                not in {"text/plain", "image/png", "image/jpeg", "image/gif", "image/webp"}
                 or (row["media_type"] == "text/plain" and row["size_bytes"] > 4 * 1024 * 1024)
                 or (
-                    row["media_type"] in {"image/png", "image/jpeg"}
+                    row["media_type"] in {"image/png", "image/jpeg", "image/gif", "image/webp"}
                     and row["size_bytes"] > 3 * 1024 * 1024
                 )
                 for row in rows
@@ -923,7 +924,7 @@ class TaskStore:
             image_bytes = sum(
                 row["size_bytes"]
                 for row in rows
-                if row["media_type"] in {"image/png", "image/jpeg"}
+                if row["media_type"] in {"image/png", "image/jpeg", "image/gif", "image/webp"}
             )
             if image_bytes > 6 * 1024 * 1024:
                 raise ValueError("Assigned images exceed the 6 MiB combined specialist limit.")

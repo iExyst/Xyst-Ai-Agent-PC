@@ -546,7 +546,7 @@ export class EngineClient {
       reader.releaseLock();
       return 'Original PDF is retained with this run. View the adjacent extracted document text artifact for its model input.';
     }
-    if (mediaType === 'image/png' || mediaType === 'image/jpeg') {
+    if (mediaType === 'image/png' || mediaType === 'image/jpeg' || mediaType === 'image/gif' || mediaType === 'image/webp') {
       const chunks: Uint8Array[] = [];
       let size = 0;
       try {

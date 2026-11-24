@@ -4,6 +4,7 @@ import type {Artifact,EngineClient} from './api/client.ts';
 function artifactName(provenance:string):string {
   if(provenance==='git.diff')return 'Project changes';
   if(provenance==='user.input_document')return 'Original document';
+  if(provenance==='user.input_image_original')return 'Original image';
   if(provenance==='user.input_document_text')return 'Extracted document text';
   if(provenance.startsWith('browser.screenshot:'))return 'Browser screenshot';
   if(provenance.startsWith('browser.download:'))return provenance.slice('browser.download:'.length)||'Downloaded file';
@@ -23,6 +24,8 @@ function formatSize(bytes:number):string {
 function mediaLabel(mediaType:string):string {
   if(mediaType==='image/png')return 'PNG image';
   if(mediaType==='image/jpeg')return 'JPEG image';
+  if(mediaType==='image/gif')return 'GIF image';
+  if(mediaType==='image/webp')return 'WebP image';
   if(mediaType==='application/pdf')return 'PDF document';
   if(mediaType.includes('spreadsheet'))return 'Spreadsheet';
   if(mediaType.includes('wordprocessing'))return 'Word document';

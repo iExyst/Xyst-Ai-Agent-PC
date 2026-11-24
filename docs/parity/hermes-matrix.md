@@ -1,5 +1,9 @@
 # Hermes capability reference matrix
 
+## Accept GIF and WebP run images in the desktop flow (2026-11-24)
+
+The run composer now accepts GIF/WebP alongside PNG/JPEG. Original animated files are retained as integrity-checked artifacts, while run creation and specialist assignment normalize only frame one to PNG with the existing 1,600-pixel, 2.5-megapixel, 2 MiB converted-output bounds; vision capability is still required. The artifact panel previews and labels the retained source. Deterministic API tests cover both formats, original preservation, first-frame selection and specialist re-assignment. Focused API/profile/task tests pass (25); Ruff, formatting, targeted strict Pyright, desktop typecheck/production build, release-package reference coverage and `git diff --check` pass. Exact-source hosted verification is pending. No live model inference was used.
+
 ## Render scientific spreadsheet values (2026-11-23)
 
 The bounded XLSX reader now renders common scientific number formats, including exponent sign and width, optional decimal places, and zero, while retaining raw cell values and the format code. The focused document-input suite passes (112 tests); Ruff, formatting, and targeted Pyright pass. Exact-source Windows workflow [45295545573](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45295545573) passed on `71636585` with 1,541 Python tests (20 skipped), Windows browser and desktop checks, static analysis, API contracts, and recovery acceptance. This improves spreadsheet document reading only; formula evaluation and general workbook rendering remain unsupported, and this is not a claim of broad spreadsheet or Hermes parity. No live model inference was used.
