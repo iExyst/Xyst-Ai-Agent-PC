@@ -806,6 +806,15 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
         workspace=None,
         mode="observe",
         model="fixture/model",
+        document_bytes=b"legacy attachment bytes",
+        document_media_type="application/pdf",
+        document_text="Legacy attachment text",
+        document_filename="legacy.pdf",
+    )
+    attachment = next(
+        artifact
+        for artifact in store.list_artifacts(run["id"])
+        if artifact["provenance"] == "user.input_document"
     )
     token = store.acquire_lease(run["id"], "legacy-planner")
     TaskStore(store).save_plan(
@@ -837,10 +846,16 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
             "ALTER TABLE specialist_profiles DROP COLUMN procedure_npm_environment_digest"
         )
         connection.execute("ALTER TABLE tasks DROP COLUMN procedure_snapshot")
+        connection.execute("ALTER TABLE artifacts DROP COLUMN original_filename")
         connection.execute("PRAGMA user_version=35")
 
     migrated = RunStore(database)
     assert migrated.get_run(run["id"])["objective"] == "Keep a pre-migration run"
+    migrated_attachment = migrated.get_artifact(attachment["id"])
+    assert migrated_attachment is not None
+    assert migrated_attachment["original_filename"] is None
+    assert migrated_attachment["size_bytes"] == attachment["size_bytes"]
+    assert migrated_attachment["sha256"] == attachment["sha256"]
     assert ScheduleStore(migrated).get(schedule["id"])["objective"] == (
         "Keep a pre-migration schedule"
     )
