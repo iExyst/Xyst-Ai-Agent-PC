@@ -696,7 +696,8 @@ class SkillStore:
         now = utc_now()
         results: list[dict[str, Any]] = []
         with self.runs.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, owner)
             grant = connection.execute(
                 "SELECT 1 FROM run_events WHERE run_id=? AND event_type='procedure.drafting_granted'",
@@ -789,6 +790,42 @@ class SkillStore:
                 results.append(result)
         return results
 
+    def create_model_draft_and_revision_batch_from_run(
+        self,
+        run_id: str,
+        owner: str,
+        drafts: list[tuple[str, SkillDraft]],
+        revision_call_id: str,
+        revision: SkillContentRevision,
+        revision_calls: list[tuple[str, dict[str, Any]]],
+    ) -> dict[str, dict[str, Any]]:
+        """Commit new candidates and one selected-procedure revision as one unit."""
+        all_call_ids = [call_id for call_id, _draft in drafts] + [
+            call_id for call_id, _arguments in revision_calls
+        ]
+        if (
+            not drafts
+            or not revision_calls
+            or revision_call_id not in {call_id for call_id, _ in revision_calls}
+            or len(all_call_ids) > 8
+            or len(set(all_call_ids)) != len(all_call_ids)
+        ):
+            raise ValueError("Mixed procedure draft and revision batch identities are invalid.")
+        with self.runs.atomic_connection():
+            draft_results = self.create_model_draft_batch_from_run(run_id, owner, drafts)
+            revision_result = self.create_model_revision_from_run(
+                run_id,
+                owner,
+                revision_call_id,
+                revision,
+                batch_calls=revision_calls,
+            )
+        results = {
+            call_id: result for (call_id, _draft), result in zip(drafts, draft_results, strict=True)
+        }
+        results.update({call_id: revision_result for call_id, _arguments in revision_calls})
+        return results
+
     def create_model_revision_from_run(
         self,
         run_id: str,
@@ -814,7 +851,8 @@ class SkillStore:
         ):
             raise ValueError("Procedure revision batch call identities are invalid.")
         with self.runs.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, owner)
             grants = connection.execute(
                 "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.revision_granted'",
@@ -1059,7 +1097,8 @@ class SkillStore:
             raise ValueError("Mixed procedure edits must target the same selected version.")
         now = utc_now()
         with self.runs.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             self.runs.require_lease(connection, run_id, owner)
             grants = connection.execute(
                 "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.resource_revision_granted'",

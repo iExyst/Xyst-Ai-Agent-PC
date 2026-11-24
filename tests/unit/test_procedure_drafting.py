@@ -11,7 +11,13 @@ from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
-from xaa.storage.skills import SkillConflict, SkillDraft, SkillStore, SkillTool
+from xaa.storage.skills import (
+    SkillConflict,
+    SkillContentRevision,
+    SkillDraft,
+    SkillStore,
+    SkillTool,
+)
 
 API_TOKEN = "a-procedure-draft-api-token-long-enough-to-pass"
 
@@ -150,6 +156,49 @@ def test_model_draft_batch_rolls_back_every_candidate_and_call_on_late_failure(
 
     assert SkillStore(store).list() == []
     assert store.unresolved_tool_calls(run_id) == []
+    with store.connection() as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM tool_calls WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_mixed_draft_revision_transaction_rolls_back_draft_on_revision_denial(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-revision-rollback.sqlite3")
+    skills = SkillStore(store)
+    selected = skills.create(_draft("Existing procedure"))
+    run = store.create_run(
+        objective="Create a candidate and revise the selected procedure.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": selected["id"], "version": 1},
+        allow_procedure_drafting=True,
+        allow_procedure_revision=True,
+    )
+    run_id = str(run["id"])
+    owner = store.acquire_lease(run_id, "mixed-procedure-rollback")
+    assert owner
+
+    with pytest.raises(PermissionError, match="exceeds the selected run grant"):
+        skills.create_model_draft_and_revision_batch_from_run(
+            run_id,
+            owner,
+            [("draft-call", _draft("New candidate"))],
+            "revision-call",
+            SkillContentRevision(
+                skill_id=str(selected["id"]), expected_version=2, content="Revised content."
+            ),
+            [("revision-call", {"expected_version": 2})],
+        )
+
+    assert [procedure["name"] for procedure in skills.list()] == ["Existing procedure"]
+    assert skills.get(str(selected["id"]))["latest_version"] == 1
     with store.connection() as connection:
         assert (
             connection.execute(
@@ -390,7 +439,7 @@ async def test_coordinator_commits_same_response_draft_batch_as_one_storage_unit
 
 
 @pytest.mark.asyncio
-async def test_coordinator_rejects_mixed_draft_and_revision_batch_without_partial_write(
+async def test_coordinator_commits_mixed_draft_and_revision_batch_atomically(
     workspace_tmp_path: Path,
 ) -> None:
     store = RunStore(workspace_tmp_path / "procedure-draft-mixed-batch.sqlite3")
@@ -453,7 +502,7 @@ async def test_coordinator_rejects_mixed_draft_and_revision_batch_without_partia
                 available = {item["function"]["name"] for item in (tools or [])}
                 assert {"procedure_draft", "procedure_revise"} <= available
                 return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
-            return {"choices": [{"message": {"role": "assistant", "content": "Batch rejected."}}]}
+            return {"choices": [{"message": {"role": "assistant", "content": "Batch committed."}}]}
 
     provider = MixedManagerProvider()
     try:
@@ -461,19 +510,18 @@ async def test_coordinator_rejects_mixed_draft_and_revision_batch_without_partia
     finally:
         await provider.close()
 
-    assert len(skills.list()) == 1
-    assert skills.get(selected["id"])["latest_version"] == 1
+    assert len(skills.list()) == 2
+    assert skills.get(selected["id"])["latest_version"] == 2
+    assert "approved configuration" in skills.version(selected["id"], 2)["content"]
+    assert any(skill["name"] == "New candidate" for skill in skills.list())
     with store.connection() as connection:
         failures = connection.execute(
             "SELECT provider_call_id,state,error FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
             (run_id,),
         ).fetchall()
     assert [(row["provider_call_id"], row["state"]) for row in failures] == [
-        ("mixed-draft-call", "failed"),
-        ("mixed-revision-call", "failed"),
+        ("mixed-draft-call", "completed"),
+        ("mixed-revision-call", "completed"),
     ]
-    assert all(
-        json.loads(row["error"])["code"] == "incompatible_procedure_manager_batch"
-        for row in failures
-    )
+    assert all(row["error"] is None for row in failures)
     assert not store.unresolved_tool_calls(run_id)

@@ -11,6 +11,7 @@ import sqlite3
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -273,6 +274,9 @@ class RunStore:
         task_scope: TaskReadScope | None = None,
         internal_tools: bool = False,
     ) -> None:
+        self._ambient_connection: ContextVar[sqlite3.Connection | None] = ContextVar(
+            f"xaa_run_store_connection_{id(self)}", default=None
+        )
         self.task_scope = task_scope
         self.internal_tools = internal_tools
         self.path = path or default_database_path()
@@ -995,8 +999,27 @@ class RunStore:
     @contextmanager
     def connection(self) -> Generator[sqlite3.Connection]:
         """Share the database transaction boundary with cohesive storage modules."""
+        ambient_connection = self._ambient_connection.get()
+        if ambient_connection is not None:
+            yield ambient_connection
+            return
         with self._connection() as connection:
             yield connection
+
+    @contextmanager
+    def atomic_connection(self) -> Generator[sqlite3.Connection]:
+        """Share one immediate transaction across nested storage operations."""
+        ambient_connection = self._ambient_connection.get()
+        if ambient_connection is not None:
+            yield ambient_connection
+            return
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            token: Token[sqlite3.Connection | None] = self._ambient_connection.set(connection)
+            try:
+                yield connection
+            finally:
+                self._ambient_connection.reset(token)
 
     def backup(self) -> Path:
         """Create an integrity-checked consistent snapshot using SQLite's online backup API."""

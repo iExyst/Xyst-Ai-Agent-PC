@@ -1455,6 +1455,120 @@ class Coordinator:
             "procedure_revise",
         }
         manager_call_names = {call["function"]["name"] for call in calls}
+        mixed_draft_revision_batch = (
+            len(calls) > 1
+            and manager_call_names <= {"procedure_draft", "procedure_revise"}
+            and manager_call_names == {"procedure_draft", "procedure_revise"}
+        )
+        if mixed_draft_revision_batch:
+            if any(
+                not any(tool["function"]["name"] == name for tool in tools)
+                for name in manager_call_names
+            ):
+                raise PermissionError("Tool is not authorized in the current catalog.")
+            drafts: list[tuple[str, SkillDraft]] = []
+            revision_calls: list[tuple[str, dict[str, Any]]] = []
+            selected_id: str | None = None
+            selected_version: int | None = None
+            current_content: str | None = None
+            try:
+                for call in calls:
+                    name = call["function"]["name"]
+                    raw_arguments = json.loads(call["function"]["arguments"])
+                    if not isinstance(raw_arguments, dict):
+                        raise TypeError("Procedure manager batch arguments must be objects.")
+                    arguments = cast(dict[str, Any], raw_arguments)
+                    if name == "procedure_draft":
+                        drafts.append((call["id"], SkillDraft.model_validate(arguments)))
+                        continue
+                    content_edit = SkillContentRevision.model_validate(arguments)
+                    if selected_id is None:
+                        selected_id = content_edit.skill_id
+                        selected_version = content_edit.expected_version
+                        current_content = str(
+                            SkillStore(self.store).version(
+                                content_edit.skill_id, content_edit.expected_version
+                            )["content"]
+                        )
+                    if (
+                        content_edit.skill_id != selected_id
+                        or content_edit.expected_version != selected_version
+                    ):
+                        raise ValueError(
+                            "All revision calls must target the same selected version."
+                        )
+                    if content_edit.content is not None:
+                        current_content = content_edit.content
+                    else:
+                        assert current_content is not None
+                        assert content_edit.old_string is not None
+                        assert content_edit.new_string is not None
+                        count = current_content.count(content_edit.old_string)
+                        if count == 0:
+                            raise SkillConflict(
+                                "Exact old_string text was not found in the pending revision."
+                            )
+                        if count != 1 and not content_edit.replace_all:
+                            raise SkillConflict(
+                                "Exact old_string occurs more than once; confirm replace_all to change every occurrence."
+                            )
+                        current_content = current_content.replace(
+                            content_edit.old_string,
+                            content_edit.new_string,
+                            -1 if content_edit.replace_all else 1,
+                        )
+                    revision_calls.append((call["id"], arguments))
+                selected = run.get("procedure_trial")
+                if (
+                    selected is None
+                    or selected.get("skill_id") != selected_id
+                    or selected.get("version") != selected_version
+                ):
+                    raise ValueError("Revision batch must target the selected procedure version.")
+                if not run.get("allow_procedure_drafting"):
+                    raise PermissionError("This run has no grant to draft procedures.")
+                if not run.get("allow_procedure_revision"):
+                    raise PermissionError("This run has no grant to revise procedure text.")
+                if selected_id is None or selected_version is None or current_content is None:
+                    raise ValueError("Mixed procedure batch is missing its selected revision.")
+                primary_revision = SkillContentRevision(
+                    skill_id=selected_id,
+                    expected_version=selected_version,
+                    content=current_content,
+                )
+                result_by_call_id = SkillStore(
+                    self.store
+                ).create_model_draft_and_revision_batch_from_run(
+                    run_id,
+                    token,
+                    drafts,
+                    revision_calls[0][0],
+                    primary_revision,
+                    revision_calls,
+                )
+            except PermissionError:
+                raise
+            except (
+                json.JSONDecodeError,
+                ValidationError,
+                TypeError,
+                ValueError,
+                SkillConflict,
+            ) as exc:
+                try:
+                    failures = record_batch_failure(
+                        calls,
+                        "invalid_procedure_manager_batch"
+                        if not isinstance(exc, SkillConflict)
+                        else "procedure_manager_batch_conflict",
+                        str(exc) or "The combined procedure batch is invalid.",
+                    )
+                except ValueError as failure_exc:
+                    raise failure_exc from exc
+                append_batch_results(calls, failures)
+                return True
+            append_batch_results(calls, [result_by_call_id[call["id"]] for call in calls])
+            return True
         if (
             len(calls) > 1
             and all(call.get("function", {}).get("name") in manager_names for call in calls)
