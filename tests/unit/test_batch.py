@@ -226,6 +226,9 @@ def test_batch_scores_structured_checks_against_exported_trajectory(
                             {"kind": "tool_called", "expected": "workspace_read_file"},
                             {"kind": "tool_completed", "expected": "workspace.read_file"},
                             {"kind": "state_equals", "expected": "completed"},
+                            {"kind": "artifact_count_equals", "expected": "1"},
+                            {"kind": "artifact_sha256_exists", "expected": "a" * 64},
+                            {"kind": "artifact_media_type_exists", "expected": "text/plain"},
                         ],
                     }
                 ],
@@ -273,6 +276,16 @@ def test_batch_scores_structured_checks_against_exported_trajectory(
                     "payload": {"call_id": "call-1", "internal": False},
                 },
             ],
+            "artifacts": [
+                {
+                    "id": "artifact-1",
+                    "media_type": "text/plain",
+                    "size_bytes": 12,
+                    "sha256": "a" * 64,
+                    "provenance": "workspace.write_file",
+                    "created_at": "2026-11-24T00:00:00Z",
+                }
+            ],
         }
     )
 
@@ -299,12 +312,15 @@ def test_batch_scores_structured_checks_against_exported_trajectory(
         True,
         True,
         True,
+        True,
+        True,
+        True,
     ]
     assert report["evaluation_summary"] == {
         "evaluated_cases": 1,
         "passed_cases": 0,
         "failed_cases": 1,
-        "passed_checks": 4,
+        "passed_checks": 7,
         "failed_checks": 1,
     }
     submitted_payload = client.requests[next(iter(client.requests))]["payload"]
