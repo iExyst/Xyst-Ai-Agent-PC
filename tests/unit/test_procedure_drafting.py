@@ -272,6 +272,98 @@ def test_mixed_draft_and_resource_removal_commit_in_one_transaction(
     ]
 
 
+@pytest.mark.asyncio
+async def test_coordinator_batches_draft_with_standalone_resource_removal(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-draft-removal-coordinator.sqlite3")
+    skills = SkillStore(store)
+    original = _draft("Existing procedure")
+    content = b"obsolete reference"
+    original.assets = [
+        SkillAsset(
+            path="references/obsolete.txt",
+            media_type="text/plain",
+            sha256=hashlib.sha256(content).hexdigest(),
+            content_base64=base64.b64encode(content).decode("ascii"),
+        )
+    ]
+    selected = skills.create(original)
+    run = store.create_run(
+        objective="Draft a candidate and remove an obsolete selected-procedure resource.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": selected["id"], "version": 1},
+        allow_procedure_drafting=True,
+        allow_procedure_resource_removal=True,
+    )
+    removal = SkillResourceRemoval(
+        skill_id=str(selected["id"]), expected_version=1, path="references/obsolete.txt"
+    )
+    calls = [
+        {
+            "id": "draft-call",
+            "type": "function",
+            "function": {
+                "name": "procedure_draft",
+                "arguments": json.dumps(_draft("New candidate").model_dump(mode="json")),
+            },
+        },
+        {
+            "id": "remove-call",
+            "type": "function",
+            "function": {
+                "name": "procedure_resource_remove",
+                "arguments": json.dumps(removal.model_dump(mode="json")),
+            },
+        },
+    ]
+
+    class DraftRemovalProvider(LMStudioProvider):
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            if not any(message.get("role") == "tool" for message in messages):
+                names = {tool["function"]["name"] for tool in tools or []}
+                assert {"procedure_draft", "procedure_resource_remove"} <= names
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
+            assert [
+                message["tool_call_id"] for message in messages if message.get("role") == "tool"
+            ] == [call["id"] for call in calls]
+            return {
+                "choices": [{"message": {"role": "assistant", "content": "Both candidates saved."}}]
+            }
+
+    provider = DraftRemovalProvider()
+    try:
+        await Coordinator(store, provider).execute(str(run["id"]))
+    finally:
+        await provider.close()
+
+    assert skills.version(str(selected["id"]), 2)["assets"] == []
+    assert {item["name"] for item in skills.list()} == {"Existing procedure", "New candidate"}
+    with store.connection() as connection:
+        completed = connection.execute(
+            "SELECT provider_call_id,state FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
+            (run["id"],),
+        ).fetchall()
+    assert [(row["provider_call_id"], row["state"]) for row in completed] == [
+        ("draft-call", "completed"),
+        ("remove-call", "completed"),
+    ]
+    assert not store.unresolved_tool_calls(str(run["id"]))
+
+
 def test_rejected_tool_batch_failure_journal_rolls_back_as_a_unit(
     workspace_tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
