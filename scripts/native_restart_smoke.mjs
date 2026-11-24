@@ -911,6 +911,51 @@ try {
   if (!downloadedAudio.equals(audioBytes)) {
     throw new Error('The native saved-conversation WAV download did not preserve the artifact bytes.');
   }
+  const documentAttachmentFixtures = [
+    { mediaType: 'text/plain', filename: 'notes.txt', label: 'Text document', bytes: Buffer.from('Native saved text attachment.\n', 'utf8') },
+    { mediaType: 'text/markdown', filename: 'notes.md', label: 'Markdown document', bytes: Buffer.from('# Native notes\n\nSaved Markdown attachment.\n', 'utf8') },
+    { mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', filename: 'brief.docx', label: 'Word document', bytes: Buffer.from('PK\u0003\u0004native-docx-download-fixture', 'binary') },
+    { mediaType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: 'budget.xlsx', label: 'Excel workbook', bytes: Buffer.from('PK\u0003\u0004native-xlsx-download-fixture', 'binary') },
+  ];
+  const nativeChatDocumentAttachments = [];
+  for (const [index, fixture] of documentAttachmentFixtures.entries()) {
+    const sessionId = `native-document-${index}-${randomUUID()}`;
+    const fixtureMarker = `NATIVE-SAVED-DOCUMENT-${index}-MARKER`;
+    const seedDocument = seedAttachment.replaceAll(
+      'Retain a saved PDF attachment', `Retain a saved ${fixture.label} attachment`,
+    ).replaceAll('native-review.pdf', fixture.filename).replaceAll('application/pdf', fixture.mediaType).replaceAll(
+      'NATIVE-SAVED-PDF-MARKER', fixtureMarker,
+    ).replaceAll('Review this saved PDF.', `Review this saved ${fixture.label}.`).replaceAll(
+      'The PDF is retained with this conversation.', `The ${fixture.label} is retained with this conversation.`,
+    );
+    const seeded = JSON.parse(execFileSync('uv', [
+      'run', 'python', '-c', seedDocument, database, sessionId, fakeModel,
+      fixtureWorkspace, fixture.bytes.toString('base64'),
+    ], { windowsHide: true, stdio: 'pipe', timeout: 30000, env: process.env }).toString('utf8'));
+    await second.page.locator('details.saved-conversations:visible #new-shared-chat-name').fill(sessionId);
+    await second.page.getByRole('button', { name: 'Start or open shared conversation' }).click();
+    const downloadButton = second.page.getByRole('button', { name: `Download ${fixture.label}` });
+    await expect(downloadButton).toBeVisible();
+    const downloadWait = second.page.waitForEvent('download', { timeout: 15000 });
+    await downloadButton.click();
+    const download = await downloadWait;
+    if (download.suggestedFilename() !== fixture.filename) {
+      throw new Error(`Unexpected native saved-${fixture.label} filename: ${download.suggestedFilename()}`);
+    }
+    if (!(await readFile(await download.path())).equals(fixture.bytes)) {
+      throw new Error(`The native saved-conversation ${fixture.label} download did not preserve the artifact bytes.`);
+    }
+    nativeChatDocumentAttachments.push({
+      saved_session_id: sessionId,
+      run_id: seeded.run_id,
+      artifact_id: seeded.attachment.artifact_id,
+      media_type: fixture.mediaType,
+      size_bytes: seeded.attachment.size_bytes,
+      download_filename: download.suggestedFilename(),
+      artifact_bytes_verified: true,
+      live_model_inference: false,
+    });
+  }
   await second.page.screenshot({ path: path.join(root, 'after-restart.png'), fullPage: true });
   report = {
     passed: true,
@@ -963,6 +1008,7 @@ try {
       artifact_bytes_verified: true,
       live_model_inference: false,
     },
+    native_chat_document_attachments: nativeChatDocumentAttachments,
     workspace_unchanged: true,
     launch_credentials_cleaned: false,
     desktop_sha256: createHash('sha256').update(await readFile(desktopExecutable)).digest('hex'),

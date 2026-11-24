@@ -1,3 +1,7 @@
+## Verify all saved-chat document downloads in the native desktop (2026-11-24)
+
+The native Windows restart acceptance now downloads saved plain-text, Markdown, DOCX, and XLSX attachments through the desktop conversation UI and verifies each MIME type, filename, and exact bytes ([local report](../../.acceptance/native-restart-9bac071c-683a-4408-b9af-43e66a7897db/report.json)). The DOCX/XLSX payloads are opaque download fixtures, so this verifies desktop retrieval and naming, not office-format parsing. Source and installer hosted acceptance for this update remain pending. This adds four saved-chat download paths; broader document, attachment, and Hermes parity remain open. See [`progress.md`](../progress.md#verify-all-saved-chat-document-downloads-in-the-native-desktop-2026-11-24).
+
 # Hermes capability reference matrix
 
 ## Verify saved document and audio downloads in the native desktop (2026-11-24)

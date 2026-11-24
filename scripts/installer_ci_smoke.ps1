@@ -265,6 +265,23 @@ try {
         if (-not $xaaStreamRestartAcceptance.passed -or -not $xaaStreamRestartAcceptance.streamed_command_output_restored_after_restart -or -not $xaaStreamRestartAcceptance.restored_command_output_marker -or $xaaStreamRestartAcceptance.candidate_count -ne 1 -or $xaaStreamRestartAcceptance.final_state -ne 'verifying' -or $xaaStreamRestartAcceptance.tool_effects -ne 0 -or -not $xaaStreamRestartAcceptance.workspace_unchanged -or -not $xaaStreamRestartAcceptance.launch_credentials_cleaned -or $xaaStreamRestartAcceptance.model_requests -lt 1 -or -not $xaaStreamRestartAcceptance.native_chat_attachment.artifact_bytes_verified -or $xaaStreamRestartAcceptance.native_chat_attachment.media_type -ne 'application/pdf' -or $xaaStreamRestartAcceptance.native_chat_attachment.download_filename -ne 'native-review.pdf' -or $xaaStreamRestartAcceptance.native_chat_attachment.live_model_inference -or -not $xaaStreamRestartAcceptance.native_chat_audio_attachment.artifact_bytes_verified -or $xaaStreamRestartAcceptance.native_chat_audio_attachment.media_type -ne 'audio/wav' -or $xaaStreamRestartAcceptance.native_chat_audio_attachment.download_filename -ne 'native-note.wav' -or $xaaStreamRestartAcceptance.native_chat_audio_attachment.live_model_inference -or -not $xaaStreamRestartAcceptance.native_chat_csv_attachment.artifact_bytes_verified -or $xaaStreamRestartAcceptance.native_chat_csv_attachment.media_type -ne 'text/csv' -or $xaaStreamRestartAcceptance.native_chat_csv_attachment.download_filename -ne 'inventory.csv' -or $xaaStreamRestartAcceptance.native_chat_csv_attachment.live_model_inference -or $xaaStreamRestartAcceptance.desktop_sha256 -ne $xaaDesktopHash -or $xaaStreamRestartAcceptance.engine_sha256 -ne $xaaEngineHash) {
             throw 'Installed desktop streamed-output restart evidence was incomplete or did not use the installed binaries.'
         }
+        $xaaExpectedChatDocuments = @(
+            @{ media_type = 'text/plain'; download_filename = 'notes.txt' },
+            @{ media_type = 'text/markdown'; download_filename = 'notes.md' },
+            @{ media_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'; download_filename = 'brief.docx' },
+            @{ media_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; download_filename = 'budget.xlsx' }
+        )
+        if ($xaaStreamRestartAcceptance.native_chat_document_attachments.Count -ne $xaaExpectedChatDocuments.Count) {
+            throw 'Installed desktop saved-chat document acceptance did not verify all supported document types.'
+        }
+        foreach ($xaaExpectedChatDocument in $xaaExpectedChatDocuments) {
+            $xaaVerifiedChatDocument = @($xaaStreamRestartAcceptance.native_chat_document_attachments | Where-Object {
+                $_.media_type -eq $xaaExpectedChatDocument.media_type -and $_.download_filename -eq $xaaExpectedChatDocument.download_filename
+            })
+            if ($xaaVerifiedChatDocument.Count -ne 1 -or -not $xaaVerifiedChatDocument[0].artifact_bytes_verified -or $xaaVerifiedChatDocument[0].live_model_inference) {
+                throw "Installed desktop saved-chat download evidence was incomplete for $($xaaExpectedChatDocument.download_filename)."
+            }
+        }
         $xaaReport.installed_streamed_output_restart = $xaaStreamRestartAcceptance
 
         # Verify the complete fresh-profile onboarding path against the binaries
