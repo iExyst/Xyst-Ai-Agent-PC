@@ -314,6 +314,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         distribution=distribution,
         node_version=node_version,
         npm_version=npm_version,
+        node_arch=node_arch,
         requirements=("xaa-offline-fixture@^1.0.0",),
         root_dependencies=(
             NpmRootDependency(
@@ -392,6 +393,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         distribution=distribution,
         node_version=node_version,
         npm_version=npm_version,
+        node_arch=node_arch,
         requirements=(f"{required_platform_name}@^1.0.0",),
         root_dependencies=(
             NpmRootDependency(
@@ -863,6 +865,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             distribution=distribution,
             node_version=node_version,
             npm_version=npm_version,
+            node_arch=node_arch,
             requirements=(
                 f"{scoped_name}@^1.0.0",
                 f"{transitive_name}@^2.0.0",

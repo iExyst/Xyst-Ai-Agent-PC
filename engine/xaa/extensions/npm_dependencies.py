@@ -113,6 +113,7 @@ class ProcedureNpmDependencyLock(BaseModel):
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     node_version: str = Field(min_length=5, max_length=128)
     npm_version: str = Field(min_length=5, max_length=128)
+    node_arch: str | None = Field(default=None, pattern=r"^[a-z0-9_]{1,32}$")
     requirements: tuple[str, ...] = Field(default=(), max_length=128)
     root_dependencies: tuple[NpmRootDependency, ...] = Field(max_length=512)
     packages: tuple[NpmLockedPackage, ...] = Field(max_length=MAX_LOCKED_PACKAGES)
@@ -167,7 +168,10 @@ class ProcedureNpmDependencyLock(BaseModel):
 
     def canonical_json(self) -> str:
         """Serialize the exact proposal with stable JSON object-key ordering."""
-        return json.dumps(self.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+        values = self.model_dump(mode="json")
+        if self.node_arch is None:
+            values.pop("node_arch", None)
+        return json.dumps(values, sort_keys=True, separators=(",", ":"))
 
 
 class NpmVerifiedTarball(BaseModel):
@@ -273,6 +277,7 @@ def parse_npm_package_lock(
     distribution: str,
     node_version: str,
     npm_version: str,
+    node_arch: str | None = None,
     requirements: Iterable[str] = (),
     package_manifest: bytes | None = None,
 ) -> ProcedureNpmDependencyLock:
@@ -362,6 +367,7 @@ def parse_npm_package_lock(
         distribution=distribution,
         node_version=node_version,
         npm_version=npm_version,
+        node_arch=node_arch,
         requirements=tuple(requirements),
         root_dependencies=tuple(root_dependencies),
         packages=tuple(packages),
@@ -596,6 +602,24 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
         blocked_os = {value[1:] for value in os_constraints if value.startswith("!")}
         if "linux" in blocked_os or (allowed_os and "linux" not in allowed_os):
             raise ValueError("npm package does not support the target Linux WSL environment.")
+    raw_cpu = manifest.get("cpu")
+    if raw_cpu is not None:
+        if not isinstance(raw_cpu, list):
+            raise ValueError("npm package.json cpu must be a bounded list of architecture names.")
+        raw_cpu_values = cast(list[object], raw_cpu)
+        if not raw_cpu_values or len(raw_cpu_values) > 32 or any(
+            not isinstance(value, str)
+            or _NPM_PLATFORM_NAME.fullmatch(value.removeprefix("!")) is None
+            for value in raw_cpu_values
+        ):
+            raise ValueError("npm package.json cpu must be a bounded list of architecture names.")
+        if lock.node_arch is None:
+            raise ValueError("npm package cpu constraints require a verified Node architecture.")
+        cpu_constraints = cast(list[str], raw_cpu_values)
+        allowed_cpu = {value for value in cpu_constraints if not value.startswith("!")}
+        blocked_cpu = {value[1:] for value in cpu_constraints if value.startswith("!")}
+        if lock.node_arch in blocked_cpu or (allowed_cpu and lock.node_arch not in allowed_cpu):
+            raise ValueError("npm package does not support the selected Node architecture.")
     declared: list[NpmRootDependency] = []
     for kind in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
         values = manifest.get(kind, {})

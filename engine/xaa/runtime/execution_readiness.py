@@ -150,8 +150,20 @@ def version_for(name):
     return value
 node_version=version_for('node')
 npm_version=version_for('npm') if node_version is not None else None
+node_arch=None
+if node_version is not None:
+    executable=shutil.which('node')
+    if executable is None:
+        raise RuntimeError('Node executable disappeared during runtime probe')
+    result=subprocess.run([executable,'-p','process.arch'],stdin=subprocess.DEVNULL,
+                          capture_output=True,text=True,timeout=2,check=False)
+    if result.returncode!=0:
+        raise RuntimeError('Node architecture probe failed')
+    node_arch=result.stdout.strip()
+    if not re.fullmatch(r'[a-z0-9_]{1,32}',node_arch):
+        raise RuntimeError('Node returned an invalid architecture')
 print(json.dumps({'nonce':request['nonce'],'node_version':node_version,
-                  'npm_version':npm_version},separators=(',',':')))
+                  'npm_version':npm_version,'node_arch':node_arch},separators=(',',':')))
 """
 
 
@@ -252,6 +264,7 @@ class SkillNodeRuntimeReadinessResult(BaseModel):
     state: Literal["ready", "node_missing", "unavailable", "unsupported", "busy"]
     node_version: str | None = Field(default=None, max_length=128)
     npm_version: str | None = Field(default=None, max_length=128)
+    node_arch: str | None = Field(default=None, pattern=r"^[a-z0-9_]{1,32}$")
     npm_available: bool
     checked_at: datetime
     error_code: (
@@ -621,6 +634,7 @@ class ExecutionReadiness:
         assert digest is not None
         node_version: str | None = None
         npm_version: str | None = None
+        node_arch: str | None = None
         probe_succeeded = False
         try:
             async with self.lock:
@@ -667,11 +681,12 @@ class ExecutionReadiness:
                     ):
                         raise ValueError("Node runtime probe did not finish successfully.")
                     output = response_object(base64.b64decode(encoded, validate=True))
-                    if set(output) != {"nonce", "node_version", "npm_version"}:
+                    if set(output) != {"nonce", "node_version", "npm_version", "node_arch"}:
                         raise ValueError("Node runtime probe returned invalid metadata.")
                     raw_nonce = output.get("nonce")
                     raw_node = output.get("node_version")
                     raw_npm = output.get("npm_version")
+                    raw_arch = output.get("node_arch")
                     version_pattern = re.compile(
                         r"^(?:v)?[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
                         r"(?:[-+][A-Za-z0-9.-]{1,64})?$"
@@ -683,10 +698,14 @@ class ExecutionReadiness:
                         or (isinstance(raw_node, str) and not version_pattern.fullmatch(raw_node))
                         or (isinstance(raw_npm, str) and not version_pattern.fullmatch(raw_npm))
                         or (raw_npm is not None and raw_node is None)
+                        or (raw_arch is not None and raw_node is None)
+                        or (raw_node is not None and not isinstance(raw_arch, str))
+                        or (isinstance(raw_arch, str) and not re.fullmatch(r"[a-z0-9_]{1,32}", raw_arch))
                     ):
                         raise ValueError("Node runtime probe returned invalid metadata.")
                     node_version = raw_node if isinstance(raw_node, str) else None
                     npm_version = raw_npm if isinstance(raw_npm, str) else None
+                    node_arch = raw_arch if isinstance(raw_arch, str) else None
                     if profile_fingerprint()[0] != digest:
                         raise PermissionError(
                             "Execution profile changed during Node runtime probe."
@@ -716,6 +735,7 @@ class ExecutionReadiness:
         except (OSError, RuntimeError, ValueError, TypeError, KeyError):
             node_version = None
             npm_version = None
+            node_arch = None
 
         if not probe_succeeded:
             return SkillNodeRuntimeReadinessResult(
@@ -730,6 +750,7 @@ class ExecutionReadiness:
             state="ready" if node_version is not None else "node_missing",
             node_version=node_version,
             npm_version=npm_version,
+            node_arch=node_arch,
             npm_available=npm_version is not None,
             checked_at=datetime.now(UTC),
         )

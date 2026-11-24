@@ -54,6 +54,7 @@ def _read_request() -> dict[str, Any]:
         "distribution",
         "node_version",
         "npm_version",
+        "node_arch",
         "requirements",
     }:
         raise ValueError("npm lock worker request fields are invalid.")
@@ -66,6 +67,18 @@ def _read_request() -> dict[str, Any]:
         or not isinstance(request["distribution"], str)
         or not isinstance(request["node_version"], str)
         or not isinstance(request["npm_version"], str)
+        or (
+            request["node_arch"] is not None
+            and (
+                not isinstance(request["node_arch"], str)
+                or not request["node_arch"]
+                or len(request["node_arch"]) > 32
+                or any(
+                    character not in "abcdefghijklmnopqrstuvwxyz0123456789_"
+                    for character in request["node_arch"]
+                )
+            )
+        )
         or not isinstance(requirements, list)
         or len(cast(list[object], requirements)) > 128
         or any(
@@ -90,6 +103,7 @@ def _inspect(request: dict[str, Any]) -> ProcedureNpmDependencyLock:
         distribution=request["distribution"],
         node_version=request["node_version"],
         npm_version=request["npm_version"],
+        node_arch=request["node_arch"],
         requirements=cast(list[str], request["requirements"]),
         package_manifest=manifest,
     )

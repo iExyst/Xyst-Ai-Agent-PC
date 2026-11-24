@@ -3934,6 +3934,8 @@ export interface components {
             distribution: string;
             /** Lockfile Sha256 */
             lockfile_sha256: string;
+            /** Node Arch */
+            node_arch?: string | null;
             /** Node Version */
             node_version: string;
             /** Npm Version */
@@ -4696,6 +4698,8 @@ export interface components {
             distribution: string;
             /** Error Code */
             error_code?: ("profile_unavailable" | "unsupported_platform" | "sandbox_not_ready" | "probe_busy" | "runtime_probe_failed") | null;
+            /** Node Arch */
+            node_arch?: string | null;
             /** Node Version */
             node_version?: string | null;
             /** Npm Available */

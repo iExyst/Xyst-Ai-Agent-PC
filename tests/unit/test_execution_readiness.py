@@ -49,9 +49,12 @@ class Backend:
                 "npm_version": (
                     None if self.fault in {"node_missing", "npm_missing"} else "10.8.1"
                 ),
+                "node_arch": None if self.fault == "node_missing" else "x64",
             }
             if self.fault == "invalid_node_version":
                 output["node_version"] = "latest"
+            if self.fault == "invalid_node_arch":
+                output["node_arch"] = "x64/arm64"
         elif dependency_probe:
             assert len(snapshot.files) == 1 and snapshot.files[0].path == "probe.json"
             names = json.loads(snapshot.files[0].content)["names"]
@@ -451,6 +454,7 @@ async def test_python_dependency_target_rejects_malformed_wheel_tags(monkeypatch
         ("npm_missing", "ready", "v22.2.0", None),
         ("node_missing", "node_missing", None, None),
         ("invalid_node_version", "unavailable", None, None),
+        ("invalid_node_arch", "unavailable", None, None),
         ("node_run", "unavailable", None, None),
     ],
 )
@@ -465,6 +469,7 @@ async def test_node_runtime_probe_reports_versions_and_fails_closed(
     assert result.state == expected_state
     assert result.node_version == expected_node
     assert result.npm_version == expected_npm
+    assert result.node_arch == ("x64" if expected_node is not None else None)
     assert result.npm_available is (expected_npm is not None)
     assert backend.launches == 2
     assert backend.controls == ["cleanup", "status", "cleanup", "status"]

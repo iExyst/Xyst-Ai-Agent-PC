@@ -40,7 +40,7 @@ for path in (project, cache, temp): path.mkdir(mode=0o777)
 shutil.copyfile('/source/package.json', project / 'package.json')
 shutil.copyfile('/source/package-lock.json', project / 'package-lock.json')
 os.environ['TMPDIR'] = str(temp)
-expected_node, expected_npm, packages = json.loads(sys.argv[1])
+expected_node, expected_npm, expected_arch, packages = json.loads(sys.argv[1])
 def run(args, timeout=30):
     result = subprocess.run(args, cwd=project, capture_output=True, timeout=timeout)
     if result.returncode:
@@ -51,6 +51,8 @@ if run(['/usr/bin/node', '--version']) != 'v' + expected_node.removeprefix('v'):
     raise RuntimeError('WSL Node version changed after dependency review.')
 if run(['/usr/bin/npm', '--version']) != expected_npm:
     raise RuntimeError('WSL npm version changed after dependency review.')
+if expected_arch is not None and run(['/usr/bin/node', '-p', 'process.arch']) != expected_arch:
+    raise RuntimeError('WSL Node architecture changed after dependency review.')
 for filename in packages:
     run(['/usr/bin/npm', 'cache', 'add', '/tarballs/' + filename,
          '--offline', '--ignore-scripts', '--cache', str(cache)], timeout=60)
@@ -371,6 +373,11 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
     node_version, npm_version = lock.get("node_version"), lock.get("npm_version")
     if not isinstance(node_version, str) or not isinstance(npm_version, str):
         raise TypeError("Reviewed Node and npm versions are invalid.")
+    node_arch = lock.get("node_arch")
+    if node_arch is not None and (
+        not isinstance(node_arch, str) or re.fullmatch(r"[a-z0-9_]{1,32}", node_arch) is None
+    ):
+        raise TypeError("Reviewed Node architecture is invalid.")
     _private_root()
     target = ROOT / digest
     unit = f"xaa-nodeenv-{digest[:32]}.service"
@@ -483,7 +490,9 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
                 "-I",
                 "-c",
                 _INSTALL_SCRIPT,
-                json.dumps([node_version, npm_version, [item["filename"] for item in tarballs]]),
+                json.dumps(
+                    [node_version, npm_version, node_arch, [item["filename"] for item in tarballs]]
+                ),
             ]
             run_as_sandbox = [
                 "/usr/bin/systemd-run",
@@ -533,6 +542,7 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
                 "distribution": lock.get("distribution"),
                 "node_version": node_version,
                 "npm_version": npm_version,
+                "node_arch": node_arch,
                 "tree_sha256": tree_hash,
                 "file_count": count,
                 "installed_bytes": total,

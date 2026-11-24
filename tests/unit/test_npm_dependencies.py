@@ -81,6 +81,7 @@ def parse(
     *,
     requirements: tuple[str, ...] = ("left-pad@^1.3.0",),
     manifest: bytes = MANIFEST,
+    node_arch: str | None = None,
 ):
     return parse_npm_package_lock(
         raw,
@@ -91,6 +92,7 @@ def parse(
         distribution="Ubuntu-24.04",
         node_version="v22.2.0",
         npm_version="10.8.1",
+        node_arch=node_arch,
         requirements=requirements,
         package_manifest=manifest,
     )
@@ -100,6 +102,7 @@ def test_npm_v3_lock_is_bound_to_procedure_assets_and_runtime() -> None:
     raw = package_lock()
     lock = parse(raw)
 
+    assert "node_arch" not in json.loads(lock.canonical_json())
     assert lock.lockfile_sha256 == hashlib.sha256(raw).hexdigest()
     assert lock.packages[0].name == "left-pad"
     assert lock.packages[0].version == "1.3.0"
@@ -215,6 +218,51 @@ def test_package_manifest_rejects_malformed_os_constraints(platforms: object) ->
     ).encode()
     lock = parse(package_lock(), manifest=manifest)
     with pytest.raises(ValueError, match="os must be a bounded list"):
+        verify_npm_package_manifest(manifest, lock)
+
+
+@pytest.mark.parametrize(
+    ("architectures", "compatible"),
+    [
+        (["x64"], True),
+        (["x64", "arm64"], True),
+        (["!arm64"], True),
+        (["arm64"], False),
+        (["!x64"], False),
+        (["x64", "!x64"], False),
+    ],
+)
+def test_package_manifest_checks_target_node_architecture(
+    architectures: list[str], compatible: bool
+) -> None:
+    manifest = json.dumps(
+        {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "cpu": architectures},
+        separators=(",", ":"),
+    ).encode()
+    lock = parse(package_lock(), manifest=manifest, node_arch="x64")
+
+    if compatible:
+        assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
+    else:
+        with pytest.raises(ValueError, match="selected Node architecture"):
+            verify_npm_package_manifest(manifest, lock)
+
+
+@pytest.mark.parametrize("architectures", ["x64", [], ["!"], ["x64", 3], ["arm64"] * 33])
+def test_package_manifest_rejects_malformed_cpu_constraints(architectures: object) -> None:
+    manifest = json.dumps(
+        {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "cpu": architectures},
+        separators=(",", ":"),
+    ).encode()
+    lock = parse(package_lock(), manifest=manifest, node_arch="x64")
+    with pytest.raises(ValueError, match="cpu must be a bounded list"):
+        verify_npm_package_manifest(manifest, lock)
+
+
+def test_package_manifest_requires_verified_arch_for_cpu_constraints() -> None:
+    manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"cpu":["x64"]}'
+    lock = parse(package_lock(), manifest=manifest)
+    with pytest.raises(ValueError, match="verified Node architecture"):
         verify_npm_package_manifest(manifest, lock)
 
 

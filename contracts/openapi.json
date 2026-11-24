@@ -4054,6 +4054,18 @@
             "title": "Lockfile Sha256",
             "type": "string"
           },
+          "node_arch": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9_]{1,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Arch"
+          },
           "node_version": {
             "maxLength": 128,
             "minLength": 5,
@@ -6293,6 +6305,18 @@
               }
             ],
             "title": "Error Code"
+          },
+          "node_arch": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9_]{1,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Arch"
           },
           "node_version": {
             "anyOf": [

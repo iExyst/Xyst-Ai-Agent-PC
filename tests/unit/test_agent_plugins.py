@@ -1853,7 +1853,7 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
     app = create_app(FakeProvider(), SecretStr(TOKEN), store=RunStore(tmp_path / "npm.sqlite3"))
     headers = {"Authorization": f"Bearer {TOKEN}"}
     readiness_requests: list[str] = []
-    node_runtime = {"node_version": "v22.2.0", "npm_version": "10.8.1"}
+    node_runtime = {"node_version": "v22.2.0", "npm_version": "10.8.1", "node_arch": "x64"}
 
     async def check_node_runtime(self, request):
         readiness_requests.append(request.distribution)
@@ -1862,6 +1862,7 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
             state="ready",
             node_version=node_runtime["node_version"],
             npm_version=node_runtime["npm_version"],
+            node_arch=node_runtime["node_arch"],
             npm_available=True,
             checked_at=datetime.now(UTC),
         )
@@ -1914,6 +1915,7 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
         result = inspected.json()
         assert result["node_version"] == "v22.2.0"
         assert result["npm_version"] == "10.8.1"
+        assert result["node_arch"] == "x64"
         assert result["root_dependencies"] == [
             {"name": "left-pad", "version_range": "^1.3.0", "kind": "dependencies"}
         ]
@@ -1976,6 +1978,7 @@ def test_npm_lock_inspection_reads_only_bound_imported_resources(
                     "distribution": lock.distribution,
                     "node_version": lock.node_version,
                     "npm_version": lock.npm_version,
+                    "node_arch": lock.node_arch,
                     "tree_sha256": "b" * 64,
                     "installed_bytes": 1024,
                     "file_count": 10,
