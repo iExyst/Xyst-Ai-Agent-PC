@@ -1,6 +1,6 @@
-## Check batch artifact counts deterministically (2026-11-24)
+## Check batch artifact counts and digests (2026-11-24)
 
-Batch cases can now assert an exact artifact count using the versioned trajectory manifest. The check validates each bounded manifest record and reports the actual count; it does not claim artifact contents satisfy a semantic requirement. Unit coverage includes zero, one, mismatched counts, and invalid negative, fractional, whitespace, and over-limit expectations. Focused batch tests pass (24); Ruff, formatting, strict Pyright on the batch module, and `git diff --check` pass. Hosted exact-source verification is pending. No live model inference was used.
+Batch cases can now assert an exact artifact count or require an exact lowercase SHA-256 in the versioned trajectory manifest. The checks validate each bounded manifest record and compare only recorded metadata; they do not claim artifact contents satisfy semantic requirements. Unit coverage includes zero, one, mismatched counts, malformed digests, and invalid negative, fractional, whitespace, and over-limit expectations. Focused batch tests pass (29); Ruff, formatting, strict Pyright on the batch module, and `git diff --check` pass. Hosted exact-source verification is pending. No live model inference was used.
 
 ## Score the latest assistant message in batch checks (2026-11-23)
 

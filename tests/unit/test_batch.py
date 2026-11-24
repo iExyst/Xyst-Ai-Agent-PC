@@ -411,6 +411,48 @@ def test_batch_artifact_count_check_rejects_invalid_counts(expected: str) -> Non
         BatchCheck(kind="artifact_count_equals", expected=expected)
 
 
+@pytest.mark.parametrize(
+    ("artifact_hash", "expected", "passed"),
+    [("a" * 64, "a" * 64, True), ("a" * 64, "b" * 64, False)],
+)
+def test_batch_can_check_exported_artifact_sha256(
+    artifact_hash: str, expected: str, passed: bool
+) -> None:
+    case = BatchCase(
+        id="checked",
+        objective="Produce a report",
+        acceptance_criteria=[],
+        checks=[BatchCheck(kind="artifact_sha256_exists", expected=expected)],
+    )
+    trajectory = {
+        "format": "xaa-trajectory",
+        "format_version": 1,
+        "run": {"id": "fixture-run", "objective": "Produce a report", "state": "completed"},
+        "events": [],
+        "artifacts": [
+            {
+                "id": "artifact-1",
+                "media_type": "text/plain",
+                "size_bytes": 7,
+                "sha256": artifact_hash,
+                "provenance": "workspace.write_file",
+                "created_at": "2026-11-24T00:00:00Z",
+            }
+        ],
+    }
+
+    [result] = batch_module.score_trajectory(case, json_bytes(trajectory))
+
+    assert result.actual is passed
+    assert result.passed is passed
+
+
+@pytest.mark.parametrize("expected", ["A" * 64, "0" * 63, "not-a-hash"])
+def test_batch_artifact_sha256_check_rejects_invalid_digest(expected: str) -> None:
+    with pytest.raises(ValueError, match="Artifact SHA-256 must be 64 lowercase hexadecimal"):
+        BatchCheck(kind="artifact_sha256_exists", expected=expected)
+
+
 def _training_fixture(batch_dir: Path) -> None:
     batch_dir.mkdir()
     (batch_dir / "trajectories").mkdir()

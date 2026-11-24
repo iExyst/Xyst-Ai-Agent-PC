@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -33,6 +34,7 @@ class BatchCheck(BaseModel):
         "tool_completed",
         "state_equals",
         "artifact_count_equals",
+        "artifact_sha256_exists",
     ]
     expected: str = Field(min_length=1, max_length=10_000)
 
@@ -42,6 +44,10 @@ class BatchCheck(BaseModel):
             not self.expected.isdecimal() or len(self.expected) > 5 or int(self.expected) > 10_000
         ):
             raise ValueError("Artifact count must be a decimal integer from 0 to 10000.")
+        if self.kind == "artifact_sha256_exists" and not re.fullmatch(
+            r"[a-f0-9]{64}", self.expected
+        ):
+            raise ValueError("Artifact SHA-256 must be 64 lowercase hexadecimal characters.")
         return self
 
 
@@ -53,6 +59,7 @@ class BatchCheckResult(BaseModel):
         "tool_completed",
         "state_equals",
         "artifact_count_equals",
+        "artifact_sha256_exists",
     ]
     expected: str
     actual: str | bool
@@ -261,6 +268,8 @@ def score_trajectory(case: BatchCase, content: bytes) -> list[BatchCheckResult]:
             actual = check.expected in completed_tools
         elif check.kind == "artifact_count_equals":
             actual = str(len(trajectory.artifacts))
+        elif check.kind == "artifact_sha256_exists":
+            actual = any(artifact.sha256 == check.expected for artifact in trajectory.artifacts)
         else:
             actual = trajectory.run.state
         results.append(
