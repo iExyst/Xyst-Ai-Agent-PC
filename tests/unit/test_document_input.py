@@ -1351,7 +1351,17 @@ def test_docx_text_obeys_shared_character_limit():
 
 
 def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluating():
-    result = extract_document_text(make_xlsx(), XLSX_TYPE)
+    three_section = "#,##0.00;[Red](#,##0.00);-"
+    result = extract_document_text(
+        make_xlsx(
+            formatted_numeric_cells=(
+                ("S1", "1234.5", three_section),
+                ("T1", "-1234.5", three_section),
+                ("U1", "0", three_section),
+            )
+        ),
+        XLSX_TYPE,
+    )
     assert "[Sheet: Fixture]" in result
     assert "A1=XLSX-MARKER-42" in result
     assert "B1=42" in result
@@ -1371,6 +1381,9 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
     assert "P1=45292.75 [display: 1/1/24 6:00 PM] [number format: m/d/yy h:mm AM/PM]" in result
     assert "Q1=45292.524259259259259 [display: 2024-01-01 12:34:56]" in result
     assert "R1=45292.99999999 [display: 1/2/24 12:00 AM]" in result
+    assert "S1=1234.5 [display: 1,234.50] [number format: #,##0.00;[Red](#,##0.00);-]" in result
+    assert "T1=-1234.5 [display: (1,234.50)] [number format: #,##0.00;[Red](#,##0.00);-]" in result
+    assert "U1=0 [display: -] [number format: #,##0.00;[Red](#,##0.00);-]" in result
 
 
 @pytest.mark.parametrize(
@@ -1390,6 +1403,10 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
         ("-1234", "#,##0 ;(#,##0)", "(1,234)"),
         ("-1234.5", "#,##0.00;[Red](#,##0.00)", "(1,234.50)"),
         ("1234.5", "#,##0.00;(#,##0.00)", "1,234.50"),
+        ("1234.5", "#,##0.00;[Red](#,##0.00);-", "1,234.50"),
+        ("-1234.5", "#,##0.00;[Red](#,##0.00);-", "(1,234.50)"),
+        ("0", "#,##0.00;[Red](#,##0.00);-", "-"),
+        ("0", "0.00;(0.00);0.0", "0.0"),
         ("12345", "0.00E+00", "1.23E+04"),
         ("-0.01234", "0.0E+00", "-1.2E-02"),
         ("1200", "0.##E-0", "1.2E3"),
@@ -1415,7 +1432,10 @@ def test_xlsx_fraction_display_rejects_malformed_or_unbounded_values():
 
 
 def test_xlsx_sectioned_numeric_display_rejects_unsupported_sections():
-    assert _xlsx_numeric_display("1", "#,##0;(#,##0);-") is None
+    assert _xlsx_numeric_display("1", "#,##0;(#,##0);-") == "1"
+    assert _xlsx_numeric_display("0", "#,##0;(#,##0);-") == "-"
+    assert _xlsx_numeric_display("-1", "#,##0;(#,##0);-") == "(1)"
+    assert _xlsx_numeric_display("1", "0;0;0;0") is None
 
 
 def test_xlsx_maps_built_in_fraction_format_ids():

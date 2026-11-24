@@ -2308,6 +2308,36 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
     if not value or len(value) > 128:
         return None
     basic_numeric_format = r"(?:[$€£¥])?(?:#,##0|0)(?:\.[0#]{1,8})?%?"
+    three_section_format = re.fullmatch(
+        rf"(?P<positive>{basic_numeric_format});"
+        rf"(?P<negative>(?:\[Red\])?\(?{basic_numeric_format}\));"
+        rf"(?P<zero>-|–|—|{basic_numeric_format})",
+        format_code,
+        re.IGNORECASE,
+    )
+    if three_section_format is not None:
+        try:
+            number = Decimal(value)
+            if not number.is_finite():
+                return None
+        except InvalidOperation:
+            return None
+        if number == 0:
+            zero_format = three_section_format.group("zero")
+            if zero_format in {"-", "–", "—"}:
+                return zero_format
+            return _xlsx_numeric_display("0", zero_format)
+        if number < 0:
+            negative_format = re.sub(
+                r"^\[Red\]", "", three_section_format.group("negative"), flags=re.IGNORECASE
+            )
+            if negative_format.startswith("(") and negative_format.endswith(")"):
+                rendered_negative = _xlsx_numeric_display(str(abs(number)), negative_format[1:-1])
+                return f"({rendered_negative})" if rendered_negative is not None else None
+            rendered_negative = _xlsx_numeric_display(str(abs(number)), negative_format)
+            return f"-{rendered_negative}" if rendered_negative is not None else None
+        return _xlsx_numeric_display(str(number), three_section_format.group("positive"))
+
     sectioned_format = re.fullmatch(
         rf"(?P<positive>{basic_numeric_format})\s*;\s*(?:\[Red\])?"
         rf"\((?P<negative>{basic_numeric_format})\)",
