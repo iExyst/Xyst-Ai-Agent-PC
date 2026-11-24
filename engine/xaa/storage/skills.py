@@ -1012,8 +1012,9 @@ class SkillStore:
         revision: SkillResourceRevision,
         *,
         batch_calls: list[tuple[str, str, dict[str, Any]]] | None = None,
+        content_revision: SkillContentRevision | None = None,
     ) -> dict[str, Any]:
-        """Create a candidate version with an atomic linked-resource edit."""
+        """Create a candidate version with atomic content and linked-resource edits."""
         if self.runs.task_scope is not None:
             raise PermissionError("Specialists cannot revise user-library procedure resources.")
         if not call_id or len(call_id) > 128:
@@ -1026,6 +1027,14 @@ class SkillStore:
             (call_id, "procedure_resource_revise", revision.model_dump(mode="json"))
         ]
         call_ids = [item[0] for item in calls]
+        resource_call_ids = [
+            item_id
+            for item_id, name, _arguments in calls
+            if name in {"procedure_resource_revise", "procedure_resource_remove"}
+        ]
+        content_call_ids = [
+            item_id for item_id, name, _arguments in calls if name == "procedure_revise"
+        ]
         if (
             call_id not in call_ids
             or len(call_ids) > 8
@@ -1033,11 +1042,21 @@ class SkillStore:
             or any(
                 not item_id
                 or len(item_id) > 128
-                or name not in {"procedure_resource_revise", "procedure_resource_remove"}
+                or name
+                not in {
+                    "procedure_revise",
+                    "procedure_resource_revise",
+                    "procedure_resource_remove",
+                }
                 for item_id, name, _arguments in calls
             )
         ):
             raise ValueError("Procedure resource batch call identities are invalid.")
+        if content_revision is not None and (
+            content_revision.skill_id != revision.skill_id
+            or content_revision.expected_version != revision.expected_version
+        ):
+            raise ValueError("Mixed procedure edits must target the same selected version.")
         now = utc_now()
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -1064,6 +1083,22 @@ class SkillStore:
                 or json.loads(selected[0][0]).get("version") != revision.expected_version
             ):
                 raise PermissionError("Procedure resource edit exceeds the selected run grant.")
+            if content_revision is not None:
+                content_grants = connection.execute(
+                    "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.revision_granted'",
+                    (run_id,),
+                ).fetchall()
+                if len(content_grants) != 1:
+                    raise PermissionError(
+                        "Mixed procedure edits require a separate user content-revision grant."
+                    )
+                content_grant = json.loads(content_grants[0][0])
+                if (
+                    content_grant.get("actor") != "local_user"
+                    or content_grant.get("skill_id") != revision.skill_id
+                    or content_grant.get("expected_version") != revision.expected_version
+                ):
+                    raise PermissionError("Content revision exceeds the selected run grant.")
             if revision.remove_paths:
                 removal_grants = connection.execute(
                     "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.resource_removal_granted'",
@@ -1153,10 +1188,14 @@ class SkillStore:
                 )
                 asset_map[resource.path] = asset
             edit_records.extend(removed_records)
+            revised_content = (
+                content_revision.content if content_revision is not None else latest["content"]
+            )
+            assert revised_content is not None
             try:
                 draft = SkillDraft(
                     name=entry["name"],
-                    content=latest["content"],
+                    content=revised_content,
                     description=prior_evidence.get("description", ""),
                     category=prior_evidence.get("category", ""),
                     required_tools=json.loads(latest["required_tools"]),
@@ -1170,7 +1209,9 @@ class SkillStore:
             evidence: dict[str, Any] = {
                 "state": "candidate",
                 "provenance": (
-                    "model_resource_batch_edit"
+                    "model_mixed_revision"
+                    if content_revision is not None
+                    else "model_resource_batch_edit"
                     if revision.remove_paths
                     else "model_resource_revision"
                 ),
@@ -1182,8 +1223,9 @@ class SkillStore:
                         if isinstance(value, str)
                     },
                     "resource_revision_run_id": run_id,
-                    "resource_revision_call_id": call_id,
-                    "resource_revision_call_ids": json.dumps(call_ids),
+                    "resource_revision_call_id": resource_call_ids[0],
+                    "resource_revision_call_ids": json.dumps(resource_call_ids),
+                    "content_revision_call_ids": json.dumps(content_call_ids),
                     "resource_removal_paths": json.dumps(revision.remove_paths),
                     "parent_version": str(current_version),
                     "parent_provenance": str(prior_evidence.get("provenance", "user")),
@@ -1213,9 +1255,17 @@ class SkillStore:
                 "resource_edit": edit_records[0]["edit"],
                 "resources": edit_records,
                 "resource_edit_count": len(edit_records),
-                "trust": "untrusted_model_resource_revision",
+                "trust": (
+                    "untrusted_model_mixed_revision"
+                    if content_revision is not None
+                    else "untrusted_model_resource_revision"
+                ),
                 "requires_user_review": True,
-                "notice": "Only the listed linked resources changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved.",
+                "notice": (
+                    "Procedure text and the listed linked resources changed together. Tools, permissions, metadata, other resources and the active version were preserved."
+                    if content_revision is not None
+                    else "Only the listed linked resources changed. Procedure text, tools, permissions, metadata, other resources and the active version were preserved."
+                ),
             }
             if len(call_ids) > 1:
                 cast(dict[str, Any], result)["batch_call_ids"] = call_ids
@@ -1245,12 +1295,15 @@ class SkillStore:
             self.runs.record_event(
                 connection,
                 run_id,
-                "procedure.resource_version_drafted",
+                "procedure.mixed_version_drafted"
+                if content_revision is not None
+                else "procedure.resource_version_drafted",
                 {
                     "skill_id": revision.skill_id,
                     "version": next_version,
                     "parent_version": current_version,
                     "operations": edit_records,
+                    "content_changed": content_revision is not None,
                     "call_id": call_id,
                     "call_ids": call_ids,
                 },

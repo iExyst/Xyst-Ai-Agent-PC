@@ -1469,36 +1469,25 @@ class Coordinator:
             append_batch_results(calls, results)
             return True
 
-        if (
-            len(calls) > 1
-            and all(call.get("function", {}).get("name") in manager_names for call in calls)
-            and "procedure_revise" in {call["function"]["name"] for call in calls}
-            and any(
-                call["function"]["name"]
-                in {"procedure_resource_revise", "procedure_resource_remove"}
-                for call in calls
-            )
-        ):
-            results = record_batch_failure(
-                calls,
-                "incompatible_procedure_edit_batch",
-                "Main procedure text and linked resources must be edited in separate model batches.",
-            )
-            append_batch_results(calls, results)
-            return True
-
         resource_tool_names = {"procedure_resource_revise", "procedure_resource_remove"}
-        if len(calls) > 1 and all(
-            call.get("function", {}).get("name") in resource_tool_names for call in calls
-        ):
+        manager_edit_names = resource_tool_names | {"procedure_revise"}
+        call_names = {call["function"]["name"] for call in calls}
+        resource_batch = len(calls) > 1 and call_names <= resource_tool_names
+        mixed_edit_batch = (
+            len(calls) > 1
+            and call_names <= manager_edit_names
+            and "procedure_revise" in call_names
+            and bool(call_names & resource_tool_names)
+        )
+        if resource_batch or mixed_edit_batch:
             if any(
-                not any(tool["function"]["name"] == call["function"]["name"] for tool in tools)
-                for call in calls
+                not any(tool["function"]["name"] == name for tool in tools) for name in call_names
             ):
                 raise PermissionError("Tool is not authorized in the current catalog.")
             batch_calls: list[tuple[str, str, dict[str, Any]]] = []
             resources: list[SkillResourceText] = []
             removals: list[str] = []
+            current_content: str | None = None
             selected_id: str | None = None
             selected_version: int | None = None
             try:
@@ -1506,9 +1495,40 @@ class Coordinator:
                     name = call["function"]["name"]
                     raw_arguments = json.loads(call["function"]["arguments"])
                     if not isinstance(raw_arguments, dict):
-                        raise TypeError("Resource batch arguments must be objects.")
+                        raise TypeError("Procedure edit batch arguments must be objects.")
                     raw_arguments = cast(dict[str, Any], raw_arguments)
-                    if name == "procedure_resource_revise":
+                    if name == "procedure_revise":
+                        content_edit = SkillContentRevision.model_validate(raw_arguments)
+                        skill_id = content_edit.skill_id
+                        expected_version = content_edit.expected_version
+                        current_resources = []
+                        current_removals = []
+                        if current_content is None:
+                            current_content = str(
+                                SkillStore(self.store).version(skill_id, expected_version)[
+                                    "content"
+                                ]
+                            )
+                        if content_edit.content is not None:
+                            current_content = content_edit.content
+                        else:
+                            assert content_edit.old_string is not None
+                            assert content_edit.new_string is not None
+                            count = current_content.count(content_edit.old_string)
+                            if count == 0:
+                                raise SkillConflict(
+                                    "Exact old_string text was not found in the pending revision."
+                                )
+                            if count != 1 and not content_edit.replace_all:
+                                raise SkillConflict(
+                                    "Exact old_string occurs more than once; confirm replace_all to change every occurrence."
+                                )
+                            current_content = current_content.replace(
+                                content_edit.old_string,
+                                content_edit.new_string,
+                                -1 if content_edit.replace_all else 1,
+                            )
+                    elif name == "procedure_resource_revise":
                         revision = SkillResourceRevision.model_validate(raw_arguments)
                         current_resources = [
                             SkillResourceText(path=revision.path, content=revision.content),
@@ -1527,7 +1547,7 @@ class Coordinator:
                         selected_id = skill_id
                         selected_version = expected_version
                     if skill_id != selected_id or expected_version != selected_version:
-                        raise ValueError("All batch calls must target the same selected version.")
+                        raise ValueError("All edit calls must target the same selected version.")
                     resources.extend(current_resources)
                     removals.extend(current_removals)
                     batch_calls.append((call["id"], name, raw_arguments))
@@ -1559,9 +1579,22 @@ class Coordinator:
                 result = SkillStore(self.store).create_model_resource_revision_from_run(
                     run_id,
                     token,
-                    calls[0]["id"],
+                    next(
+                        call["id"]
+                        for call in calls
+                        if call["function"]["name"] in resource_tool_names
+                    ),
                     revision,
                     batch_calls=batch_calls,
+                    content_revision=(
+                        SkillContentRevision(
+                            skill_id=selected_id,
+                            expected_version=selected_version,
+                            content=current_content,
+                        )
+                        if current_content is not None
+                        else None
+                    ),
                 )
             except PermissionError:
                 raise
@@ -1574,11 +1607,15 @@ class Coordinator:
             ) as exc:
                 invalid = not isinstance(exc, SkillConflict)
                 code = (
-                    "invalid_procedure_resource_batch"
+                    "invalid_procedure_edit_batch"
+                    if mixed_edit_batch and invalid
+                    else "procedure_edit_conflict"
+                    if mixed_edit_batch
+                    else "invalid_procedure_resource_batch"
                     if invalid
                     else "procedure_resource_revision_conflict"
                 )
-                message = str(exc) or "The procedure resource batch is invalid."
+                message = str(exc) or "The procedure edit batch is invalid."
                 try:
                     results = record_batch_failure(calls, code, message)
                 except ValueError as failure_exc:
@@ -1981,11 +2018,7 @@ class Coordinator:
                     },
                 },
             )
-        if (
-            run.get("allow_procedure_resource_removal")
-            and not run.get("allow_procedure_resource_revision")
-            and run.get("procedure_trial")
-        ):
+        if run.get("allow_procedure_resource_removal") and run.get("procedure_trial"):
             trial = run["procedure_trial"]
             schema = selected_procedure_write_schema(
                 PROCEDURE_RESOURCE_REMOVAL_CONTRACT,

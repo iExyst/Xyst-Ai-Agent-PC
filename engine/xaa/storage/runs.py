@@ -1078,10 +1078,6 @@ class RunStore:
         client_request_id: str | None = None,
         request_digest: str | None = None,
     ) -> dict[str, Any]:
-        if allow_procedure_revision and (
-            allow_procedure_resource_revision or allow_procedure_resource_removal
-        ):
-            raise ValueError("Choose only one procedure edit permission for a run.")
         if approved_browser_submission and (not approved_browser or not approved_web_hosts):
             raise ValueError(
                 "Browser form submission requires browser access and an approved host list."

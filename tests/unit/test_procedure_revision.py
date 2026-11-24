@@ -542,23 +542,26 @@ def test_resource_removal_rejects_missing_path_escape_and_missing_grant(
         )
 
 
-def test_resource_removal_requires_exclusive_run_grant(workspace_tmp_path: Path) -> None:
+def test_procedure_edit_permissions_can_be_granted_together(workspace_tmp_path: Path) -> None:
     store = RunStore(workspace_tmp_path / "procedure-resource-remove-combined.sqlite3")
     entry = SkillStore(store).create(_draft())
-    with pytest.raises(ValueError, match="Choose only one"):
-        store.create_run(
-            objective="Conflicting edits.",
-            acceptance_criteria=[],
-            workspace=".",
-            mode="observe",
-            model="fixture",
-            procedure_trial={"skill_id": entry["id"], "version": 1},
-            allow_procedure_revision=True,
-            allow_procedure_resource_removal=True,
-        )
+    run = store.create_run(
+        objective="Revise the procedure text and linked resources together.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_revision=True,
+        allow_procedure_resource_revision=True,
+        allow_procedure_resource_removal=True,
+    )
+    assert run["allow_procedure_revision"] is True
+    assert run["allow_procedure_resource_revision"] is True
+    assert run["allow_procedure_resource_removal"] is True
 
 
-def test_resource_revision_requires_its_own_grant_and_rejects_combined_grants(
+def test_resource_revision_requires_its_own_grant_and_accepts_distinct_grants(
     workspace_tmp_path: Path,
 ) -> None:
     store = RunStore(workspace_tmp_path / "procedure-resource-grant.sqlite3")
@@ -570,17 +573,18 @@ def test_resource_revision_requires_its_own_grant_and_rejects_combined_grants(
     )
     with pytest.raises(PermissionError, match="no user authorization"):
         skills.create_model_resource_revision_from_run(run_id, owner, "denied-resource", revision)
-    with pytest.raises(ValueError, match="Choose only one"):
-        store.create_run(
-            objective="Conflicting revisions.",
-            acceptance_criteria=[],
-            workspace=".",
-            mode="observe",
-            model="fixture",
-            procedure_trial={"skill_id": entry["id"], "version": 1},
-            allow_procedure_revision=True,
-            allow_procedure_resource_revision=True,
-        )
+    mixed_run = store.create_run(
+        objective="Authorize separate content and resource edits.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_revision=True,
+        allow_procedure_resource_revision=True,
+    )
+    assert mixed_run["allow_procedure_revision"] is True
+    assert mixed_run["allow_procedure_resource_revision"] is True
 
 
 def test_model_revision_of_active_entry_does_not_move_active_pointer(
@@ -847,6 +851,143 @@ async def test_coordinator_applies_same_turn_content_revisions_in_order(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_batches_content_and_resource_edits_into_one_candidate(
+    workspace_tmp_path: Path,
+) -> None:
+    store = RunStore(workspace_tmp_path / "procedure-mixed-revision-batch.sqlite3")
+    skills = SkillStore(store)
+    draft = _draft()
+    draft.assets = [
+        SkillAsset(
+            path="references/obsolete.txt",
+            media_type="text/plain",
+            sha256=hashlib.sha256(b"obsolete").hexdigest(),
+            content_base64=base64.b64encode(b"obsolete").decode("ascii"),
+        )
+    ]
+    entry = skills.create(draft)
+    run = store.create_run(
+        objective="Update procedure guidance and its linked reference together.",
+        acceptance_criteria=[],
+        workspace=".",
+        mode="observe",
+        model="fixture",
+        procedure_trial={"skill_id": entry["id"], "version": 1},
+        allow_procedure_revision=True,
+        allow_procedure_resource_revision=True,
+        allow_procedure_resource_removal=True,
+    )
+    calls = [
+        {
+            "id": "mixed-content-edit",
+            "type": "function",
+            "function": {
+                "name": "procedure_revise",
+                "arguments": json.dumps(
+                    SkillContentRevision(
+                        skill_id=entry["id"],
+                        expected_version=1,
+                        old_string="Read requested files",
+                        new_string="Read approved files",
+                    ).model_dump(mode="json")
+                ),
+            },
+        },
+        {
+            "id": "mixed-resource-add",
+            "type": "function",
+            "function": {
+                "name": "procedure_resource_revise",
+                "arguments": json.dumps(
+                    SkillResourceRevision(
+                        skill_id=entry["id"],
+                        expected_version=1,
+                        path="references/current.txt",
+                        content="Current approved reference.",
+                    ).model_dump(mode="json")
+                ),
+            },
+        },
+        {
+            "id": "mixed-resource-remove",
+            "type": "function",
+            "function": {
+                "name": "procedure_resource_remove",
+                "arguments": json.dumps(
+                    SkillResourceRemoval(
+                        skill_id=entry["id"],
+                        expected_version=1,
+                        path="references/obsolete.txt",
+                    ).model_dump(mode="json")
+                ),
+            },
+        },
+    ]
+
+    class MixedRevisionProvider(LMStudioProvider):
+        async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
+            return True
+
+        async def chat(
+            self,
+            *,
+            model: str,
+            messages: list[dict[str, Any]],
+            tools: list[dict[str, Any]] | None = None,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            if not any(message.get("role") == "tool" for message in messages):
+                names = {tool["function"]["name"] for tool in tools or []}
+                assert {
+                    "procedure_revise",
+                    "procedure_resource_revise",
+                    "procedure_resource_remove",
+                } <= names
+                return {"choices": [{"message": {"role": "assistant", "tool_calls": calls}}]}
+            assert [
+                message["tool_call_id"] for message in messages if message.get("role") == "tool"
+            ] == [call["id"] for call in calls]
+            return {
+                "choices": [
+                    {"message": {"role": "assistant", "content": "Combined candidate saved."}}
+                ]
+            }
+
+    provider = MixedRevisionProvider()
+    try:
+        await Coordinator(store, provider).execute(str(run["id"]))
+    finally:
+        await provider.close()
+
+    latest = skills.version(entry["id"], 2)
+    assert latest["content"] == "Read approved files and report observed facts."
+    assert [asset["path"] for asset in latest["assets"]] == ["references/current.txt"]
+    assert base64.b64decode(latest["assets"][0]["content_base64"]) == b"Current approved reference."
+    evidence = latest["evaluation_evidence"]
+    assert evidence["provenance"] == "model_mixed_revision"
+    assert evidence["source"]["content_revision_call_ids"] == '["mixed-content-edit"]'
+    assert evidence["source"]["resource_revision_call_ids"] == json.dumps(
+        ["mixed-resource-add", "mixed-resource-remove"]
+    )
+    assert not store.unresolved_tool_calls(str(run["id"]))
+    with store.connection() as connection:
+        calls_saved = connection.execute(
+            "SELECT provider_call_id,state FROM tool_calls WHERE run_id=? ORDER BY provider_call_id",
+            (run["id"],),
+        ).fetchall()
+        mixed_events = connection.execute(
+            "SELECT payload FROM run_events WHERE run_id=? AND event_type='procedure.mixed_version_drafted'",
+            (run["id"],),
+        ).fetchall()
+    assert [(row["provider_call_id"], row["state"]) for row in calls_saved] == [
+        ("mixed-content-edit", "completed"),
+        ("mixed-resource-add", "completed"),
+        ("mixed-resource-remove", "completed"),
+    ]
+    assert json.loads(mixed_events[0]["payload"])["content_changed"] is True
+
+
+@pytest.mark.asyncio
 async def test_conflicting_content_batch_records_all_calls_without_partial_version(
     workspace_tmp_path: Path,
 ) -> None:
@@ -1105,7 +1246,7 @@ async def test_coordinator_exposes_and_executes_separately_granted_resource_remo
 
 
 @pytest.mark.asyncio
-async def test_coordinator_exposes_mixed_resource_edit_only_with_both_grants(
+async def test_coordinator_exposes_resource_tools_with_separate_grants(
     workspace_tmp_path: Path,
 ) -> None:
     store = RunStore(workspace_tmp_path / "procedure-resource-mixed-coordinator.sqlite3")
@@ -1159,7 +1300,7 @@ async def test_coordinator_exposes_mixed_resource_edit_only_with_both_grants(
         ) -> dict[str, Any]:
             available = {tool["function"]["name"]: tool for tool in (tools or [])}
             assert "procedure_resource_revise" in available
-            assert "procedure_resource_remove" not in available
+            assert "procedure_resource_remove" in available
             schema = available["procedure_resource_revise"]["function"]["parameters"]
             assert schema["properties"]["remove_paths"]
             call = {
