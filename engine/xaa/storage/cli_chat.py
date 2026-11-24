@@ -7,6 +7,7 @@ import re
 import unicodedata
 from typing import Any, Literal
 
+from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.runs import RunStore, utc_now
 
 ChatMode = Literal["observe", "workspace"]
@@ -59,7 +60,7 @@ class CLIChatStore:
             if user_run_ids:
                 placeholders = ",".join("?" for _ in user_run_ids)
                 artifacts = connection.execute(
-                    "SELECT id,run_id,media_type,size_bytes,provenance FROM artifacts "
+                    "SELECT id,run_id,media_type,size_bytes,provenance,original_filename FROM artifacts "
                     f"WHERE run_id IN ({placeholders}) AND provenance IN "
                     "('user.input_image','user.input_image_original','user.input_document') "
                     "ORDER BY CASE provenance WHEN 'user.input_image_original' THEN 0 ELSE 1 END",
@@ -71,6 +72,9 @@ class CLIChatStore:
                             "artifact_id": artifact["id"],
                             "media_type": artifact["media_type"],
                             "size_bytes": artifact["size_bytes"],
+                            "filename": safe_upload_filename(
+                                artifact["original_filename"], artifact["media_type"]
+                            ),
                         }
                     )
         ordered_messages: list[dict[str, Any]] = []

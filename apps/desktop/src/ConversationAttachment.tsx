@@ -47,15 +47,15 @@ export function ConversationAttachment({attachment,client}:{attachment:Attachmen
       const url=URL.createObjectURL(blob);
       const link=document.createElement('a');
       link.href=url;
-      link.download=`xaa-attachment.${extensions[attachment.media_type]}`;
+      link.download=attachment.filename||`xaa-attachment.${extensions[attachment.media_type]}`;
       link.click();
       URL.revokeObjectURL(url);
     }catch{setUnavailable(true);}
     finally{setDownloading(false);}
   }
   return <figure className="conversation-attachment">
-    {isImage&&preview.startsWith('data:image/')&&<img src={preview} alt={`Saved ${labels[attachment.media_type]} attachment`}/>}
+    {isImage&&preview.startsWith('data:image/')&&<img src={preview} alt={`Saved ${attachment.filename||labels[attachment.media_type]} attachment`}/>}
     {!isImage&&<button type="button" className="secondary-button" onClick={()=>void download()} disabled={downloading}>{downloading?'Preparing download…':`Download ${labels[attachment.media_type]}`}</button>}
-    <figcaption>{labels[attachment.media_type]} · {(attachment.size_bytes/1024).toFixed(1)} KiB · retained with run{unavailable?' · unavailable':''}</figcaption>
+    <figcaption>{attachment.filename||labels[attachment.media_type]} · {labels[attachment.media_type]} · {(attachment.size_bytes/1024).toFixed(1)} KiB · retained with run{unavailable?' · unavailable':''}</figcaption>
   </figure>;
 }

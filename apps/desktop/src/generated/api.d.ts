@@ -2528,6 +2528,8 @@ export interface components {
             id: string;
             /** Media Type */
             media_type: string;
+            /** Original Filename */
+            original_filename?: string | null;
             /** Provenance */
             provenance: string;
             /** Run Id */
@@ -2541,6 +2543,8 @@ export interface components {
         CLIChatAttachmentRecord: {
             /** Artifact Id */
             artifact_id: string;
+            /** Filename */
+            filename: string;
             /**
              * Media Type
              * @enum {string}
@@ -2843,15 +2847,21 @@ export interface components {
             approved_web_search: boolean;
             /** Audio */
             audio?: string | null;
+            /** Audio Filename */
+            audio_filename?: string | null;
             /** Client Request Id */
             client_request_id?: string | null;
             command_grant?: components["schemas"]["CommandGrant"] | null;
             /** Document */
             document?: string | null;
+            /** Document Filename */
+            document_filename?: string | null;
             /** File Checks */
             file_checks?: components["schemas"]["FileContentCheck"][];
             /** Image */
             image?: string | null;
+            /** Image Filename */
+            image_filename?: string | null;
             /**
              * Max Iterations
              * @default 8

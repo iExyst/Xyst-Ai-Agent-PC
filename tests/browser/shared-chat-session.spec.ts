@@ -4,10 +4,10 @@ import {selectLocalModel} from './navigation';
 test('desktop resumes a terminal chat session through coordinator runs and saves the next turn',async({page},testInfo)=>{
   const stamp='2026-11-08T12:00:00Z';
   const originalMessages=[
-    {role:'user',content:'Earlier question',run_id:'terminal-run-1',attachments:[{artifact_id:'terminal-image',media_type:'image/png',size_bytes:32}]},
+    {role:'user',content:'Earlier question',run_id:'terminal-run-1',attachments:[{artifact_id:'terminal-image',filename:'earlier-image.png',media_type:'image/png',size_bytes:32}]},
     {role:'assistant',content:'Earlier reply',run_id:'terminal-run-1',attachments:[]},
   ];
-  let messages:Array<{role:string;content:string;run_id:string;attachments?:Array<{artifact_id:string;media_type:string;size_bytes:number}>}>=[...originalMessages];
+  let messages:Array<{role:string;content:string;run_id:string;attachments?:Array<{artifact_id:string;filename:string;media_type:string;size_bytes:number}>}>=[...originalMessages];
   const run={id:'desktop-chat-run',objective:'',state:'verifying',revision:1,acceptance_criteria:[],model:'fixture/model',workspace:'C:\\fixture',mode:'observe',created_at:stamp,updated_at:stamp,limits:{max_iterations:8,max_seconds:60,max_total_tokens:null,max_output_tokens:null,pre_inference_token_reservations:false},file_checks:[]};
   let submittedObjective='';
   let submittedImage='';
@@ -56,7 +56,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='DELETE'){deleted=true;messages=[];return route.fulfill({status:204,headers});}
     if(path==='/chat/sessions/terminal-chat/turn'&&request.method()==='POST'){
       const turn=request.postDataJSON();savedUserMessage=turn.user_message;savedAssistantMessage=turn.assistant_message;
-      const attachment=submittedImage?[{artifact_id:'chat-image',media_type:'image/png',size_bytes:32}]:submittedDocument?[{artifact_id:'chat-document',media_type:'application/pdf',size_bytes:32}]:undefined;
+      const attachment=submittedImage?[{artifact_id:'chat-image',filename:'chat-image.png',media_type:'image/png',size_bytes:32}]:submittedDocument?[{artifact_id:'chat-document',filename:'chat-document.pdf',media_type:'application/pdf',size_bytes:32}]:undefined;
       messages=[...messages,{role:'user',content:turn.user_message,run_id:turn.run_id,attachments:attachment??[]},{role:'assistant',content:turn.assistant_message,run_id:turn.run_id,attachments:[]}];
       return route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});
     }
@@ -136,8 +136,8 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.getByRole('button',{name:'Send message',exact:true}).click();
   await expect.poll(()=>submittedImage.startsWith('data:image/png;base64,')).toBe(true);
   await page.getByRole('link',{name:/New objective/}).click();
-  await expect(page.getByRole('img',{name:'Saved PNG image attachment'})).toHaveCount(2);
-  await expect(page.getByRole('img',{name:'Saved PNG image attachment'}).last()).toBeVisible();
+  await expect(page.getByRole('img',{name:/Saved .* attachment/})).toHaveCount(2);
+  await expect(page.getByRole('img',{name:/Saved .* attachment/}).last()).toBeVisible();
   await page.locator('details.advanced-options').evaluate(element=>{(element as HTMLDetailsElement).open=true;});
   await page.locator('#run-document').setInputFiles({name:'chat-document.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4 fixture')});
   await expect(page.getByText(/Attached: chat-document\.pdf/)).toBeVisible();
@@ -147,7 +147,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   const downloadEvent=page.waitForEvent('download');
   await page.getByRole('button',{name:'Download PDF document'}).click();
   const historicalDownload=await downloadEvent;
-  expect(historicalDownload.suggestedFilename()).toBe('xaa-attachment.pdf');
+  expect(historicalDownload.suggestedFilename()).toBe('chat-document.pdf');
   await expect(page.getByRole('list',{name:'Conversation messages'}).getByText('Earlier reply',{exact:true})).toBeVisible();
   await expect(page.getByRole('list',{name:'Conversation messages'})).toContainText('A'.repeat(300));
   page.once('dialog',dialog=>void dialog.accept());

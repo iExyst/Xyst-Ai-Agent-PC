@@ -216,8 +216,11 @@ class CreateRunRequest(BaseModel):
 
     objective: str = Field(min_length=1, max_length=10_000)
     image: str | None = Field(default=None, max_length=4_200_000)
+    image_filename: str | None = Field(default=None, max_length=512)
     document: str | None = Field(default=None, max_length=5_600_000)
+    document_filename: str | None = Field(default=None, max_length=512)
     audio: str | None = Field(default=None, max_length=5_600_000)
+    audio_filename: str | None = Field(default=None, max_length=512)
     transcription_url: str | None = Field(default=None, max_length=2_048)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
     workspace: str | None = Field(default=None, max_length=2_048)
@@ -265,6 +268,16 @@ class CreateRunRequest(BaseModel):
     @classmethod
     def validate_approved_web_hosts(cls, value: list[str]) -> list[str]:
         return normalize_approved_hosts(value)
+
+
+def validate_attachment_filenames(payload: CreateRunRequest) -> None:
+    """Reject display names that are not tied to their uploaded payload."""
+    if payload.image_filename is not None and payload.image is None:
+        raise ValueError("An image filename requires an image attachment.")
+    if payload.document_filename is not None and payload.document is None:
+        raise ValueError("A document filename requires a document attachment.")
+    if payload.audio_filename is not None and payload.audio is None:
+        raise ValueError("An audio filename requires an audio attachment.")
 
 
 class RestoreBackupRequest(BaseModel):
@@ -4348,6 +4361,7 @@ def create_app(
                 > 1
             ):
                 raise ValueError("Attach one image, document or audio file per run.")
+            validate_attachment_filenames(payload)
             if payload.audio is not None:
                 if not payload.transcription_url:
                     raise ValueError("Enter a local transcription endpoint to use WAV audio.")
@@ -4604,9 +4618,13 @@ def create_app(
                 image_media_type=image_type,
                 image_source_bytes=image_source_bytes,
                 image_source_media_type=image_source_type,
+                image_filename=payload.image_filename,
                 document_bytes=document_bytes,
                 document_media_type=document_type,
                 document_text=document_text,
+                document_filename=payload.audio_filename
+                if payload.audio is not None
+                else payload.document_filename,
                 document_page_images=document_page_images,
                 document_ocr_usage=document_ocr_usage,
                 client_request_id=payload.client_request_id,

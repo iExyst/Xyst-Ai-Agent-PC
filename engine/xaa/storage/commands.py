@@ -971,7 +971,8 @@ class CommandJournal:
                 os.fsync(target.fileno())
             artifact_id = str(uuid4())
             connection.execute(
-                "INSERT INTO artifacts VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO artifacts (id,run_id,task_id,media_type,storage_key,size_bytes,sha256,provenance,created_at,original_filename) "
+                "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL)",
                 (
                     artifact_id,
                     run_id,

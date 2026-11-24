@@ -817,7 +817,7 @@ try {
     'from xaa.storage.runs import RunStore',
     'from xaa.storage.cli_chat import CLIChatStore',
     'store=RunStore(Path(sys.argv[1]))',
-    'run=store.create_run(objective="Retain a saved PDF attachment",acceptance_criteria=[],workspace=sys.argv[4],mode="observe",model=sys.argv[3],document_bytes=base64.b64decode(sys.argv[5]),document_media_type="application/pdf",document_text="NATIVE-SAVED-PDF-MARKER")',
+    'run=store.create_run(objective="Retain a saved PDF attachment",acceptance_criteria=[],workspace=sys.argv[4],mode="observe",model=sys.argv[3],document_bytes=base64.b64decode(sys.argv[5]),document_media_type="application/pdf",document_text="NATIVE-SAVED-PDF-MARKER",document_filename="native-review.pdf")',
     'chat=CLIChatStore(store)',
     'chat.ensure_session(sys.argv[2],model=sys.argv[3],workspace=sys.argv[4],mode="observe")',
     'saved=chat.append_turn(sys.argv[2],run_id=run["id"],model=sys.argv[3],workspace=sys.argv[4],mode="observe",user_message="Review this saved PDF.",assistant_message="The PDF is retained with this conversation.")',
@@ -836,7 +836,7 @@ try {
   const downloadEvent = second.page.waitForEvent('download', { timeout: 15000 });
   await attachmentDownloadButton.click();
   const attachmentDownload = await downloadEvent;
-  if (attachmentDownload.suggestedFilename() !== 'xaa-attachment.pdf') {
+  if (attachmentDownload.suggestedFilename() !== 'native-review.pdf') {
     throw new Error(`Unexpected native saved-PDF filename: ${attachmentDownload.suggestedFilename()}`);
   }
   const downloadedAttachment = await readFile(await attachmentDownload.path());
@@ -861,7 +861,7 @@ try {
   audioPayload.copy(audioBytes, 44);
   const seedAudio = seedAttachment.replaceAll(
     'Retain a saved PDF attachment', 'Retain a saved WAV attachment',
-  ).replaceAll('application/pdf', 'audio/wav').replaceAll(
+  ).replaceAll('native-review.pdf', 'native-note.wav').replaceAll('application/pdf', 'audio/wav').replaceAll(
     'NATIVE-SAVED-PDF-MARKER', 'NATIVE-SAVED-WAV-MARKER',
   ).replaceAll('Review this saved PDF.', 'Review this saved WAV.').replaceAll(
     'The PDF is retained with this conversation.', 'The WAV is retained with this conversation.',
@@ -877,7 +877,7 @@ try {
   const audioDownloadEvent = second.page.waitForEvent('download', { timeout: 15000 });
   await audioDownloadButton.click();
   const audioDownload = await audioDownloadEvent;
-  if (audioDownload.suggestedFilename() !== 'xaa-attachment.wav') {
+  if (audioDownload.suggestedFilename() !== 'native-note.wav') {
     throw new Error(`Unexpected native saved-WAV filename: ${audioDownload.suggestedFilename()}`);
   }
   const downloadedAudio = await readFile(await audioDownload.path());

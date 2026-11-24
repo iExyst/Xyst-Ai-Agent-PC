@@ -16,6 +16,18 @@
             "title": "Media Type",
             "type": "string"
           },
+          "original_filename": {
+            "anyOf": [
+              {
+                "maxLength": 180,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
           "provenance": {
             "title": "Provenance",
             "type": "string"
@@ -52,6 +64,12 @@
             "title": "Artifact Id",
             "type": "string"
           },
+          "filename": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
           "media_type": {
             "enum": [
               "image/png",
@@ -77,6 +95,7 @@
         },
         "required": [
           "artifact_id",
+          "filename",
           "media_type",
           "size_bytes"
         ],
@@ -867,6 +886,18 @@
             ],
             "title": "Audio"
           },
+          "audio_filename": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Filename"
+          },
           "client_request_id": {
             "anyOf": [
               {
@@ -903,6 +934,18 @@
             ],
             "title": "Document"
           },
+          "document_filename": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Filename"
+          },
           "file_checks": {
             "items": {
               "$ref": "#/components/schemas/FileContentCheck"
@@ -922,6 +965,18 @@
               }
             ],
             "title": "Image"
+          },
+          "image_filename": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Filename"
           },
           "max_iterations": {
             "default": 8,

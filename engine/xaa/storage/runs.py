@@ -20,9 +20,10 @@ from typing import Any, cast
 from xaa.providers.contracts import public_assistant_message, public_run_event
 from xaa.runtime.file_handles import opened_file_path
 from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
+from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 40
+DATABASE_SCHEMA_VERSION = 41
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -233,7 +234,8 @@ class RunStore:
             connection.execute("BEGIN IMMEDIATE")
             self.require_lease(connection, run_id, token)
             connection.execute(
-                "INSERT INTO artifacts VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO artifacts (id,run_id,task_id,media_type,storage_key,size_bytes,sha256,provenance,created_at,original_filename) "
+                "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL)",
                 (identity, run_id, media_type, filename, size, digest, provenance, created),
             )
             self.record_event(
@@ -255,7 +257,7 @@ class RunStore:
     def list_artifacts(self, run_id: str) -> list[dict[str, Any]]:
         with self._connection() as connection:
             rows = connection.execute(
-                "SELECT id, run_id, media_type, size_bytes, sha256, provenance, created_at FROM artifacts WHERE run_id = ? ORDER BY created_at",
+                "SELECT id, run_id, media_type, size_bytes, sha256, provenance, created_at, original_filename FROM artifacts WHERE run_id = ? ORDER BY created_at",
                 (run_id,),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -429,7 +431,8 @@ class RunStore:
                     size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
                     sha256 TEXT NOT NULL,
                     provenance TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    original_filename TEXT
                 );
                 CREATE TABLE IF NOT EXISTS approvals (
                     id TEXT PRIMARY KEY,
@@ -959,6 +962,11 @@ class RunStore:
             }
             if "source_uri" not in memory_columns:
                 connection.execute("ALTER TABLE memories ADD COLUMN source_uri TEXT")
+            artifact_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(artifacts)")
+            }
+            if "original_filename" not in artifact_columns:
+                connection.execute("ALTER TABLE artifacts ADD COLUMN original_filename TEXT")
             identity_event_schema = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='channel_identity_link_events'"
             ).fetchone()
@@ -1095,9 +1103,11 @@ class RunStore:
         image_media_type: str | None = None,
         image_source_bytes: bytes | None = None,
         image_source_media_type: str | None = None,
+        image_filename: str | None = None,
         document_bytes: bytes | None = None,
         document_media_type: str | None = None,
         document_text: str | None = None,
+        document_filename: str | None = None,
         document_page_images: list[tuple[int, bytes]] | None = None,
         document_ocr_usage: list[tuple[str, dict[str, int]]] | None = None,
         client_request_id: str | None = None,
@@ -1179,6 +1189,8 @@ class RunStore:
             raise ValueError("Original image sources must be between 1 byte and 3 MiB.")
         if image_source_bytes is not None and image_bytes is None:
             raise ValueError("An original image source requires its normalized model image.")
+        if image_filename is not None and image_bytes is None and image_source_bytes is None:
+            raise ValueError("An image filename requires an attached image.")
         document_values = (document_bytes, document_media_type, document_text)
         document_page_images = document_page_images or []
         if any(value is not None for value in document_values) and not all(
@@ -1205,6 +1217,8 @@ class RunStore:
                 raise ValueError("Extracted document text is empty or exceeds its storage limit.")
             if document_media_type == "audio/wav" and not document_bytes.startswith(b"RIFF"):
                 raise ValueError("Attached WAV audio is invalid.")
+        elif document_filename is not None:
+            raise ValueError("A document filename requires an attached document.")
         elif document_page_images:
             raise ValueError("Scanned page images require an attached document.")
         if document_page_images and document_media_type != "application/pdf":
@@ -1267,9 +1281,15 @@ class RunStore:
             }
         run_id = str(uuid.uuid4())
         now = utc_now()
-        staged_artifacts: list[tuple[str, str, str, bytes, str]] = []
+        staged_artifacts: list[tuple[str, str, str, bytes, str, str | None]] = []
 
-        def stage_artifact(data: bytes, media_type: str, provenance: str) -> str:
+        def stage_artifact(
+            data: bytes,
+            media_type: str,
+            provenance: str,
+            *,
+            display_filename: str | None = None,
+        ) -> str:
             extension = {
                 "image/png": "png",
                 "image/jpeg": "jpg",
@@ -1288,19 +1308,45 @@ class RunStore:
             with (artifact_directory / filename).open("xb") as artifact_file:
                 artifact_file.write(data)
             artifact_id = str(uuid.uuid4())
-            staged_artifacts.append((artifact_id, filename, media_type, data, provenance))
+            staged_artifacts.append(
+                (
+                    artifact_id,
+                    filename,
+                    media_type,
+                    data,
+                    provenance,
+                    safe_upload_filename(display_filename, media_type)
+                    if display_filename is not None
+                    else None,
+                )
+            )
             return artifact_id
 
         if image_bytes is not None and image_media_type is not None:
-            stage_artifact(image_bytes, image_media_type, "user.input_image")
+            stage_artifact(
+                image_bytes,
+                image_media_type,
+                "user.input_image",
+                display_filename=image_filename if image_source_bytes is None else None,
+            )
         if image_source_bytes is not None and image_source_media_type is not None:
-            stage_artifact(image_source_bytes, image_source_media_type, "user.input_image_original")
+            stage_artifact(
+                image_source_bytes,
+                image_source_media_type,
+                "user.input_image_original",
+                display_filename=image_filename,
+            )
         if (
             document_bytes is not None
             and document_media_type is not None
             and document_text is not None
         ):
-            stage_artifact(document_bytes, document_media_type, "user.input_document")
+            stage_artifact(
+                document_bytes,
+                document_media_type,
+                "user.input_document",
+                display_filename=document_filename,
+            )
             stage_artifact(document_text.encode("utf-8"), "text/plain", "user.input_document_text")
             for page_number, image in document_page_images:
                 stage_artifact(image, "image/png", f"user.input_document_page:{page_number}")
@@ -1501,9 +1547,17 @@ class RunStore:
                         "purpose": "scanned_pdf_ocr",
                     },
                 )
-            for artifact_id, filename, media_type, content, provenance in staged_artifacts:
+            for (
+                artifact_id,
+                filename,
+                media_type,
+                content,
+                provenance,
+                display_filename,
+            ) in staged_artifacts:
                 connection.execute(
-                    "INSERT INTO artifacts VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO artifacts (id,run_id,task_id,media_type,storage_key,size_bytes,sha256,provenance,created_at,original_filename) "
+                    "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         artifact_id,
                         run_id,
@@ -1513,6 +1567,7 @@ class RunStore:
                         hashlib.sha256(content).hexdigest(),
                         provenance,
                         now,
+                        display_filename,
                     ),
                 )
             if image_bytes is not None and staged_artifacts:
@@ -1536,7 +1591,7 @@ class RunStore:
                         "media_type": staged_artifacts[0][2],
                     },
                 )
-            for artifact_id, _, media_type, _, provenance in staged_artifacts:
+            for artifact_id, _, media_type, _, provenance, _ in staged_artifacts:
                 if provenance.startswith("user.input_document_page:"):
                     self.record_event(
                         connection,

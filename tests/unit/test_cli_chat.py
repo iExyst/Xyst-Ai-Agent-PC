@@ -188,6 +188,11 @@ def test_shared_chat_turn_exposes_its_retained_image_artifact(
         image_media_type=media_type,
         image_source_bytes=original,
         image_source_media_type=source_media_type,
+        image_filename="my-photo.gif"
+        if source_media_type == "image/gif"
+        else "my-photo.webp"
+        if source_media_type
+        else "my-photo.png",
     )
     with store.connection() as connection:
         source = connection.execute(
@@ -209,6 +214,11 @@ def test_shared_chat_turn_exposes_its_retained_image_artifact(
     assert saved["messages"][0]["attachments"] == [
         {
             "artifact_id": source["id"],
+            "filename": "my-photo.gif"
+            if source_media_type == "image/gif"
+            else "my-photo.webp"
+            if source_media_type
+            else "my-photo.png",
             "media_type": source_media_type or media_type,
             "size_bytes": source["size_bytes"],
         }
@@ -248,6 +258,7 @@ def test_shared_chat_turn_exposes_its_retained_document_or_audio_artifact(
         document_bytes=data,
         document_media_type=media_type,
         document_text="Extracted untrusted reference text.",
+        document_filename="native-note.wav" if media_type == "audio/wav" else "source-file",
     )
     with store.connection() as connection:
         source = connection.execute(
@@ -268,6 +279,16 @@ def test_shared_chat_turn_exposes_its_retained_document_or_audio_artifact(
     assert saved["messages"][0]["attachments"] == [
         {
             "artifact_id": source["id"],
+            "filename": "native-note.wav"
+            if media_type == "audio/wav"
+            else "source-file."
+            + {
+                "application/pdf": "pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+                "text/plain": "txt",
+                "text/markdown": "md",
+            }[media_type],
             "media_type": media_type,
             "size_bytes": source["size_bytes"],
         }

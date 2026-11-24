@@ -9,6 +9,40 @@ from xaa.storage.schedules import ScheduleStore, parse_local_time
 from xaa.storage.tasks import TaskStore
 
 
+def test_schema_forty_one_adds_original_artifact_filename_without_data_loss(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-forty-artifact-filename.sqlite3"
+    store = RunStore(database)
+    run = store.create_run(
+        objective="Keep an existing attachment",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        document_bytes=b"retained attachment bytes",
+        document_media_type="application/pdf",
+        document_text="Retained attachment text",
+    )
+    artifact = next(
+        item
+        for item in store.list_artifacts(run["id"])
+        if item["provenance"] == "user.input_document"
+    )
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE artifacts DROP COLUMN original_filename")
+        connection.execute("PRAGMA user_version=40")
+
+    migrated = RunStore(database)
+    recovered = next(
+        item for item in migrated.list_artifacts(run["id"]) if item["id"] == artifact["id"]
+    )
+    assert recovered["original_filename"] is None
+    assert recovered["size_bytes"] == artifact["size_bytes"]
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_v1_tool_journal_migrates_without_changing_approval_references(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "legacy.sqlite3")
     run_id = store.create_run(

@@ -140,6 +140,7 @@ class EmergencyStopResult(BaseModel):
 
 class CLIChatAttachmentRecord(BaseModel):
     artifact_id: str
+    filename: str = Field(min_length=1, max_length=180)
     media_type: Literal[
         "image/png",
         "image/jpeg",
@@ -212,6 +213,7 @@ class ArtifactRecord(BaseModel):
     sha256: str
     provenance: str
     created_at: datetime
+    original_filename: str | None = Field(default=None, max_length=180)
 
 
 class MemoryRecord(BaseModel):

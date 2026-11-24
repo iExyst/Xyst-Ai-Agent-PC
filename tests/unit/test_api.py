@@ -1263,7 +1263,12 @@ def test_run_image_is_validated_stored_as_artifact_and_reconstructed(workspace_t
         response = client.post(
             "/runs",
             headers=headers,
-            json={"objective": "Describe this image", "model": "fixture", "image": encoded},
+            json={
+                "objective": "Describe this image",
+                "model": "fixture",
+                "image": encoded,
+                "image_filename": "original photo.png",
+            },
         )
         assert response.status_code == 201
         run_id = response.json()["id"]
@@ -1271,6 +1276,7 @@ def test_run_image_is_validated_stored_as_artifact_and_reconstructed(workspace_t
         artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
         assert len(artifacts) == 1
         assert artifacts[0]["media_type"] == "image/png"
+        assert artifacts[0]["original_filename"] == "original photo.png"
         event = next(
             item
             for item in store.public_events(run_id)
@@ -1366,7 +1372,11 @@ def test_run_text_document_is_extracted_and_persisted_for_recovery(workspace_tmp
         response = client.post(
             "/runs",
             headers=headers,
-            json={"objective": "Summarize this attachment", "document": encoded},
+            json={
+                "objective": "Summarize this attachment",
+                "document": encoded,
+                "document_filename": "field-notes.md",
+            },
         )
         assert response.status_code == 201
         run_id = response.json()["id"]
@@ -1377,6 +1387,7 @@ def test_run_text_document_is_extracted_and_persisted_for_recovery(workspace_tmp
             "user.input_document_text",
         }
         original = next(item for item in artifacts if item["provenance"] == "user.input_document")
+        assert original["original_filename"] == "field-notes.md"
         downloaded = client.get(f"/artifacts/{original['id']}", headers=headers)
         assert downloaded.content == source
         assert downloaded.headers["content-type"].split(";", 1)[0] == "text/markdown"
