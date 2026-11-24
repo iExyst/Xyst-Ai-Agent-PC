@@ -106,6 +106,7 @@ def test_npm_v3_lock_is_bound_to_procedure_assets_and_runtime() -> None:
 
     assert "node_arch" not in json.loads(lock.canonical_json())
     assert "node_libc" not in json.loads(lock.canonical_json())
+    assert "dev_engine_warnings" not in json.loads(lock.canonical_json())
     assert lock.lockfile_sha256 == hashlib.sha256(raw).hexdigest()
     assert lock.packages[0].name == "left-pad"
     assert lock.packages[0].version == "1.3.0"
@@ -227,6 +228,7 @@ def test_package_manifest_checks_dev_engines(dev_engines: dict[str, Any], compat
         assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
         if dev_engines == {"runtime": {"name": "nodejs", "onFail": "warn"}}:
             assert lock.dev_engine_warnings == ("runtime",)
+            assert json.loads(lock.canonical_json())["dev_engine_warnings"] == ["runtime"]
         else:
             assert lock.dev_engine_warnings == ()
     else:
