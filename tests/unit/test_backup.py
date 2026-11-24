@@ -58,7 +58,7 @@ def test_bundle_restores_database_and_verified_artifact_bytes(workspace_tmp_path
     (artifact_root / key).write_bytes(payload)
     with store.connection() as connection:
         connection.execute(
-            "INSERT INTO artifacts VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO artifacts (id,run_id,task_id,media_type,storage_key,size_bytes,sha256,provenance,created_at,original_filename) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 "artifact-1",
                 run["id"],
@@ -69,6 +69,7 @@ def test_bundle_restores_database_and_verified_artifact_bytes(workspace_tmp_path
                 hashlib.sha256(payload).hexdigest(),
                 "test",
                 "2026-11-05T00:00:00+00:00",
+                "saved-output.txt",
             ),
         )
 
@@ -79,6 +80,7 @@ def test_bundle_restores_database_and_verified_artifact_bytes(workspace_tmp_path
     assert restored.get_run(run["id"]) == store.get_run(run["id"])
     assert (destination / "artifacts" / key).read_bytes() == payload
     assert restored.get_artifact("artifact-1")["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert restored.list_artifacts(run["id"])[0]["original_filename"] == "saved-output.txt"
     with pytest.raises(FileExistsError):
         restore_backup_bundle(bundle, destination)
 
