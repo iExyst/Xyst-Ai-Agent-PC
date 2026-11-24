@@ -1387,6 +1387,9 @@ def test_extracts_xlsx_shared_inline_numeric_and_formula_cells_without_evaluatin
         ("0.333333", "# ?/?", "1/3"),
         ("1.5", "??/??", "3/2"),
         ("0", "# ?/?", "0"),
+        ("-1234", "#,##0 ;(#,##0)", "(1,234)"),
+        ("-1234.5", "#,##0.00;[Red](#,##0.00)", "(1,234.50)"),
+        ("1234.5", "#,##0.00;(#,##0.00)", "1,234.50"),
         ("12345", "0.00E+00", "1.23E+04"),
         ("-0.01234", "0.0E+00", "-1.2E-02"),
         ("1200", "0.##E-0", "1.2E3"),
@@ -1411,13 +1414,25 @@ def test_xlsx_fraction_display_rejects_malformed_or_unbounded_values():
     assert _xlsx_numeric_display("1000000000001", "# ??/??") is None
 
 
+def test_xlsx_sectioned_numeric_display_rejects_unsupported_sections():
+    assert _xlsx_numeric_display("1", "#,##0;(#,##0);-") is None
+
+
 def test_xlsx_maps_built_in_fraction_format_ids():
     styles = (
         b'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        b'<cellXfs><xf numFmtId="12"/><xf numFmtId="13"/></cellXfs></styleSheet>'
+        b'<cellXfs><xf numFmtId="12"/><xf numFmtId="13"/><xf numFmtId="37"/>'
+        b'<xf numFmtId="38"/><xf numFmtId="39"/><xf numFmtId="40"/></cellXfs></styleSheet>'
     )
 
-    assert _parse_xlsx_number_formats(styles) == ["# ?/?", "# ??/??"]
+    assert _parse_xlsx_number_formats(styles) == [
+        "# ?/?",
+        "# ??/??",
+        "#,##0 ;(#,##0)",
+        "#,##0 ;[Red](#,##0)",
+        "#,##0.00;(#,##0.00)",
+        "#,##0.00;[Red](#,##0.00)",
+    ]
 
 
 def test_extracts_xlsx_values_with_optional_decimal_display_formats():
@@ -1453,6 +1468,15 @@ def test_extracts_xlsx_values_with_fraction_display_formats():
     )
 
     assert "S1=1.25 [display: 1 1/4] [number format: # ?/?]" in result
+
+
+def test_extracts_xlsx_values_with_parenthesized_negative_display():
+    result = extract_document_text(
+        make_xlsx(formatted_numeric_cells=(("S1", "-1234.5", "#,##0.00;[Red](#,##0.00)"),)),
+        XLSX_TYPE,
+    )
+
+    assert "S1=-1234.5 [display: (1,234.50)]" in result
 
 
 @pytest.mark.parametrize("sheet_state", ["hidden", "veryHidden"])

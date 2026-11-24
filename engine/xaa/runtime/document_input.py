@@ -2307,6 +2307,27 @@ def _xlsx_numeric_display(value: str, format_code: str) -> str | None:
     """Render common fixed-point, fraction, scientific, currency and percentage formats."""
     if not value or len(value) > 128:
         return None
+    basic_numeric_format = r"(?:[$€£¥])?(?:#,##0|0)(?:\.[0#]{1,8})?%?"
+    sectioned_format = re.fullmatch(
+        rf"(?P<positive>{basic_numeric_format})\s*;\s*(?:\[Red\])?"
+        rf"\((?P<negative>{basic_numeric_format})\)",
+        format_code,
+        re.IGNORECASE,
+    )
+    if sectioned_format is not None:
+        try:
+            number = Decimal(value)
+            if not number.is_finite():
+                return None
+        except InvalidOperation:
+            return None
+        if number < 0:
+            rendered_negative = _xlsx_numeric_display(
+                str(abs(number)), sectioned_format.group("negative")
+            )
+            return f"({rendered_negative})" if rendered_negative is not None else None
+        format_code = sectioned_format.group("positive")
+
     fraction_format = re.fullmatch(
         r"(?:(?P<whole>[0#])\s+)?(?P<numerator>\?{1,3})/(?P<denominator>\?{1,3})",
         format_code,
