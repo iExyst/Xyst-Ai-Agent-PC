@@ -31,6 +31,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Installed engine readiness acceptance failed.' }
     $report.readiness = Get-Content -LiteralPath $readinessReport -Raw | ConvertFrom-Json
     if (-not $report.readiness.passed -or $report.readiness.engine_sha256 -ne $manifest.artifacts.engine.sha256 -or $report.readiness.checks -notcontains 'nested_snapshot_access') { throw 'Installed engine readiness report did not verify nested access.' }
+    $npmLockReport = Join-Path $root 'npm-lock/report.json'
+    & uv run python (Join-Path $workspace 'scripts/frozen_npm_lock_diagnostic.py') --engine $engine --report $npmLockReport
+    if ($LASTEXITCODE -ne 0) { throw 'Installed npm lock worker acceptance failed.' }
+    $report.npm_lock = Get-Content -LiteralPath $npmLockReport -Raw | ConvertFrom-Json
+    if (-not $report.npm_lock.passed -or -not $report.npm_lock.unsupported_registry_override_rejected -or $report.npm_lock.engine_sha256 -ne $manifest.artifacts.engine.sha256) { throw 'Installed npm lock worker report did not verify the packaged engine.' }
+    $report.installed_npm_lock_worker_verified = $true
     $commandReport = Join-Path $root 'command/report.json'
     & uv run python (Join-Path $workspace 'scripts/frozen_windows_appcontainer_command.py') --engine $engine --report $commandReport
     if ($LASTEXITCODE -ne 0) { throw 'Installed engine coordinator command acceptance failed.' }
@@ -46,7 +52,7 @@ try {
     } else {
         $report.binaries_removed = $false
     }
-    $report.passed = $report.installed_binary_hashes_match -and $report.installed_engine_readiness_verified -and $report.installed_coordinator_command_verified -and $report.binaries_removed -and $report.uninstaller_exit_code -eq 0
+    $report.passed = $report.installed_binary_hashes_match -and $report.installed_engine_readiness_verified -and $report.installed_npm_lock_worker_verified -and $report.installed_coordinator_command_verified -and $report.binaries_removed -and $report.uninstaller_exit_code -eq 0
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'report.json') -Encoding utf8
 }
 if (-not $report.passed) { throw "Installed AppContainer acceptance failed. Evidence: $root" }
