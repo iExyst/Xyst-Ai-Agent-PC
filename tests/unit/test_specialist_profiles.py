@@ -77,6 +77,15 @@ def _add_text_resource(store: RunStore, identity: str, path: str, content: bytes
     _add_resource(store, identity, path, content)
 
 
+def test_specialist_procedure_rejects_malformed_linked_png(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-bad-image.sqlite")
+    _active_procedure(store)
+    _add_resource(store, "procedure-a", "references/diagram.png", b"not a PNG", "image/png")
+
+    with pytest.raises(ValueError, match="file signature"):
+        SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+
+
 class ProfileProvider(LMStudioProvider):
     async def models(self) -> list[ModelInfo]:
         return [ModelInfo(id="parent/model"), ModelInfo(id="research/model")]

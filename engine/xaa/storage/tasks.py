@@ -1,5 +1,6 @@
 """Durable specialist plans sharing the parent run's authority boundary."""
 
+import base64
 import hashlib
 import json
 import re
@@ -18,6 +19,7 @@ from xaa.storage.skills import is_text_asset_media_type, snapshot_digest
 from xaa.storage.specialist_profiles import (
     MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES,
     MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES,
+    SPECIALIST_IMAGE_MEDIA_TYPES,
     specialist_procedure_resources,
 )
 
@@ -95,6 +97,7 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         path = resource.get("path")
         media_type = resource.get("media_type")
         text = resource.get("content")
+        encoded = resource.get("content_base64")
         digest = resource.get("sha256")
         if (
             not isinstance(path, str)
@@ -102,8 +105,6 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
             or len(path) > 512
             or path in seen_paths
             or not isinstance(media_type, str)
-            or not is_text_asset_media_type(media_type)
-            or not isinstance(text, str)
             or len(media_type) > 128
             or not isinstance(digest, str)
         ):
@@ -117,7 +118,24 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         ):
             raise ValueError("Saved specialist procedure resource path is invalid.")
         seen_paths.add(path)
-        raw = text.encode("utf-8")
+        if is_text_asset_media_type(media_type) and isinstance(text, str) and encoded is None:
+            raw = text.encode("utf-8")
+        elif (
+            media_type in SPECIALIST_IMAGE_MEDIA_TYPES and isinstance(encoded, str) and text is None
+        ):
+            try:
+                raw = base64.b64decode(encoded, validate=True)
+            except ValueError as exc:
+                raise ValueError("Saved specialist image is not valid base64.") from exc
+            signature_valid = (
+                raw.startswith(b"\x89PNG\r\n\x1a\n")
+                if media_type == "image/png"
+                else raw.startswith(b"\xff\xd8\xff")
+            )
+            if not signature_valid:
+                raise ValueError("Saved specialist image failed its file signature check.")
+        else:
+            raise ValueError("Saved specialist procedure resource content is invalid.")
         if len(raw) > 64 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
             raise ValueError("Saved specialist procedure resource failed its integrity check.")
         total_resource_bytes += len(raw)

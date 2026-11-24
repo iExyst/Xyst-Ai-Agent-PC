@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 from pathlib import PurePosixPath
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from xaa.storage.skills import is_text_asset_media_type
 MAX_SPECIALIST_PROCEDURE_CONTEXT_BYTES = 80 * 1024
 MAX_SPECIALIST_PROCEDURE_RESOURCES = 32
 MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES = 1024 * 1024
+SPECIALIST_IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png"})
 
 
 def specialist_procedure_environments(
@@ -45,7 +47,7 @@ def specialist_procedure_environments(
 def specialist_procedure_resources(
     connection: Any, skill_id: str, version: int, content_bytes: int
 ) -> list[dict[str, str]]:
-    """Snapshot digest-checked UTF-8 resources for on-demand specialist reads."""
+    """Snapshot digest-checked text and PNG/JPEG resources for specialists."""
     rows = connection.execute(
         "SELECT relative_path,media_type,size_bytes,sha256,content FROM skill_version_assets "
         "WHERE skill_id=? AND version=? ORDER BY relative_path LIMIT 33",
@@ -69,29 +71,47 @@ def specialist_procedure_resources(
         ):
             raise ValueError("A linked specialist procedure resource path is invalid.")
         raw = bytes(row["content"])
-        if not is_text_asset_media_type(str(row["media_type"])):
-            raise ValueError("Specialist procedures can use only linked UTF-8 text resources.")
+        media_type = str(row["media_type"])
+        if (
+            not is_text_asset_media_type(media_type)
+            and media_type not in SPECIALIST_IMAGE_MEDIA_TYPES
+        ):
+            raise ValueError(
+                "Specialist procedures can use linked UTF-8 text, PNG, and JPEG resources only."
+            )
         if (
             len(raw) > 64 * 1024
             or int(row["size_bytes"]) != len(raw)
             or hashlib.sha256(raw).hexdigest() != row["sha256"]
         ):
             raise ValueError("A linked specialist procedure resource failed its integrity check.")
-        try:
-            content = raw.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
+        content = ""
+        if is_text_asset_media_type(media_type):
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
+        else:
+            signature_valid = (
+                raw.startswith(b"\x89PNG\r\n\x1a\n")
+                if media_type == "image/png"
+                else raw.startswith(b"\xff\xd8\xff")
+            )
+            if not signature_valid:
+                raise ValueError("A linked specialist image failed its file signature check.")
         total_bytes += len(raw)
         if total_bytes > MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES:
-            raise ValueError("Specialist procedure linked text resources must total 1 MiB or less.")
-        resources.append(
-            {
-                "path": path,
-                "media_type": str(row["media_type"]),
-                "sha256": str(row["sha256"]),
-                "content": content,
-            }
-        )
+            raise ValueError("Specialist procedure linked resources must total 1 MiB or less.")
+        resource = {
+            "path": path,
+            "media_type": media_type,
+            "sha256": str(row["sha256"]),
+        }
+        if is_text_asset_media_type(media_type):
+            resource["content"] = content
+        else:
+            resource["content_base64"] = base64.b64encode(raw).decode("ascii")
+        resources.append(resource)
     return resources
 
 
