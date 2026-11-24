@@ -607,10 +607,14 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
         if not isinstance(raw_cpu, list):
             raise ValueError("npm package.json cpu must be a bounded list of architecture names.")
         raw_cpu_values = cast(list[object], raw_cpu)
-        if not raw_cpu_values or len(raw_cpu_values) > 32 or any(
-            not isinstance(value, str)
-            or _NPM_PLATFORM_NAME.fullmatch(value.removeprefix("!")) is None
-            for value in raw_cpu_values
+        if (
+            not raw_cpu_values
+            or len(raw_cpu_values) > 32
+            or any(
+                not isinstance(value, str)
+                or _NPM_PLATFORM_NAME.fullmatch(value.removeprefix("!")) is None
+                for value in raw_cpu_values
+            )
         ):
             raise ValueError("npm package.json cpu must be a bounded list of architecture names.")
         if lock.node_arch is None:

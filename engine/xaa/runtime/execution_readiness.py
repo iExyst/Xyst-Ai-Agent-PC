@@ -700,7 +700,10 @@ class ExecutionReadiness:
                         or (raw_npm is not None and raw_node is None)
                         or (raw_arch is not None and raw_node is None)
                         or (raw_node is not None and not isinstance(raw_arch, str))
-                        or (isinstance(raw_arch, str) and not re.fullmatch(r"[a-z0-9_]{1,32}", raw_arch))
+                        or (
+                            isinstance(raw_arch, str)
+                            and not re.fullmatch(r"[a-z0-9_]{1,32}", raw_arch)
+                        )
                     ):
                         raise ValueError("Node runtime probe returned invalid metadata.")
                     node_version = raw_node if isinstance(raw_node, str) else None

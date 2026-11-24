@@ -158,10 +158,7 @@ async def test_npm_lock_worker_rejects_incompatible_root_os(frozen_worker: bool)
 @pytest.mark.parametrize("frozen_worker", [False, True])
 async def test_npm_lock_worker_rejects_incompatible_root_cpu(frozen_worker: bool):
     _package_manifest, package_lock = _fixtures()
-    manifest = (
-        b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},'
-        b'"cpu":["arm64"]}'
-    )
+    manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"cpu":["arm64"]}'
 
     with pytest.raises(NpmLockInspectionError):
         await inspect_npm_package_lock_in_appcontainer(
