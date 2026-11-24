@@ -937,6 +937,6 @@ The imported procedure lock inspector binds an optional `.npmrc` to the exact so
 
 ## Exercise the npm lock worker in the installed Windows package (2026-11-24)
 
-The installed AppContainer smoke invokes the package's frozen engine with deterministic lock fixtures, confirms the two supported `.npmrc` options are returned in the reviewed proposal, and confirms a registry override is rejected. The local source/frozen worker test passes (2), and the diagnostic passes against the current frozen engine. Hosted installed-package coverage is pending. No registry access or model inference is used.
+The installed AppContainer smoke invokes the package's frozen engine with deterministic lock fixtures, confirms the two supported `.npmrc` options are returned in the reviewed proposal, and confirms a registry override is rejected. Local source/frozen worker coverage passes (2). Exact-source Windows CI [45445371858](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45445371858) passed 1,694 tests and skipped 29; exact-commit installer [45445461577](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45445461577) passed all 58 steps. The installed diagnostic's engine hash matches the package manifest, and its report is preserved at [`.acceptance/hosted-installed-npm-lock-45445461577/`](../../.acceptance/hosted-installed-npm-lock-45445461577/). This verifies isolated review in the shipped engine; it does not exercise offline npm installation through the installed UI. No registry access or model inference is used.
 
 \n
