@@ -26,12 +26,34 @@ class BatchCheck(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    kind: Literal["final_equals", "final_contains", "tool_called", "tool_completed", "state_equals"]
+    kind: Literal[
+        "final_equals",
+        "final_contains",
+        "tool_called",
+        "tool_completed",
+        "state_equals",
+        "artifact_count_equals",
+    ]
     expected: str = Field(min_length=1, max_length=10_000)
+
+    @model_validator(mode="after")
+    def validate_artifact_count(self) -> BatchCheck:
+        if self.kind == "artifact_count_equals" and (
+            not self.expected.isdecimal() or len(self.expected) > 5 or int(self.expected) > 10_000
+        ):
+            raise ValueError("Artifact count must be a decimal integer from 0 to 10000.")
+        return self
 
 
 class BatchCheckResult(BaseModel):
-    kind: Literal["final_equals", "final_contains", "tool_called", "tool_completed", "state_equals"]
+    kind: Literal[
+        "final_equals",
+        "final_contains",
+        "tool_called",
+        "tool_completed",
+        "state_equals",
+        "artifact_count_equals",
+    ]
     expected: str
     actual: str | bool
     passed: bool
@@ -92,6 +114,21 @@ class _TrajectoryRun(BaseModel):
     state: str
 
 
+class _TrajectoryArtifact(BaseModel):
+    model_config = ConfigDict(extra="ignore", strict=True)
+
+    id: str = Field(min_length=1, max_length=128)
+    media_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    provenance: str = Field(min_length=1, max_length=256)
+    created_at: str = Field(min_length=1, max_length=64)
+
+
+def _empty_trajectory_artifacts() -> list[_TrajectoryArtifact]:
+    return []
+
+
 class _TrajectoryDocument(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
@@ -99,6 +136,9 @@ class _TrajectoryDocument(BaseModel):
     format_version: Literal[1]
     run: _TrajectoryRun
     events: list[_TrajectoryEvent]
+    artifacts: list[_TrajectoryArtifact] = Field(
+        default_factory=_empty_trajectory_artifacts, max_length=10_000
+    )
 
 
 def _empty_batch_checks() -> list[BatchCheck]:
@@ -219,6 +259,8 @@ def score_trajectory(case: BatchCase, content: bytes) -> list[BatchCheckResult]:
             actual = check.expected in tool_names
         elif check.kind == "tool_completed":
             actual = check.expected in completed_tools
+        elif check.kind == "artifact_count_equals":
+            actual = str(len(trajectory.artifacts))
         else:
             actual = trajectory.run.state
         results.append(

@@ -32,8 +32,9 @@ Supported checks are:
 - `tool_called`: an assistant message proposed a tool with that model-visible function name, such as `workspace_read_file`.
 - `tool_completed`: the same public tool call ID has both a `tool.intended` and `tool.completed` event, with the expected logical tool name, such as `workspace.read_file`.
 - `state_equals`: the exported run state matches `expected`. A `verifying` result is a candidate awaiting user review; it does not mean the user accepted it.
+- `artifact_count_equals`: the number of entries in the versioned artifact manifest equals the decimal `expected` count. This verifies that artifacts were recorded, not that their contents satisfy a semantic requirement.
 
-When a case has checks, `batch.json` records each check result and marks the case `passed` only when all checks pass. Cases without checks are `not_evaluated`. These checks cover exact text, substring, call proposal, successful tool completion, and saved state; they do not interpret free-form acceptance criteria or replace user review.
+When a case has checks, `batch.json` records each check result and marks the case `passed` only when all checks pass. Cases without checks are `not_evaluated`. These checks cover exact text, substring, call proposal, successful tool completion, saved state, and artifact count; they do not interpret free-form acceptance criteria or replace user review.
 
 ## Run and resume
 

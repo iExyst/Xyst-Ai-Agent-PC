@@ -368,6 +368,49 @@ def test_batch_final_text_check_does_not_reuse_text_before_tool_call() -> None:
     assert result.passed is False
 
 
+@pytest.mark.parametrize(
+    ("artifact_count", "expected", "passed"), [(0, "0", True), (1, "1", True), (1, "2", False)]
+)
+def test_batch_can_check_exported_artifact_count(
+    artifact_count: int, expected: str, passed: bool
+) -> None:
+    case = BatchCase(
+        id="checked",
+        objective="Produce a report",
+        acceptance_criteria=[],
+        checks=[BatchCheck(kind="artifact_count_equals", expected=expected)],
+    )
+    artifacts = [
+        {
+            "id": f"artifact-{index}",
+            "media_type": "text/plain",
+            "size_bytes": 7,
+            "sha256": "a" * 64,
+            "provenance": "workspace.write_file",
+            "created_at": "2026-11-24T00:00:00Z",
+        }
+        for index in range(artifact_count)
+    ]
+    trajectory = {
+        "format": "xaa-trajectory",
+        "format_version": 1,
+        "run": {"id": "fixture-run", "objective": "Produce a report", "state": "completed"},
+        "events": [],
+        "artifacts": artifacts,
+    }
+
+    [result] = batch_module.score_trajectory(case, json_bytes(trajectory))
+
+    assert result.actual == str(artifact_count)
+    assert result.passed is passed
+
+
+@pytest.mark.parametrize("expected", ["-1", "1.5", " 1", "10001"])
+def test_batch_artifact_count_check_rejects_invalid_counts(expected: str) -> None:
+    with pytest.raises(ValueError, match="Artifact count must be a decimal integer"):
+        BatchCheck(kind="artifact_count_equals", expected=expected)
+
+
 def _training_fixture(batch_dir: Path) -> None:
     batch_dir.mkdir()
     (batch_dir / "trajectories").mkdir()
