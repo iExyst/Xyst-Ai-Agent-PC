@@ -221,6 +221,63 @@ def test_shared_chat_turn_exposes_its_retained_image_artifact(
         assert response.json()["messages"][0]["attachments"] == saved["messages"][0]["attachments"]
 
 
+@pytest.mark.parametrize(
+    "media_type",
+    [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/plain",
+        "text/markdown",
+        "audio/wav",
+    ],
+)
+def test_shared_chat_turn_exposes_its_retained_document_or_audio_artifact(
+    workspace_tmp_path, media_type
+):
+    store = RunStore(
+        workspace_tmp_path / f"shared-chat-attachment-{media_type.rsplit('/', 1)[-1]}.sqlite3"
+    )
+    data = b"RIFF\x00\x00\x00\x00WAVE" if media_type == "audio/wav" else b"retained source file"
+    run = store.create_run(
+        objective="Read the attached file",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="local/model",
+        document_bytes=data,
+        document_media_type=media_type,
+        document_text="Extracted untrusted reference text.",
+    )
+    with store.connection() as connection:
+        source = connection.execute(
+            "SELECT id,media_type,size_bytes FROM artifacts WHERE run_id=? AND provenance=?",
+            (run["id"], "user.input_document"),
+        ).fetchone()
+    assert source is not None
+
+    saved = CLIChatStore(store).append_turn(
+        "document-conversation",
+        run_id=run["id"],
+        model="local/model",
+        workspace=None,
+        mode="observe",
+        user_message="Please review this attachment.",
+        assistant_message="I reviewed the attachment.",
+    )
+    assert saved["messages"][0]["attachments"] == [
+        {
+            "artifact_id": source["id"],
+            "media_type": media_type,
+            "size_bytes": source["size_bytes"],
+        }
+    ]
+    with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.get("/chat/sessions/document-conversation", headers=HEADERS)
+        assert response.status_code == 200
+        assert response.json()["messages"][0]["attachments"] == saved["messages"][0]["attachments"]
+
+
 def test_shared_chat_accepts_8192_utf8_bytes_and_rejects_larger_messages(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "shared-chat-message-limit.sqlite3")
     chat = CLIChatStore(store)

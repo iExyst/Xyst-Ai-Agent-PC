@@ -57,13 +57,19 @@
               "image/png",
               "image/jpeg",
               "image/gif",
-              "image/webp"
+              "image/webp",
+              "application/pdf",
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              "text/plain",
+              "text/markdown",
+              "audio/wav"
             ],
             "title": "Media Type",
             "type": "string"
           },
           "size_bytes": {
-            "maximum": 3145728.0,
+            "maximum": 4194304.0,
             "minimum": 1.0,
             "title": "Size Bytes",
             "type": "integer"

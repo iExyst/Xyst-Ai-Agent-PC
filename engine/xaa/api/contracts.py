@@ -140,8 +140,19 @@ class EmergencyStopResult(BaseModel):
 
 class CLIChatAttachmentRecord(BaseModel):
     artifact_id: str
-    media_type: Literal["image/png", "image/jpeg", "image/gif", "image/webp"]
-    size_bytes: int = Field(ge=1, le=3 * 1024 * 1024)
+    media_type: Literal[
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/plain",
+        "text/markdown",
+        "audio/wav",
+    ]
+    size_bytes: int = Field(ge=1, le=4 * 1024 * 1024)
 
 
 class CLIChatMessageRecord(BaseModel):
