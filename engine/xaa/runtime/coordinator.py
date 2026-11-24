@@ -684,7 +684,7 @@ class Coordinator:
             command_grant = run.get("command_grant")
             execution_platform = None
             if isinstance(command_grant, dict):
-                backend = command_grant.get("backend")
+                backend = cast(dict[str, Any], command_grant).get("backend")
                 if backend == "wsl-bubblewrap-v1":
                     execution_platform = "linux"
                 elif backend == "windows-appcontainer-v1":
