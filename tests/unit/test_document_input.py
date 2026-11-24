@@ -1702,14 +1702,16 @@ def test_rejects_xlsx_sheet_relationship_escape():
         extract_document_text(make_xlsx(target="../../outside.xml"), XLSX_TYPE)
 
 
-@pytest.mark.parametrize("media_type", ["text/plain", "text/markdown"])
-def test_extracts_utf8_text_and_markdown(media_type):
+@pytest.mark.parametrize("media_type", ["text/plain", "text/markdown", "text/csv"])
+def test_extracts_utf8_text_markdown_and_csv(media_type):
     assert extract_document_text(b"\xef\xbb\xbfHello \xe2\x98\x83", media_type) == "Hello ☃"
 
 
 def test_rejects_invalid_text_and_non_extractable_pdf():
     with pytest.raises(ValueError, match="UTF-8"):
         extract_document_text(b"\xff", "text/plain")
+    with pytest.raises(ValueError, match="UTF-8"):
+        extract_document_text(b"\xff", "text/csv")
     writer = PdfWriter()
     writer.add_blank_page(width=612, height=792)
     output = BytesIO()

@@ -61,10 +61,10 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
 
 def extract_document_text(content: bytes, media_type: str) -> str:
-    """Extract bounded text from PDF, DOCX, XLSX, UTF-8 text or Markdown."""
+    """Extract bounded text from PDF, DOCX, XLSX, CSV, UTF-8 text or Markdown."""
     if not content or len(content) > MAX_DOCUMENT_BYTES:
         raise ValueError("Document must be between 1 byte and 4 MiB.")
-    if media_type in {"text/plain", "text/markdown"}:
+    if media_type in {"text/plain", "text/markdown", "text/csv"}:
         try:
             text = content.decode("utf-8-sig", errors="strict")
         except UnicodeDecodeError:

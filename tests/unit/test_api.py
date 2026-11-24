@@ -1400,6 +1400,35 @@ def test_run_text_document_is_extracted_and_persisted_for_recovery(workspace_tmp
             store.document_text(run_id)
 
 
+def test_run_csv_document_is_extracted_and_preserved_for_recovery(workspace_tmp_path):
+    import base64
+
+    store = RunStore(workspace_tmp_path / "run-csv.sqlite3")
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    source = b"name,quantity\nbolts,4\nnuts,8\n"
+    encoded = "data:text/csv;base64," + base64.b64encode(source).decode("ascii")
+    with TestClient(create_app(FakeProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers=headers,
+            json={
+                "objective": "Summarize the inventory",
+                "document": encoded,
+                "document_filename": "inventory.csv",
+            },
+        )
+        assert response.status_code == 201
+        run_id = response.json()["id"]
+        assert store.document_text(run_id) == source.decode("utf-8").strip()
+        artifacts = client.get(f"/runs/{run_id}/artifacts", headers=headers).json()
+        original = next(item for item in artifacts if item["provenance"] == "user.input_document")
+        assert original["media_type"] == "text/csv"
+        assert original["original_filename"] == "inventory.csv"
+        downloaded = client.get(f"/artifacts/{original['id']}", headers=headers)
+        assert downloaded.content == source
+        assert downloaded.headers["content-type"].split(";", 1)[0] == "text/csv"
+
+
 def test_run_docx_is_extracted_and_original_artifact_is_downloadable(workspace_tmp_path):
     import base64
     from io import BytesIO

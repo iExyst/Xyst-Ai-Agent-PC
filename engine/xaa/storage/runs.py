@@ -1208,6 +1208,7 @@ class RunStore:
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "text/plain",
                 "text/markdown",
+                "text/csv",
                 "audio/wav",
             }:
                 raise ValueError("Unsupported document media type.")
@@ -1300,6 +1301,7 @@ class RunStore:
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
                 "text/plain": "txt",
                 "text/markdown": "md",
+                "text/csv": "csv",
                 "audio/wav": "wav",
             }[media_type]
             filename = f"{uuid.uuid4().hex}.{extension}"

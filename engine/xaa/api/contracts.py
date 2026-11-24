@@ -151,6 +151,7 @@ class CLIChatAttachmentRecord(BaseModel):
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "text/plain",
         "text/markdown",
+        "text/csv",
         "audio/wav",
     ]
     size_bytes: int = Field(ge=1, le=4 * 1024 * 1024)

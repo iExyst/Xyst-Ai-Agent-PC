@@ -66,7 +66,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
       runSubmissions += 1;
       expect(request.postDataJSON()).toMatchObject({max_iterations:3,max_seconds:60,max_total_tokens:5000,max_output_tokens:256,pre_inference_token_reservations:true});
       expect(request.postDataJSON().objective).toBe('Read input.txt');
-      expect(request.postDataJSON().document).toBe(`data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${Buffer.from('XLSX fixture bytes').toString('base64')}`);
+      expect(request.postDataJSON().document).toBe(`data:text/csv;base64,${Buffer.from('name,quantity\nbolts,4\n').toString('base64')}`);
+      expect(request.postDataJSON().document_filename).toBe('inventory.csv');
       expect(request.postDataJSON().approved_web_hosts).toEqual(['docs.example.org', 'standards.example.org']);
       expect(request.postDataJSON().approved_web_search).toBe(true);
       expect(request.postDataJSON().approved_browser).toBe(true);
@@ -179,8 +180,8 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await objectiveField.press('Enter');
   await expect(objectiveField).toHaveValue('Draft a multiline objective\n');
   await objectiveField.fill('Read input.txt');
-  await page.getByLabel(/Text document/).setInputFiles({name:'notes.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('XLSX fixture bytes')});
-  await expect(page.getByText('Attached: notes.xlsx.',{exact:false})).toBeVisible();
+  await page.getByLabel(/Text document/).setInputFiles({name:'inventory.csv',mimeType:'text/csv',buffer:Buffer.from('name,quantity\nbolts,4\n')});
+  await expect(page.getByText('Attached: inventory.csv.',{exact:false})).toBeVisible();
   await page.locator('details.advanced-options details').evaluate(element => { (element as HTMLDetailsElement).open=true; });
   await page.getByLabel('Iteration limit',{exact:true}).fill('0');
   await expect(page.getByRole('button',{name:'Start objective',exact:true})).toBeDisabled();

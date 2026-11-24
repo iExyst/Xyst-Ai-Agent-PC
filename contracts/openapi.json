@@ -81,6 +81,7 @@
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               "text/plain",
               "text/markdown",
+              "text/csv",
               "audio/wav"
             ],
             "title": "Media Type",

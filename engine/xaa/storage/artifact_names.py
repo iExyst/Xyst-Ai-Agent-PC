@@ -14,6 +14,7 @@ _EXTENSIONS = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
     "text/plain": "txt",
     "text/markdown": "md",
+    "text/csv": "csv",
     "audio/wav": "wav",
 }
 

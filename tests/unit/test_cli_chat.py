@@ -239,6 +239,7 @@ def test_shared_chat_turn_exposes_its_retained_image_artifact(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "text/plain",
         "text/markdown",
+        "text/csv",
         "audio/wav",
     ],
 )
@@ -288,6 +289,7 @@ def test_shared_chat_turn_exposes_its_retained_document_or_audio_artifact(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
                 "text/plain": "txt",
                 "text/markdown": "md",
+                "text/csv": "csv",
             }[media_type],
             "media_type": media_type,
             "size_bytes": source["size_bytes"],

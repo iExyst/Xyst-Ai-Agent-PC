@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
 import {selectLocalModel} from './navigation';
 
 test('desktop resumes a terminal chat session through coordinator runs and saves the next turn',async({page},testInfo)=>{
@@ -6,6 +7,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   const originalMessages=[
     {role:'user',content:'Earlier question',run_id:'terminal-run-1',attachments:[{artifact_id:'terminal-image',filename:'earlier-image.png',media_type:'image/png',size_bytes:32}]},
     {role:'assistant',content:'Earlier reply',run_id:'terminal-run-1',attachments:[]},
+    {role:'user',content:'Earlier inventory',run_id:'terminal-run-2',attachments:[{artifact_id:'chat-csv',filename:'records.csv',media_type:'text/csv',size_bytes:26}]},
   ];
   let messages:Array<{role:string;content:string;run_id:string;attachments?:Array<{artifact_id:string;filename:string;media_type:string;size_bytes:number}>}>=[...originalMessages];
   const run={id:'desktop-chat-run',objective:'',state:'verifying',revision:1,acceptance_criteria:[],model:'fixture/model',workspace:'C:\\fixture',mode:'observe',created_at:stamp,updated_at:stamp,limits:{max_iterations:8,max_seconds:60,max_total_tokens:null,max_output_tokens:null,pre_inference_token_reservations:false},file_checks:[]};
@@ -52,6 +54,7 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
     }
     if(path==='/artifacts/terminal-image'||path==='/artifacts/chat-image')return route.fulfill({status:200,headers:{...headers,'content-type':'image/png'},body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/hQAAAABJRU5ErkJggg==','base64')});
     if(path==='/artifacts/chat-document')return route.fulfill({status:200,headers:{...headers,'content-type':'application/pdf'},body:Buffer.from('%PDF-1.4 fixture')});
+    if(path==='/artifacts/chat-csv')return route.fulfill({status:200,headers:{...headers,'content-type':'text/csv'},body:Buffer.from('name,quantity\nbolts,4\n')});
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='PATCH'){sessionTitle=request.postDataJSON().title;return route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});}
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='DELETE'){deleted=true;messages=[];return route.fulfill({status:204,headers});}
     if(path==='/chat/sessions/terminal-chat/turn'&&request.method()==='POST'){
@@ -148,6 +151,11 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.getByRole('button',{name:'Download PDF document'}).click();
   const historicalDownload=await downloadEvent;
   expect(historicalDownload.suggestedFilename()).toBe('chat-document.pdf');
+  const csvDownloadEvent=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Download CSV file'}).click();
+  const historicalCsvDownload=await csvDownloadEvent;
+  expect(historicalCsvDownload.suggestedFilename()).toBe('records.csv');
+  expect(await readFile(await historicalCsvDownload.path())).toEqual(Buffer.from('name,quantity\nbolts,4\n'));
   await expect(page.getByRole('list',{name:'Conversation messages'}).getByText('Earlier reply',{exact:true})).toBeVisible();
   await expect(page.getByRole('list',{name:'Conversation messages'})).toContainText('A'.repeat(300));
   page.once('dialog',dialog=>void dialog.accept());

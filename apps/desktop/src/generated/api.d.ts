@@ -2549,7 +2549,7 @@ export interface components {
              * Media Type
              * @enum {string}
              */
-            media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" | "text/plain" | "text/markdown" | "audio/wav";
+            media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" | "text/plain" | "text/markdown" | "text/csv" | "audio/wav";
             /** Size Bytes */
             size_bytes: number;
         };

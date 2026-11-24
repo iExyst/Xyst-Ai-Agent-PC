@@ -30,6 +30,7 @@ function mediaLabel(mediaType:string):string {
   if(mediaType.includes('spreadsheet'))return 'Spreadsheet';
   if(mediaType.includes('wordprocessing'))return 'Word document';
   if(mediaType==='text/plain'||mediaType==='text/markdown')return 'Text file';
+  if(mediaType==='text/csv')return 'CSV file';
   if(mediaType==='audio/wav')return 'WAV audio';
   return mediaType||'File';
 }
@@ -58,7 +59,7 @@ export function ArtifactPanel({artifacts,client,onError}:{artifacts:Artifact[];c
   }
   return <section className="artifact-panel" aria-label="Files and artifacts"><header><div><p className="eyebrow">RUN OUTPUTS</p><h2>Files and artifacts</h2></div><span className="artifact-count">{artifacts.length} {artifacts.length===1?'file':'files'}</span></header>
     <ul className="artifact-grid">{artifacts.map(item=>{
-      const downloadable=item.provenance.startsWith('browser.download:')||['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','audio/wav'].includes(item.media_type);
+      const downloadable=item.provenance.startsWith('browser.download:')||['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','audio/wav'].includes(item.media_type);
       return <li className="artifact-card" key={item.id}>
         <div className="artifact-card-top"><span className="artifact-file-icon" aria-hidden="true">{item.media_type.startsWith('image/')?'▧':downloadable?'↓':'▤'}</span><span className="artifact-kind">{mediaLabel(item.media_type)}</span></div>
         <h3>{artifactName(item.provenance)}</h3>

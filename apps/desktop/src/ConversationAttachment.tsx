@@ -14,6 +14,7 @@ const labels:Record<Attachment['media_type'],string>={
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'Excel workbook',
   'text/plain':'Text document',
   'text/markdown':'Markdown document',
+  'text/csv':'CSV file',
   'audio/wav':'WAV audio',
 };
 
@@ -22,7 +23,7 @@ const extensions:Record<Attachment['media_type'],string>={
   'application/pdf':'pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document':'docx',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'xlsx',
-  'text/plain':'txt','text/markdown':'md','audio/wav':'wav',
+  'text/plain':'txt','text/markdown':'md','text/csv':'csv','audio/wav':'wav',
 };
 
 const imageTypes=new Set<Attachment['media_type']>(['image/png','image/jpeg','image/gif','image/webp']);
