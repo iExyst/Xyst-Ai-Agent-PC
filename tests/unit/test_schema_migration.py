@@ -761,6 +761,86 @@ def test_schema_thirty_four_adds_empty_mcp_roots_without_disclosing_paths(worksp
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
 
 
+def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_current(
+    workspace_tmp_path,
+):
+    database = workspace_tmp_path / "schema-thirty-five-cumulative.sqlite3"
+    store = RunStore(database)
+    run = store.create_run(
+        objective="Keep a pre-migration run",
+        acceptance_criteria=["remain saved"],
+        workspace=None,
+        mode="observe",
+        model="fixture/model",
+    )
+    token = store.acquire_lease(run["id"], "legacy-planner")
+    TaskStore(store).save_plan(
+        run["id"], token, [TaskDefinition(id="legacy-task", objective="Keep a legacy task")]
+    )
+    schedule = ScheduleStore(store).create(
+        objective="Keep a pre-migration schedule",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2030-01-02T12:00"),
+        frequency="daily",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+    )
+    with store.connection() as connection:
+        connection.execute("DROP TABLE skill_python_dependency_locks")
+        connection.execute("DROP TABLE skill_python_dependency_environments")
+        connection.execute("DROP TABLE skill_npm_dependency_locks")
+        connection.execute("DROP TABLE skill_npm_dependency_environments")
+        connection.execute("DROP TABLE idempotent_schedule_requests")
+        connection.execute("ALTER TABLE specialist_profiles DROP COLUMN procedure_skill_id")
+        connection.execute(
+            "ALTER TABLE specialist_profiles DROP COLUMN procedure_python_environment_digest"
+        )
+        connection.execute(
+            "ALTER TABLE specialist_profiles DROP COLUMN procedure_npm_environment_digest"
+        )
+        connection.execute("ALTER TABLE tasks DROP COLUMN procedure_snapshot")
+        connection.execute("PRAGMA user_version=35")
+
+    migrated = RunStore(database)
+    assert migrated.get_run(run["id"])["objective"] == "Keep a pre-migration run"
+    assert ScheduleStore(migrated).get(schedule["id"])["objective"] == (
+        "Keep a pre-migration schedule"
+    )
+    migrated_task = TaskStore(migrated).records(run["id"])[0]
+    assert migrated_task["id"] == f"{run['id']}:legacy-task"
+    assert migrated_task["objective"] == "Keep a legacy task"
+    assert migrated_task["procedure_snapshot"] is None
+    with migrated.connection() as connection:
+        tables = {
+            row["name"]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert {
+            "skill_python_dependency_locks",
+            "skill_python_dependency_environments",
+            "skill_npm_dependency_locks",
+            "skill_npm_dependency_environments",
+            "idempotent_schedule_requests",
+        }.issubset(tables)
+        profile_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(specialist_profiles)")
+        }
+        task_columns = {row["name"] for row in connection.execute("PRAGMA table_info(tasks)")}
+        assert {
+            "procedure_skill_id",
+            "procedure_python_environment_digest",
+            "procedure_npm_environment_digest",
+        }.issubset(profile_columns)
+        assert "procedure_snapshot" in task_columns
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_schema_thirty_eight_adds_specialist_procedure_selection_and_task_snapshot(
     workspace_tmp_path,
 ):
