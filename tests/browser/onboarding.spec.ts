@@ -189,6 +189,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
     return route.fulfill({json:[],headers});
   });
   await page.goto('/');
+  await expect(page.locator('.palette-trigger kbd')).toHaveText('Ctrl+K');
   const connectionCard=page.locator('.engine-connect-card');
   await expect(connectionCard).toBeVisible();
   expect(await connectionCard.evaluate(element=>getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length)).toBe(2);
