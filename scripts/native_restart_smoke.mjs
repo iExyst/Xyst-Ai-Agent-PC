@@ -809,6 +809,40 @@ try {
     || chatRunEvents.some(event => ['tool.intended', 'tool.executing', 'tool.completed'].includes(event.event_type))) {
     throw new Error('The saved desktop conversation did not produce one reviewable, effect-free coordinator answer.');
   }
+  const attachmentSessionId = `native-attachment-${randomUUID()}`;
+  const attachmentBytes = Buffer.from('%PDF-1.4\n% Native saved-chat attachment fixture\n', 'ascii');
+  const seedAttachment = [
+    'import base64,json,sys',
+    'from pathlib import Path',
+    'from xaa.storage.runs import RunStore',
+    'from xaa.storage.cli_chat import CLIChatStore',
+    'store=RunStore(Path(sys.argv[1]))',
+    'run=store.create_run(objective="Retain a saved PDF attachment",acceptance_criteria=[],workspace=sys.argv[4],mode="observe",model=sys.argv[3],document_bytes=base64.b64decode(sys.argv[5]),document_media_type="application/pdf",document_text="NATIVE-SAVED-PDF-MARKER")',
+    'chat=CLIChatStore(store)',
+    'chat.ensure_session(sys.argv[2],model=sys.argv[3],workspace=sys.argv[4],mode="observe")',
+    'saved=chat.append_turn(sys.argv[2],run_id=run["id"],model=sys.argv[3],workspace=sys.argv[4],mode="observe",user_message="Review this saved PDF.",assistant_message="The PDF is retained with this conversation.")',
+    'print(json.dumps({"run_id":run["id"],"attachment":saved["messages"][0]["attachments"][0]}))',
+  ].join('\n');
+  const attachmentSeed = JSON.parse(execFileSync('uv', [
+    'run', 'python', '-c', seedAttachment, database, attachmentSessionId, fakeModel,
+    fixtureWorkspace, attachmentBytes.toString('base64'),
+  ], { windowsHide: true, stdio: 'pipe', timeout: 30000, env: process.env }).toString('utf8'));
+  await second.page.getByRole('link', { name: /New objective/ }).click();
+  await second.page.locator('details.saved-conversations').evaluateAll(elements => elements.forEach(element => { element.open = true; }));
+  await second.page.locator('details.saved-conversations:visible #new-shared-chat-name').fill(attachmentSessionId);
+  await second.page.getByRole('button', { name: 'Start or open shared conversation' }).click();
+  const attachmentDownloadButton = second.page.getByRole('button', { name: 'Download PDF document' });
+  await expect(attachmentDownloadButton).toBeVisible();
+  const downloadEvent = second.page.waitForEvent('download', { timeout: 15000 });
+  await attachmentDownloadButton.click();
+  const attachmentDownload = await downloadEvent;
+  if (attachmentDownload.suggestedFilename() !== 'xaa-attachment.pdf') {
+    throw new Error(`Unexpected native saved-PDF filename: ${attachmentDownload.suggestedFilename()}`);
+  }
+  const downloadedAttachment = await readFile(await attachmentDownload.path());
+  if (!downloadedAttachment.equals(attachmentBytes)) {
+    throw new Error('The native saved-conversation PDF download did not preserve the artifact bytes.');
+  }
   await second.page.screenshot({ path: path.join(root, 'after-restart.png'), fullPage: true });
   report = {
     passed: true,
@@ -830,6 +864,16 @@ try {
       coordinator_run_state: chatRun.state,
       live_provider_inference: false,
       tool_effects: 0,
+    },
+    native_chat_attachment: {
+      saved_session_id: attachmentSessionId,
+      run_id: attachmentSeed.run_id,
+      artifact_id: attachmentSeed.attachment.artifact_id,
+      media_type: attachmentSeed.attachment.media_type,
+      size_bytes: attachmentSeed.attachment.size_bytes,
+      download_filename: attachmentDownload.suggestedFilename(),
+      artifact_bytes_verified: true,
+      live_model_inference: false,
     },
     workspace_unchanged: true,
     launch_credentials_cleaned: false,
