@@ -916,7 +916,6 @@ class ExecutionReadiness:
                 error_code="probe_busy",
             )
         async with self.lock:
-            nonce = uuid4().hex
 
             async def discard_probe_connection(
                 _reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -924,15 +923,6 @@ class ExecutionReadiness:
                 writer.close()
 
             loopback_server: asyncio.Server | None = None
-            snapshot = WorkspaceSnapshot(
-                (
-                    SnapshotFile("probe.py", WINDOWS_LOCAL_PROBE_CODE.encode()),
-                    SnapshotFile("probe.txt", nonce.encode()),
-                    SnapshotFile("tests/nested-fixture.txt", b"private nested fixture"),
-                ),
-                ("tests",),
-                (),
-            )
             ready = False
             try:
                 transport = await WindowsLocalTransport.discover(deadline=time.monotonic() + 20)
@@ -940,109 +930,144 @@ class ExecutionReadiness:
                     discard_probe_connection, "127.0.0.1", 0
                 )
                 port = loopback_server.sockets[0].getsockname()[1] if loopback_server.sockets else 0
-                intent = CommandIntent(
-                    argv=windows_local_probe_argv(
-                        sys.executable, port, frozen=bool(getattr(sys, "frozen", False))
-                    ),
-                    # A frozen one-file engine starts both the isolation shim
-                    # and a child copy of itself. Allow cold extraction/startup
-                    # before treating the probe as an execution failure.
-                    max_seconds=20,
-                    execution_id=uuid4().hex,
-                    backend="windows-appcontainer-v1",
-                    distribution=WINDOWS_LOCAL_DISTRIBUTION,
-                    profile_sha256=digest,
-                    workspace="application-owned-readiness-fixture",
-                )
-                result = await transport.run(intent, snapshot, deadline=time.monotonic() + 30)
-                try:
-                    output = json.loads(base64.b64decode(result["stdout_b64"], validate=True))
-                except (json.JSONDecodeError, ValueError):
-                    stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
-                    stderr_excerpt = redact_text(
-                        stderr.decode("utf-8", errors="replace"), self.secrets
-                    )[:240]
-                    local_data = os.environ.get("LOCALAPPDATA", "")
-                    if local_data:
-                        stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
-                    logging.getLogger(__name__).warning(
-                        "Windows AppContainer probe output was not JSON "
-                        "(succeeded=%s; exit=%s; stdout_bytes=%s; stderr_bytes=%s; stderr=%r).",
-                        result.get("succeeded"),
-                        result.get("exit_code"),
-                        result.get("stdout_bytes"),
-                        result.get("stderr_bytes"),
-                        stderr_excerpt,
+                # Each attempt is individually bounded to 23 seconds (20-second
+                # child budget plus transport cleanup). A second attempt is
+                # permitted only after the first child was cleaned up and
+                # returned neither stdout nor an exit code.
+                probe_deadline = time.monotonic() + 50
+                for attempt in range(2):
+                    nonce = uuid4().hex
+                    snapshot = WorkspaceSnapshot(
+                        (
+                            SnapshotFile("probe.py", WINDOWS_LOCAL_PROBE_CODE.encode()),
+                            SnapshotFile("probe.txt", nonce.encode()),
+                            SnapshotFile("tests/nested-fixture.txt", b"private nested fixture"),
+                        ),
+                        ("tests",),
+                        (),
                     )
-                    raise
-                output_object = (
-                    cast(dict[str, object] | None, output) if isinstance(output, dict) else None
-                )
-                observed_profile_components = windows_local_profile_fingerprint_components()
-                observed_profile = windows_local_profile_fingerprint()
-                output_matches: dict[str, bool] = {
-                    "probe_nonce": output_object is not None
-                    and output_object.get("nonce") == nonce,
-                    "appcontainer": output_object is not None
-                    and output_object.get("appcontainer") is True,
-                    "network_denied": output_object is not None
-                    and output_object.get("network_denied") is True,
-                    "private_temp": output_object is not None
-                    and output_object.get("private_temp") is True,
-                    "nested_snapshot_access": output_object is not None
-                    and output_object.get("nested_snapshot_access") is True,
-                    "probe_checks": output_object is not None
-                    and output_object.get("checks") is True,
-                    "exact_output_fields": output_object is not None
-                    and set(output_object)
-                    == {
-                        "nonce",
-                        "appcontainer",
-                        "network_denied",
-                        "private_temp",
-                        "nested_snapshot_access",
-                        "checks",
-                    },
-                }
-                result_matches: dict[str, bool] = {
-                    "execution_id": result.get("execution_id") == intent.execution_id,
-                    "succeeded": result.get("succeeded") is True,
-                    "cleanup_confirmed": result.get("cleanup_confirmed") is True,
-                    "snapshot_match": result.get("snapshot_sha256") == snapshot.sha256,
-                    "output_complete": result.get("output_complete") is True,
-                    "workspace_not_persisted": result.get("workspace_changes_persisted") is False,
-                    "profile_match": observed_profile == digest,
-                    **output_matches,
-                }
-                ready = all(result_matches.values())
-                if not ready:
-                    stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
-                    stderr_excerpt = redact_text(
-                        stderr.decode("utf-8", errors="replace"), self.secrets
-                    )[:240]
-                    local_data = os.environ.get("LOCALAPPDATA", "")
-                    if local_data:
-                        stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
-                    logging.getLogger(__name__).warning(
-                        "Windows AppContainer readiness child failed validation "
-                        "(succeeded=%s; exit=%s; supervisor_exit=%s; termination=%s; "
-                        "elapsed=%s; result_checks=%s; expected_profile=%s; observed_profile=%s; "
-                        "expected_components=%s; observed_components=%s; stdout_bytes=%s; "
-                        "stderr_bytes=%s; stderr=%r).",
-                        result.get("succeeded"),
-                        result.get("exit_code"),
-                        result.get("supervisor_exit_code"),
-                        result.get("termination_reason"),
-                        result.get("elapsed_seconds"),
-                        result_matches,
-                        digest,
-                        observed_profile,
-                        expected_profile_components,
-                        observed_profile_components,
-                        result.get("stdout_bytes"),
-                        result.get("stderr_bytes"),
-                        stderr_excerpt,
+                    intent = CommandIntent(
+                        argv=windows_local_probe_argv(
+                            sys.executable, port, frozen=bool(getattr(sys, "frozen", False))
+                        ),
+                        # A frozen one-file engine starts both the isolation shim
+                        # and a child copy of itself. Allow cold extraction/startup
+                        # before treating the probe as an execution failure.
+                        max_seconds=20,
+                        execution_id=uuid4().hex,
+                        backend="windows-appcontainer-v1",
+                        distribution=WINDOWS_LOCAL_DISTRIBUTION,
+                        profile_sha256=digest,
+                        workspace="application-owned-readiness-fixture",
                     )
+                    result = await transport.run(intent, snapshot, deadline=probe_deadline)
+                    try:
+                        output = json.loads(base64.b64decode(result["stdout_b64"], validate=True))
+                    except (json.JSONDecodeError, ValueError):
+                        stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
+                        stderr_excerpt = redact_text(
+                            stderr.decode("utf-8", errors="replace"), self.secrets
+                        )[:240]
+                        local_data = os.environ.get("LOCALAPPDATA", "")
+                        if local_data:
+                            stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
+                        logging.getLogger(__name__).warning(
+                            "Windows AppContainer probe output was not JSON "
+                            "(succeeded=%s; exit=%s; supervisor_exit=%s; termination=%s; "
+                            "cleanup_confirmed=%s; stdout_bytes=%s; stderr_bytes=%s; stderr=%r).",
+                            result.get("succeeded"),
+                            result.get("exit_code"),
+                            result.get("supervisor_exit_code"),
+                            result.get("termination_reason"),
+                            result.get("cleanup_confirmed"),
+                            result.get("stdout_bytes"),
+                            result.get("stderr_bytes"),
+                            stderr_excerpt,
+                        )
+                        retryable_empty_start = (
+                            attempt == 0
+                            and result.get("cleanup_confirmed") is True
+                            and result.get("stdout_bytes") == 0
+                            and result.get("exit_code") is None
+                            and result.get("succeeded") is False
+                        )
+                        if retryable_empty_start:
+                            logging.getLogger(__name__).warning(
+                                "Retrying Windows AppContainer readiness once after a "
+                                "cleanup-confirmed empty child start."
+                            )
+                            continue
+                        raise
+                    output_object = (
+                        cast(dict[str, object] | None, output) if isinstance(output, dict) else None
+                    )
+                    observed_profile_components = windows_local_profile_fingerprint_components()
+                    observed_profile = windows_local_profile_fingerprint()
+                    output_matches: dict[str, bool] = {
+                        "probe_nonce": output_object is not None
+                        and output_object.get("nonce") == nonce,
+                        "appcontainer": output_object is not None
+                        and output_object.get("appcontainer") is True,
+                        "network_denied": output_object is not None
+                        and output_object.get("network_denied") is True,
+                        "private_temp": output_object is not None
+                        and output_object.get("private_temp") is True,
+                        "nested_snapshot_access": output_object is not None
+                        and output_object.get("nested_snapshot_access") is True,
+                        "probe_checks": output_object is not None
+                        and output_object.get("checks") is True,
+                        "exact_output_fields": output_object is not None
+                        and set(output_object)
+                        == {
+                            "nonce",
+                            "appcontainer",
+                            "network_denied",
+                            "private_temp",
+                            "nested_snapshot_access",
+                            "checks",
+                        },
+                    }
+                    result_matches: dict[str, bool] = {
+                        "execution_id": result.get("execution_id") == intent.execution_id,
+                        "succeeded": result.get("succeeded") is True,
+                        "cleanup_confirmed": result.get("cleanup_confirmed") is True,
+                        "snapshot_match": result.get("snapshot_sha256") == snapshot.sha256,
+                        "output_complete": result.get("output_complete") is True,
+                        "workspace_not_persisted": result.get("workspace_changes_persisted")
+                        is False,
+                        "profile_match": observed_profile == digest,
+                        **output_matches,
+                    }
+                    ready = all(result_matches.values())
+                    if not ready:
+                        stderr = base64.b64decode(result.get("stderr_b64", ""), validate=True)
+                        stderr_excerpt = redact_text(
+                            stderr.decode("utf-8", errors="replace"), self.secrets
+                        )[:240]
+                        local_data = os.environ.get("LOCALAPPDATA", "")
+                        if local_data:
+                            stderr_excerpt = stderr_excerpt.replace(local_data, "<local-app-data>")
+                        logging.getLogger(__name__).warning(
+                            "Windows AppContainer readiness child failed validation "
+                            "(succeeded=%s; exit=%s; supervisor_exit=%s; termination=%s; "
+                            "elapsed=%s; result_checks=%s; expected_profile=%s; observed_profile=%s; "
+                            "expected_components=%s; observed_components=%s; stdout_bytes=%s; "
+                            "stderr_bytes=%s; stderr=%r).",
+                            result.get("succeeded"),
+                            result.get("exit_code"),
+                            result.get("supervisor_exit_code"),
+                            result.get("termination_reason"),
+                            result.get("elapsed_seconds"),
+                            result_matches,
+                            digest,
+                            observed_profile,
+                            expected_profile_components,
+                            observed_profile_components,
+                            result.get("stdout_bytes"),
+                            result.get("stderr_bytes"),
+                            stderr_excerpt,
+                        )
+                    break
             except (OSError, RuntimeError, ValueError, KeyError, TypeError, TimeoutError) as exc:
                 failed_path = getattr(exc, "filename", None)
                 failed_name = Path(failed_path).name if isinstance(failed_path, str) else None

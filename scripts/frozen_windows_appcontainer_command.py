@@ -172,7 +172,7 @@ def main() -> None:
         readiness_response = client.post(
             "/execution/readiness",
             json={"backend": "windows-appcontainer-v1", "distribution": "Windows-Local"},
-            timeout=45,
+            timeout=55,
         )
         readiness_response.raise_for_status()
         readiness = readiness_response.json()

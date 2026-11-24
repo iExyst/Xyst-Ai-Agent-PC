@@ -248,6 +248,78 @@ async def test_windows_readiness_allows_cold_frozen_engine_startup(monkeypatch):
     assert result.checks == list(WINDOWS_LOCAL_CHECKS)
 
 
+@pytest.mark.parametrize(
+    ("cleanup_confirmed", "expected_state", "expected_calls"),
+    [(True, "ready", 2), (False, "unavailable", 1)],
+)
+async def test_windows_readiness_retries_only_a_clean_empty_child_start(
+    monkeypatch, cleanup_confirmed, expected_state, expected_calls
+):
+    from xaa.runtime.execution_readiness import WINDOWS_LOCAL_CHECKS
+
+    profile = "a" * 64
+    monkeypatch.setattr(module, "SUPPORTED", True)
+    monkeypatch.setattr(module, "windows_local_profile_fingerprint", lambda: profile)
+    monkeypatch.setattr(module, "windows_local_profile_fingerprint_components", dict)
+
+    class ProbeTransport:
+        calls = 0
+
+        async def run(self, intent, snapshot, *, deadline):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "execution_id": intent.execution_id,
+                    "succeeded": False,
+                    "exit_code": None,
+                    "supervisor_exit_code": 124,
+                    "termination_reason": "timeout",
+                    "cleanup_confirmed": cleanup_confirmed,
+                    "stdout_bytes": 0,
+                    "stderr_bytes": 0,
+                    "stdout_b64": "",
+                    "stderr_b64": "",
+                }
+            nonce = next(item.content for item in snapshot.files if item.path == "probe.txt")
+            output = {
+                "nonce": nonce.decode(),
+                "appcontainer": True,
+                "network_denied": True,
+                "private_temp": True,
+                "nested_snapshot_access": True,
+                "checks": True,
+            }
+            return {
+                "execution_id": intent.execution_id,
+                "succeeded": True,
+                "exit_code": 0,
+                "supervisor_exit_code": 0,
+                "termination_reason": "finished",
+                "cleanup_confirmed": True,
+                "snapshot_sha256": snapshot.sha256,
+                "output_complete": True,
+                "workspace_changes_persisted": False,
+                "stdout_bytes": len(json.dumps(output)),
+                "stdout_b64": base64.b64encode(json.dumps(output).encode()).decode(),
+                "stderr_b64": "",
+            }
+
+    transport = ProbeTransport()
+
+    async def discover(*, deadline):
+        return transport
+
+    monkeypatch.setattr(module.WindowsLocalTransport, "discover", discover)
+    result = await ExecutionReadiness().check(
+        ReadinessRequest(backend="windows-appcontainer-v1", distribution="Windows-Local")
+    )
+
+    assert result.state == expected_state
+    assert transport.calls == expected_calls
+    if result.state == "ready":
+        assert result.checks == list(WINDOWS_LOCAL_CHECKS)
+
+
 async def test_windows_readiness_logs_sanitized_probe_mismatch(monkeypatch, caplog):
     profile = "a" * 64
     diagnostic_secret = "fixture-readiness-secret-1234"
