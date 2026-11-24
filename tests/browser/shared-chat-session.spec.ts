@@ -4,12 +4,15 @@ import {selectLocalModel} from './navigation';
 test('desktop resumes a terminal chat session through coordinator runs and saves the next turn',async({page},testInfo)=>{
   const stamp='2026-11-08T12:00:00Z';
   const originalMessages=[
-    {role:'user',content:'Earlier question',run_id:'terminal-run-1'},
-    {role:'assistant',content:'Earlier reply',run_id:'terminal-run-1'},
+    {role:'user',content:'Earlier question',run_id:'terminal-run-1',attachments:[{artifact_id:'terminal-image',media_type:'image/png',size_bytes:32}]},
+    {role:'assistant',content:'Earlier reply',run_id:'terminal-run-1',attachments:[]},
   ];
-  let messages=[...originalMessages];
+  let messages:Array<{role:string;content:string;run_id:string;attachments?:Array<{artifact_id:string;media_type:string;size_bytes:number}>}>=[...originalMessages];
   const run={id:'desktop-chat-run',objective:'',state:'verifying',revision:1,acceptance_criteria:[],model:'fixture/model',workspace:'C:\\fixture',mode:'observe',created_at:stamp,updated_at:stamp,limits:{max_iterations:8,max_seconds:60,max_total_tokens:null,max_output_tokens:null,pre_inference_token_reservations:false},file_checks:[]};
   let submittedObjective='';
+  let submittedImage='';
+  let submittedRunId=run.id;
+  let runCount=0;
   let savedUserMessage='';
   let savedAssistantMessage='';
   let sessionTitle='Project conversation';
@@ -46,25 +49,28 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
       if(readNumber===2)markSecondSessionReadFinished();
       return response;
     }
+    if(path==='/artifacts/terminal-image'||path==='/artifacts/chat-image')return route.fulfill({status:200,headers:{...headers,'content-type':'image/png'},body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/hQAAAABJRU5ErkJggg==','base64')});
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='PATCH'){sessionTitle=request.postDataJSON().title;return route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});}
     if(path==='/chat/sessions/terminal-chat'&&request.method()==='DELETE'){deleted=true;messages=[];return route.fulfill({status:204,headers});}
     if(path==='/chat/sessions/terminal-chat/turn'&&request.method()==='POST'){
       const turn=request.postDataJSON();savedUserMessage=turn.user_message;savedAssistantMessage=turn.assistant_message;
-      messages=[...messages,{role:'user',content:turn.user_message,run_id:turn.run_id},{role:'assistant',content:turn.assistant_message,run_id:turn.run_id}];
+      const attachment=submittedImage?[{artifact_id:'chat-image',media_type:'image/png',size_bytes:32}]:undefined;
+      messages=[...messages,{role:'user',content:turn.user_message,run_id:turn.run_id,attachments:attachment??[]},{role:'assistant',content:turn.assistant_message,run_id:turn.run_id,attachments:[]}];
       return route.fulfill({json:{session_id:'terminal-chat',title:sessionTitle,model:'fixture/model',workspace:'C:\\fixture',mode:'observe',messages},headers});
     }
     if(path==='/runs'&&request.method()==='GET')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/runs'&&request.method()==='POST'){
-      submittedObjective=request.postDataJSON().objective;
-      return route.fulfill({json:{...run,objective:submittedObjective},headers});
+      const payload=request.postDataJSON();
+      submittedObjective=payload.objective;submittedImage=payload.image??'';submittedRunId=`desktop-chat-run-${++runCount}`;
+      return route.fulfill({json:{...run,id:submittedRunId,objective:submittedObjective},headers});
     }
     if(/^\/runs\/[^/]+\/plan$/.test(path))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});
-    if(path==='/runs/desktop-chat-run/events/stream'){
+    if(path===`/runs/${submittedRunId}/events/stream`){
       const answer={sequence:1,event_type:'model.message',payload:{message:{role:'assistant',content:'Desktop continued the saved conversation.'}},created_at:stamp};
       const verifying={sequence:2,event_type:'run.state_changed',payload:{from:'running',to:'verifying'},created_at:stamp};
       return route.fulfill({headers,contentType:'text/event-stream',body:`id: 1\nevent: run_event\ndata: ${JSON.stringify(answer)}\n\nid: 2\nevent: run_event\ndata: ${JSON.stringify(verifying)}\n\nevent: done\ndata: {}\n\n`});
     }
-    if(path==='/runs/desktop-chat-run')return route.fulfill({json:{...run,objective:submittedObjective},headers});
+    if(path===`/runs/${submittedRunId}`)return route.fulfill({json:{...run,id:submittedRunId,objective:submittedObjective},headers});
     if(path.endsWith('/usage'))return route.fulfill({json:{inference_attempts:0,prompt_tokens:0,completion_tokens:0,total_tokens:0,unmeasured_calls:0,outstanding_reserved_tokens:0,outstanding_reservations:0},headers});
     return route.fulfill({json:[],headers});
   });
@@ -115,14 +121,23 @@ test('desktop resumes a terminal chat session through coordinator runs and saves
   await page.getByLabel('Objective',{exact:true}).fill(longTurn);
   await page.getByRole('button',{name:'Send message',exact:true}).click();
 
-  await expect.poll(()=>submittedObjective).toContain('Prior turns:\n[["user","Earlier question"],["assistant","Earlier reply"]]');
+  await expect.poll(()=>submittedObjective).toContain('Image attachment retained in run terminal-run-1; its image data is not part of this turn.');
   await expect.poll(()=>savedUserMessage).toBe(longTurn);
   await expect.poll(()=>submittedObjective.length).toBeLessThanOrEqual(10000);
   await expect.poll(()=>savedAssistantMessage).toBe('Desktop continued the saved conversation.');
   await expect(page.getByRole('region',{name:'Active run'}).getByText('Desktop continued the saved conversation.',{exact:true})).toBeVisible();
   await page.getByRole('link',{name:/New objective/}).click();
+  await page.getByText('Permissions, attachments and run limits').click();
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/hQAAAABJRU5ErkJggg==','base64');
+  await page.locator('#run-image').setInputFiles({name:'chat-image.png',mimeType:'image/png',buffer:png});
+  await expect(page.getByText(/Attached: chat-image\.png/)).toBeVisible();
+  await page.getByRole('button',{name:'Send message',exact:true}).click();
+  await expect.poll(()=>submittedImage.startsWith('data:image/png;base64,')).toBe(true);
+  await page.getByRole('link',{name:/New objective/}).click();
+  await expect(page.getByRole('img',{name:'Saved PNG image attachment'})).toHaveCount(2);
+  await expect(page.getByRole('img',{name:'Saved PNG image attachment'}).last()).toBeVisible();
   await expect(page.getByRole('list',{name:'Conversation messages'}).getByText('Earlier reply',{exact:true})).toBeVisible();
-  await expect(page.getByRole('list',{name:'Conversation messages'}).getByText(longTurn,{exact:true})).toBeVisible();
+  await expect(page.getByRole('list',{name:'Conversation messages'})).toContainText('A'.repeat(300));
   page.once('dialog',dialog=>void dialog.accept());
   await page.getByRole('button',{name:'Delete shared conversation'}).click();
   await expect.poll(()=>deleted).toBe(true);

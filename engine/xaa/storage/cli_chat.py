@@ -54,13 +54,40 @@ class CLIChatStore:
                 "ORDER BY sequence DESC LIMIT ?",
                 (session_id, _MAX_MESSAGES),
             ).fetchall()
+            image_run_ids = list({item["run_id"] for item in messages if item["role"] == "user"})
+            images_by_run: dict[str, list[dict[str, Any]]] = {}
+            if image_run_ids:
+                placeholders = ",".join("?" for _ in image_run_ids)
+                artifacts = connection.execute(
+                    "SELECT id,run_id,media_type,size_bytes,provenance FROM artifacts "
+                    f"WHERE run_id IN ({placeholders}) AND provenance IN "
+                    "('user.input_image','user.input_image_original') "
+                    "ORDER BY CASE provenance WHEN 'user.input_image_original' THEN 0 ELSE 1 END",
+                    image_run_ids,
+                ).fetchall()
+                for artifact in artifacts:
+                    images_by_run.setdefault(artifact["run_id"], []).append(
+                        {
+                            "artifact_id": artifact["id"],
+                            "media_type": artifact["media_type"],
+                            "size_bytes": artifact["size_bytes"],
+                        }
+                    )
+        ordered_messages: list[dict[str, Any]] = []
+        for item in reversed(messages):
+            message = dict(item)
+            images = images_by_run.get(message["run_id"], []) if message["role"] == "user" else []
+            # Animated inputs retain both original and normalized images; expose the
+            # original file as the single conversation attachment.
+            message["attachments"] = images[:1]
+            ordered_messages.append(message)
         return {
             "session_id": session_id,
             "title": row["title"],
             "model": row["model"],
             "workspace": row["workspace"],
             "mode": row["mode"],
-            "messages": [dict(item) for item in reversed(messages)],
+            "messages": ordered_messages,
         }
 
     def list_sessions(self, *, limit: int = 50) -> list[dict[str, Any]]:

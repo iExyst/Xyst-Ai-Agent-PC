@@ -138,10 +138,17 @@ class EmergencyStopResult(BaseModel):
     status: Literal["stopping"]
 
 
+class CLIChatAttachmentRecord(BaseModel):
+    artifact_id: str
+    media_type: Literal["image/png", "image/jpeg", "image/gif", "image/webp"]
+    size_bytes: int = Field(ge=1, le=3 * 1024 * 1024)
+
+
 class CLIChatMessageRecord(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     run_id: str
+    attachments: list[CLIChatAttachmentRecord] = Field(max_length=1)
 
 
 class CLIChatSessionRecord(BaseModel):

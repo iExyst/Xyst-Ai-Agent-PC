@@ -2537,8 +2537,22 @@ export interface components {
             /** Size Bytes */
             size_bytes: number;
         };
+        /** CLIChatAttachmentRecord */
+        CLIChatAttachmentRecord: {
+            /** Artifact Id */
+            artifact_id: string;
+            /**
+             * Media Type
+             * @enum {string}
+             */
+            media_type: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+            /** Size Bytes */
+            size_bytes: number;
+        };
         /** CLIChatMessageRecord */
         CLIChatMessageRecord: {
+            /** Attachments */
+            attachments: components["schemas"]["CLIChatAttachmentRecord"][];
             /** Content */
             content: string;
             /**

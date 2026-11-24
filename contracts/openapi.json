@@ -46,8 +46,47 @@
         "title": "ArtifactRecord",
         "type": "object"
       },
+      "CLIChatAttachmentRecord": {
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "media_type": {
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/gif",
+              "image/webp"
+            ],
+            "title": "Media Type",
+            "type": "string"
+          },
+          "size_bytes": {
+            "maximum": 3145728.0,
+            "minimum": 1.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "media_type",
+          "size_bytes"
+        ],
+        "title": "CLIChatAttachmentRecord",
+        "type": "object"
+      },
       "CLIChatMessageRecord": {
         "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/CLIChatAttachmentRecord"
+            },
+            "maxItems": 1,
+            "title": "Attachments",
+            "type": "array"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -68,7 +107,8 @@
         "required": [
           "role",
           "content",
-          "run_id"
+          "run_id",
+          "attachments"
         ],
         "title": "CLIChatMessageRecord",
         "type": "object"

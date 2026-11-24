@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
@@ -119,8 +120,13 @@ def test_cli_chat_session_persists_bounded_turns_and_rejects_config_change(works
         assistant_message="It is a local agent.",
     )
     assert saved["messages"] == [
-        {"role": "user", "content": "What is this project?", "run_id": run_id},
-        {"role": "assistant", "content": "It is a local agent.", "run_id": run_id},
+        {"role": "user", "content": "What is this project?", "run_id": run_id, "attachments": []},
+        {
+            "role": "assistant",
+            "content": "It is a local agent.",
+            "run_id": run_id,
+            "attachments": [],
+        },
     ]
     reopened = CLIChatStore(RunStore(database))
     assert reopened.get("terminal") == saved
@@ -160,6 +166,59 @@ def test_cli_chat_session_persists_bounded_turns_and_rejects_config_change(works
         raise AssertionError("Session accepted a changed model without reset")
     assert reopened.delete("terminal")
     assert reopened.get("terminal") is None
+
+
+@pytest.mark.parametrize(
+    ("media_type", "source_media_type"),
+    [("image/png", None), ("image/png", "image/gif"), ("image/png", "image/webp")],
+)
+def test_shared_chat_turn_exposes_its_retained_image_artifact(
+    workspace_tmp_path, media_type, source_media_type
+):
+    store = RunStore(workspace_tmp_path / f"shared-chat-image-{source_media_type or 'png'}.sqlite3")
+    normalized = b"\x89PNG\r\n\x1a\nnormalized image fixture"
+    original = b"original animated image fixture" if source_media_type else None
+    run = store.create_run(
+        objective="Describe the attached image",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="local/model",
+        image_bytes=normalized,
+        image_media_type=media_type,
+        image_source_bytes=original,
+        image_source_media_type=source_media_type,
+    )
+    with store.connection() as connection:
+        source = connection.execute(
+            "SELECT id,media_type,size_bytes FROM artifacts WHERE run_id=? AND provenance=?",
+            (run["id"], "user.input_image_original" if source_media_type else "user.input_image"),
+        ).fetchone()
+    assert source is not None
+
+    chat = CLIChatStore(store)
+    saved = chat.append_turn(
+        "image-conversation",
+        run_id=run["id"],
+        model="local/model",
+        workspace=None,
+        mode="observe",
+        user_message="What is in this picture?",
+        assistant_message="I inspected the attached picture.",
+    )
+    assert saved["messages"][0]["attachments"] == [
+        {
+            "artifact_id": source["id"],
+            "media_type": source_media_type or media_type,
+            "size_bytes": source["size_bytes"],
+        }
+    ]
+    assert saved["messages"][1]["attachments"] == []
+    assert chat.get("image-conversation") == saved
+    with TestClient(create_app(QuietProvider(), SecretStr(TOKEN), store=store)) as client:
+        response = client.get("/chat/sessions/image-conversation", headers=HEADERS)
+        assert response.status_code == 200
+        assert response.json()["messages"][0]["attachments"] == saved["messages"][0]["attachments"]
 
 
 def test_shared_chat_accepts_8192_utf8_bytes_and_rejects_larger_messages(workspace_tmp_path):
