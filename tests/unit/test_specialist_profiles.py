@@ -1,10 +1,13 @@
 import hashlib
 import json
+from io import BytesIO
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.runtime.task_graph import TaskDefinition
@@ -77,6 +80,36 @@ def _add_text_resource(store: RunStore, identity: str, path: str, content: bytes
     _add_resource(store, identity, path, content)
 
 
+def _make_text_pdf(text: str) -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})}
+    )
+    stream = DecodedStreamObject()
+    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream.set_data(f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode("ascii"))
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def _make_blank_pdf() -> bytes:
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def test_specialist_procedure_rejects_malformed_linked_png(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "specialist-procedure-bad-image.sqlite")
     _active_procedure(store)
@@ -84,6 +117,58 @@ def test_specialist_procedure_rejects_malformed_linked_png(workspace_tmp_path):
 
     with pytest.raises(ValueError, match="file signature"):
         SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+
+
+def test_specialist_procedure_rejects_scanned_pdf_reference(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-scanned-pdf.sqlite3")
+    _active_procedure(store)
+    _add_resource(
+        store,
+        "procedure-a",
+        "references/scanned.pdf",
+        _make_blank_pdf(),
+        "application/pdf",
+    )
+
+    with pytest.raises(ValueError, match="scanned PDFs are not supported"):
+        SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+
+
+def test_specialist_procedure_extracts_and_snapshots_bounded_text_pdf(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "specialist-procedure-text-pdf.sqlite3")
+    _active_procedure(store)
+    pdf = _make_text_pdf("PDF procedure reference")
+    _add_resource(store, "procedure-a", "references/guide.pdf", pdf, "application/pdf")
+    SpecialistProfileStore(store).set_procedure("researcher", "procedure-a")
+
+    run_id = store.create_run(
+        objective="Read a PDF procedure reference",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="parent/model",
+    )["id"]
+    owner = store.acquire_lease(run_id, "fixture")
+    tasks = TaskStore(store)
+    tasks.save_plan(
+        run_id,
+        owner,
+        [TaskDefinition(id="read-pdf", objective="Read the PDF", role="researcher")],
+    )
+    snapshot = tasks.records(run_id)[0]["procedure_snapshot"]
+    resource = snapshot["linked_resources"][0]
+    assert resource["media_type"] == "application/pdf"
+    assert resource["content"] == "[Page 1]\nPDF procedure reference"
+    assert resource["sha256"] == hashlib.sha256(pdf).hexdigest()
+    assert (
+        resource["extracted_text_sha256"]
+        == hashlib.sha256(resource["content"].encode("utf-8")).hexdigest()
+    )
+    assert resource["source_size_bytes"] == str(len(pdf))
+    validate_specialist_procedure_snapshot(snapshot)
+    resource["content"] = "tampered extracted text"
+    with pytest.raises(ValueError, match="snapshot integrity"):
+        validate_specialist_procedure_snapshot(snapshot)
 
 
 class ProfileProvider(LMStudioProvider):

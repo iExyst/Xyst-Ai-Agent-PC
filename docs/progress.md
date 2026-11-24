@@ -1,3 +1,7 @@
+## Read text PDF references in specialist procedures (2026-11-24)
+
+Specialist procedures can now snapshot linked PDFs that contain bounded extractable text. The existing PDF reader enforces its page and output limits; the task snapshot records both the source PDF digest/size and the extracted-text digest, and the specialist reads the extracted text through the existing paged, untrusted resource tool. A scanned-PDF fixture confirms image-only references fail clearly. The specialist and profile suites pass (39 tests); Ruff, formatting, strict Pyright, and `git diff --check` pass. Exact-source hosted verification is pending. No live model inference was used.
+
 ## Attach linked procedure images to specialists (2026-11-24)
 
 Selected specialist procedures now snapshot and integrity-check linked PNG/JPEG assets alongside UTF-8 text resources. When the assigned model advertises vision, those images are attached in path order to the task's initial user message, marked as untrusted reference material, and omitted from the text-reader tool. Models without vision capability cannot run a task assigned such a procedure. Other binary formats (PDF, GIF, and WebP) remain unsupported in specialist inference. The specialist and profile suites pass (37 tests); Ruff, formatting, strict Pyright, and `git diff --check` pass. Hosted exact-source verification is pending. No live model inference was used.

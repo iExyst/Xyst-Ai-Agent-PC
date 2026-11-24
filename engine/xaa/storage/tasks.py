@@ -118,8 +118,25 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
         ):
             raise ValueError("Saved specialist procedure resource path is invalid.")
         seen_paths.add(path)
+        source_size_bytes: int | None = None
         if is_text_asset_media_type(media_type) and isinstance(text, str) and encoded is None:
             raw = text.encode("utf-8")
+        elif media_type == "application/pdf" and isinstance(text, str) and encoded is None:
+            raw = text.encode("utf-8")
+            source_size_value = resource.get("source_size_bytes")
+            extracted_digest = resource.get("extracted_text_sha256")
+            if (
+                not isinstance(source_size_value, str)
+                or len(source_size_value) > 5
+                or not source_size_value.isdecimal()
+                or not 1 <= int(source_size_value) <= 64 * 1024
+                or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or not isinstance(extracted_digest, str)
+                or not re.fullmatch(r"[a-f0-9]{64}", extracted_digest)
+                or hashlib.sha256(raw).hexdigest() != extracted_digest
+            ):
+                raise ValueError("Saved specialist PDF text failed its integrity check.")
+            source_size_bytes = int(source_size_value)
         elif (
             media_type in SPECIALIST_IMAGE_MEDIA_TYPES and isinstance(encoded, str) and text is None
         ):
@@ -136,9 +153,11 @@ def validate_specialist_procedure_snapshot(snapshot: dict[str, Any]) -> None:
                 raise ValueError("Saved specialist image failed its file signature check.")
         else:
             raise ValueError("Saved specialist procedure resource content is invalid.")
-        if len(raw) > 64 * 1024 or hashlib.sha256(raw).hexdigest() != digest:
+        if len(raw) > 64 * 1024 or (
+            media_type != "application/pdf" and hashlib.sha256(raw).hexdigest() != digest
+        ):
             raise ValueError("Saved specialist procedure resource failed its integrity check.")
-        total_resource_bytes += len(raw)
+        total_resource_bytes += source_size_bytes if source_size_bytes is not None else len(raw)
     if total_resource_bytes > MAX_SPECIALIST_PROCEDURE_RESOURCE_BYTES:
         raise ValueError("Saved specialist procedure resources exceed the 1 MiB snapshot limit.")
     required_managers_value: Any = snapshot.get("required_dependency_managers", [])

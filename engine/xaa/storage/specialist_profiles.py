@@ -7,6 +7,7 @@ import hashlib
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
+from xaa.runtime.document_input import extract_document_text
 from xaa.storage.runs import RunStore, utc_now
 from xaa.storage.skills import is_text_asset_media_type
 
@@ -47,7 +48,7 @@ def specialist_procedure_environments(
 def specialist_procedure_resources(
     connection: Any, skill_id: str, version: int, content_bytes: int
 ) -> list[dict[str, str]]:
-    """Snapshot digest-checked text and PNG/JPEG resources for specialists."""
+    """Snapshot digest-checked text, text PDFs, and PNG/JPEG resources for specialists."""
     rows = connection.execute(
         "SELECT relative_path,media_type,size_bytes,sha256,content FROM skill_version_assets "
         "WHERE skill_id=? AND version=? ORDER BY relative_path LIMIT 33",
@@ -72,12 +73,11 @@ def specialist_procedure_resources(
             raise ValueError("A linked specialist procedure resource path is invalid.")
         raw = bytes(row["content"])
         media_type = str(row["media_type"])
-        if (
-            not is_text_asset_media_type(media_type)
-            and media_type not in SPECIALIST_IMAGE_MEDIA_TYPES
+        if not is_text_asset_media_type(media_type) and media_type not in (
+            SPECIALIST_IMAGE_MEDIA_TYPES | {"application/pdf"}
         ):
             raise ValueError(
-                "Specialist procedures can use linked UTF-8 text, PNG, and JPEG resources only."
+                "Specialist procedures can use linked UTF-8 text, extractable-text PDFs, PNG, and JPEG resources only."
             )
         if (
             len(raw) > 64 * 1024
@@ -86,11 +86,22 @@ def specialist_procedure_resources(
         ):
             raise ValueError("A linked specialist procedure resource failed its integrity check.")
         content = ""
+        extracted_pdf = False
         if is_text_asset_media_type(media_type):
             try:
                 content = raw.decode("utf-8")
             except UnicodeDecodeError as exc:
                 raise ValueError("Specialist procedure resources must contain UTF-8 text.") from exc
+        elif media_type == "application/pdf":
+            try:
+                content = extract_document_text(raw, media_type)
+            except ValueError as exc:
+                raise ValueError(
+                    "Linked specialist PDFs must contain bounded extractable text; scanned PDFs are not supported."
+                ) from exc
+            if len(content.encode("utf-8")) > 64 * 1024:
+                raise ValueError("Extracted specialist PDF text must be 64 KiB or smaller.")
+            extracted_pdf = True
         else:
             signature_valid = (
                 raw.startswith(b"\x89PNG\r\n\x1a\n")
@@ -107,8 +118,13 @@ def specialist_procedure_resources(
             "media_type": media_type,
             "sha256": str(row["sha256"]),
         }
-        if is_text_asset_media_type(media_type):
+        if is_text_asset_media_type(media_type) or extracted_pdf:
             resource["content"] = content
+            if extracted_pdf:
+                resource["extracted_text_sha256"] = hashlib.sha256(
+                    content.encode("utf-8")
+                ).hexdigest()
+                resource["source_size_bytes"] = str(len(raw))
         else:
             resource["content_base64"] = base64.b64encode(raw).decode("ascii")
         resources.append(resource)
