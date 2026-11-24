@@ -1,3 +1,7 @@
+## Document schema 40-to-41 attachment-name migration (2026-11-24)
+
+The release migration guide now matches `DATABASE_SCHEMA_VERSION=41` and records the nullable `artifacts.original_filename` migration: existing bytes, digests, and metadata remain unchanged, with historical names left `NULL`. The targeted migration regression passes (1 test), including integrity and foreign-key checks. This is a documentation correction for the current release candidate; it does not claim every historical database or clean-machine recovery has been verified.
+
 ## Check imported npm devEngines against the selected WSL runtime (2026-11-24)
 
 The isolated npm manifest inspector now checks root `devEngines` declarations for runtime, package manager, OS, CPU, and libc against the selected WSL Node/npm environment. It supports npm's alternative candidate arrays and `onFail` behavior (`error`/`download` reject; `warn`/`ignore` remain non-fatal and npm reports warnings during `npm ci`). Malformed declarations, unavailable target facts, and unrecognized engine keys fail closed. The focused npm parser suite passes (97 tests); Ruff, formatting, strict Pyright, and `git diff --check` pass locally. Hosted source and packaged acceptance for this slice are pending. This is X.A.A. dependency handling, not Hermes parity; no model inference or package registry access was used.
