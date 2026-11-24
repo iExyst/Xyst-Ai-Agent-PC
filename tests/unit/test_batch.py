@@ -334,6 +334,40 @@ def test_batch_scoring_rejects_missing_or_unsupported_trajectory_version(
         batch_module.score_trajectory(case, json_bytes(trajectory))
 
 
+def test_batch_final_text_check_does_not_reuse_text_before_tool_call() -> None:
+    case = BatchCase(
+        id="checked",
+        objective="Read a file",
+        acceptance_criteria=[],
+        checks=[BatchCheck(kind="final_contains", expected="stale answer")],
+    )
+    trajectory = {
+        "format": "xaa-trajectory",
+        "format_version": 1,
+        "run": {"id": "fixture-run", "objective": "Read a file", "state": "completed"},
+        "events": [
+            {
+                "event_type": "model.message",
+                "payload": {"message": {"content": "stale answer"}},
+            },
+            {
+                "event_type": "model.message",
+                "payload": {
+                    "message": {
+                        "content": None,
+                        "tool_calls": [{"function": {"name": "workspace_read_file"}}],
+                    }
+                },
+            },
+        ],
+    }
+
+    [result] = batch_module.score_trajectory(case, json_bytes(trajectory))
+
+    assert result.actual is False
+    assert result.passed is False
+
+
 def _training_fixture(batch_dir: Path) -> None:
     batch_dir.mkdir()
     (batch_dir / "trajectories").mkdir()
@@ -394,6 +428,36 @@ def test_training_export_includes_only_accepted_scored_text_and_refuses_overwrit
     assert "Private manifest objective" not in output.read_text(encoding="utf-8")
     with pytest.raises(ValueError, match="overwrite"):
         export_training_jsonl(batch_dir, output)
+
+
+def test_training_export_does_not_publish_stale_text_after_empty_final_message(
+    workspace_tmp_path: Path,
+) -> None:
+    batch_dir = workspace_tmp_path / "batch"
+    _training_fixture(batch_dir)
+    trajectory_path = batch_dir / "trajectories" / "reviewed.json"
+    trajectory = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    trajectory["events"].append(
+        {"event_type": "model.message", "payload": {"message": {"content": None}}}
+    )
+    content = json_bytes(trajectory)
+    trajectory_path.write_bytes(content)
+
+    manifest_path = batch_dir / "batch.json"
+    manifest = BatchManifest.model_validate_json(manifest_path.read_bytes())
+    case = manifest.cases[0]
+    case.checks = [BatchCheck(kind="state_equals", expected="completed")]
+    case.trajectory = TrajectoryInfo(
+        path="trajectories/reviewed.json",
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+    )
+    manifest_path.write_text(manifest.model_dump_json(), encoding="utf-8")
+
+    output = workspace_tmp_path / "training.jsonl"
+    with pytest.raises(ValueError, match="No user-accepted"):
+        export_training_jsonl(batch_dir, output)
+    assert not output.exists()
 
 
 def test_training_export_rejects_trajectory_integrity_mismatch(workspace_tmp_path: Path) -> None:

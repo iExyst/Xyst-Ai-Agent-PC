@@ -197,8 +197,9 @@ def score_trajectory(case: BatchCase, content: bytes) -> list[BatchCheckResult]:
     for event in trajectory.events:
         if event.event_type == "model.message" and event.payload.message is not None:
             message = event.payload.message
-            if message.content:
-                final_content = message.content
+            # A later tool-call-only assistant message supersedes prior text. Do
+            # not let a stale intermediate answer satisfy a final-text check.
+            final_content = message.content or ""
             tool_names.update(call.function.name for call in message.tool_calls)
         elif event.payload.internal is False and event.payload.call_id:
             if event.event_type == "tool.intended" and event.payload.tool:
@@ -310,12 +311,8 @@ def export_training_jsonl(batch_dir: Path, output_path: Path) -> dict[str, Any]:
             else:
                 final_content = ""
                 for event in trajectory.events:
-                    if (
-                        event.event_type == "model.message"
-                        and event.payload.message is not None
-                        and event.payload.message.content
-                    ):
-                        final_content = event.payload.message.content
+                    if event.event_type == "model.message" and event.payload.message is not None:
+                        final_content = event.payload.message.content or ""
                 objective = trajectory.run.objective.strip()
                 if not objective or not final_content.strip():
                     reason = "empty_text"

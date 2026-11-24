@@ -27,8 +27,8 @@ Create a UTF-8 JSON document with `version: 1` and a `cases` array. Every case n
 
 Supported checks are:
 
-- `final_equals`: the last non-empty assistant message exactly matches `expected`.
-- `final_contains`: the last non-empty assistant message contains `expected` as a case-sensitive substring.
+- `final_equals`: the latest assistant message's text exactly matches `expected`; a message without text has an empty value.
+- `final_contains`: the latest assistant message's text contains `expected` as a case-sensitive substring; a message without text has an empty value.
 - `tool_called`: an assistant message proposed a tool with that model-visible function name, such as `workspace_read_file`.
 - `tool_completed`: the same public tool call ID has both a `tool.intended` and `tool.completed` event, with the expected logical tool name, such as `workspace.read_file`.
 - `state_equals`: the exported run state matches `expected`. A `verifying` result is a candidate awaiting user review; it does not mean the user accepted it.
