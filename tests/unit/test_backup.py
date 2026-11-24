@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import zipfile
 
@@ -112,6 +113,24 @@ def test_previous_schema_backup_migrates_after_restore(workspace_tmp_path):
         version = connection.execute("PRAGMA user_version").fetchone()[0]
     assert "plugin_sha256" in columns
     assert version == DATABASE_SCHEMA_VERSION
+
+
+def test_bundle_restore_rejects_manifest_schema_version_mismatch(workspace_tmp_path):
+    store = RunStore(workspace_tmp_path / "schema-mismatch.sqlite3")
+    bundle = create_backup_bundle(store)
+    tampered = workspace_tmp_path / "schema-mismatch.xaa-backup"
+    with zipfile.ZipFile(bundle) as source, zipfile.ZipFile(tampered, "w") as target:
+        manifest = json.loads(source.read("manifest.json"))
+        manifest["schema_version"] = DATABASE_SCHEMA_VERSION - 1
+        target.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
+        for item in source.infolist():
+            if item.filename != "manifest.json":
+                target.writestr(item.filename, source.read(item.filename))
+
+    destination = workspace_tmp_path / "schema-mismatch-restored"
+    with pytest.raises(ValueError, match="schema version does not match"):
+        restore_backup_bundle(tampered, destination)
+    assert not destination.exists()
 
 
 def test_bundle_publication_retries_transient_windows_directory_lock(

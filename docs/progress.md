@@ -1,3 +1,7 @@
+## Reject portable bundles with mismatched schema metadata (2026-11-24)
+
+Added a backup regression that tampers with the portable manifest schema version while preserving the database payload; restore refuses the mismatch and does not publish a destination. The focused backup and migration suites pass (42 tests), with Ruff, format checks, and `git diff --check` clean. Hosted verification for this new tamper case is pending. No model inference was used.
+
 ## Restore a populated schema-1 database from a portable backup (2026-11-24)
 
 Extended the populated schema-1 migration fixture through the `.xaa-backup` bundle path. Restore now upgrades the restored database to schema 42 and preserves the attachment's exact managed bytes; the legacy SQLite-only restore remains metadata-only without a separately supplied artifact directory. Bundle creation records the snapshot's actual `PRAGMA user_version`, and restore rejects a manifest schema version that disagrees with the database. All 35 migration tests and all 6 backup tests pass; Ruff, format checks, and `git diff --check` pass. This change is pending exact-source hosted verification. No model inference was used.
