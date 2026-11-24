@@ -7,6 +7,7 @@ from io import BytesIO
 
 import pytest
 from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from xaa.providers.lm_studio import (
     ContextLimitError,
     LMStudioProvider,
@@ -31,6 +32,28 @@ from xaa.storage.tasks import TaskStore
 def make_blank_pdf() -> bytes:
     writer = PdfWriter()
     writer.add_blank_page(width=612, height=792)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def make_text_pdf(text: str) -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): writer._add_object(font)})}
+    )
+    stream = DecodedStreamObject()
+    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream.set_data(f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode("ascii"))
+    page[NameObject("/Contents")] = writer._add_object(stream)
     output = BytesIO()
     writer.write(output)
     return output.getvalue()
@@ -328,9 +351,12 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
     now = "2026-01-01T00:00:00+00:00"
     content = "Reference text with multibyte characters: café 🧪 " * 3
     content_bytes = content.encode("utf-8")
+    pdf_text = "PDF reference read through the bounded resource tool."
+    text_pdf_bytes = make_text_pdf(pdf_text)
+    extracted_pdf_text = f"[Page 1]\n{pdf_text}"
     image_bytes = b"\x89PNG\r\n\x1a\nfixture-image-data"
-    pdf_bytes = make_blank_pdf()
-    rendered_pdf_png = render_pdf_scanned_pages(pdf_bytes)[0][1]
+    scanned_pdf_bytes = make_blank_pdf()
+    rendered_pdf_png = render_pdf_scanned_pages(scanned_pdf_bytes)[0][1]
     with store.connection() as connection:
         connection.execute(
             "INSERT INTO skills(id,name,lifecycle_state,active_version,created_at,updated_at) "
@@ -355,7 +381,16 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
         connection.execute(
             "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
             "VALUES('procedure-resource',1,'references/scanned.pdf','application/pdf',?,?,?)",
-            (len(pdf_bytes), hashlib.sha256(pdf_bytes).hexdigest(), pdf_bytes),
+            (
+                len(scanned_pdf_bytes),
+                hashlib.sha256(scanned_pdf_bytes).hexdigest(),
+                scanned_pdf_bytes,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO skill_version_assets(skill_id,version,relative_path,media_type,size_bytes,sha256,content) "
+            "VALUES('procedure-resource',1,'references/guide.pdf','application/pdf',?,?,?)",
+            (len(text_pdf_bytes), hashlib.sha256(text_pdf_bytes).hexdigest(), text_pdf_bytes),
         )
     SpecialistProfileStore(store).set_procedure("researcher", "procedure-resource")
     tasks = TaskStore(store)
@@ -425,21 +460,29 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
                         "attached_as_image": False,
                     },
                     {
+                        "path": "references/guide.pdf",
+                        "media_type": "application/pdf",
+                        "sha256": hashlib.sha256(text_pdf_bytes).hexdigest(),
+                        "attached_as_image": False,
+                    },
+                    {
                         "path": "references/scanned.pdf",
                         "media_type": "application/pdf",
-                        "sha256": hashlib.sha256(pdf_bytes).hexdigest(),
+                        "sha256": hashlib.sha256(scanned_pdf_bytes).hexdigest(),
                         "attached_as_image": True,
                         "attached_page_numbers": [1],
                     },
                 ]
-                assert "content_base64" not in listed[0] and "content" not in listed[1]
+                assert all(
+                    "content" not in item and "content_base64" not in item for item in listed
+                )
                 offset = 0
             else:
                 page = json.loads(messages[-1]["content"])
                 assert page["trust"] == "untrusted_skill_resource"
                 self.accumulated += page["content"]
                 if page["eof"]:
-                    assert self.accumulated == content
+                    assert self.accumulated == extracted_pdf_text
                     return {
                         "choices": [{"message": {"role": "assistant", "content": "Reference read"}}]
                     }
@@ -457,7 +500,7 @@ async def test_specialist_reads_selected_procedure_resources_on_demand(workspace
                                         "name": "specialist_procedure_read_resource",
                                         "arguments": json.dumps(
                                             {
-                                                "path": "references/guide.md",
+                                                "path": "references/guide.pdf",
                                                 "offset": offset,
                                                 "limit": 17,
                                             }

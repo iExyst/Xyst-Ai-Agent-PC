@@ -153,7 +153,7 @@ async def test_specialist_image_input_is_attached_only_for_vision_capable_model(
             assert isinstance(messages[1]["content"], list)
             content = messages[1]["content"]
             assert content[0]["type"] == "text"
-            assert "Assigned image artifacts" in content[0]["text"]
+            assert "Assigned image artifacts" in messages[0]["content"]
             assert content[1]["type"] == "image_url"
             assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
             assert "task_read_input_artifact" not in {
@@ -171,7 +171,7 @@ async def test_specialist_image_input_is_attached_only_for_vision_capable_model(
     finally:
         await provider.close()
     record = tasks.records(run_id)[0]
-    assert record["status"] == ("verifying" if vision else "failed")
+    assert record["status"] == ("verifying" if vision else "failed"), record["result"]
     assert provider.calls == (1 if vision else 0)
     assert statuses == [{"task_id": "inspect", "status": record["status"]}]
     if not vision:
