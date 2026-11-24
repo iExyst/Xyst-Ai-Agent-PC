@@ -6,7 +6,7 @@ The bounded XLSX reader now renders common scientific number formats, including 
 
 ## Render common spreadsheet fractions (2026-11-23)
 
-The bounded XLSX reader renders mixed fractions for common custom and built-in formats with one to three denominator placeholders. It retains raw values, caps denominator search at 999, and leaves malformed or out-of-range values unformatted. Focused parser tests (120) and Ruff, formatting, and targeted Pyright pass. Formula evaluation and general workbook rendering remain unsupported; this is a narrow document-reading improvement, not broad spreadsheet or Hermes parity. No live model inference was used.
+The bounded XLSX reader renders mixed fractions for common custom and built-in formats with one to three denominator placeholders. It retains raw values, caps denominator search at 999, and leaves malformed or out-of-range values unformatted. Focused parser tests (120) and Ruff, formatting, and targeted Pyright pass. Exact-source Windows workflow [45298253591](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45298253591) passed on `3bead0a2`, including 1,549 Python tests (20 skipped), browser and desktop checks, static analysis, API contracts, and recovery acceptance. Formula evaluation and general workbook rendering remain unsupported; this is a narrow document-reading improvement, not broad spreadsheet or Hermes parity. No live model inference was used.
 
 ## Assign larger imported skills to specialists (2026-11-23)
 

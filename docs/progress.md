@@ -9,7 +9,7 @@ XLSX extraction now renders common scientific formats such as `0.00E+00` and `0.
 
 ## Render common XLSX fractions (2026-11-23)
 
-XLSX extraction now renders mixed fractions for common patterns such as `# ?/?` and `# ??/??`, including their built-in format IDs, while preserving the original numeric value and format code. It bounds denominators to at most 999 and declines non-finite, malformed, or extreme values rather than risking unbounded conversion. The focused document-input suite passes (120 tests); Ruff, formatting, targeted Pyright, and `git diff --check` pass. Formula evaluation and full Excel layout remain unsupported. No live model inference was used.
+XLSX extraction now renders mixed fractions for common patterns such as `# ?/?` and `# ??/??`, including their built-in format IDs, while preserving the original numeric value and format code. It bounds denominators to at most 999 and declines non-finite, malformed, or extreme values rather than risking unbounded conversion. The focused document-input suite passes (120 tests); Ruff, formatting, targeted Pyright, and `git diff --check` pass. Exact-source Windows workflow [45298253591](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45298253591) passed on `3bead0a2`, including 1,549 Python tests (20 skipped), configured browser and desktop checks, static analysis, API contracts, and process-recovery checks. WSL and installer jobs were skipped because their inputs were unchanged. Formula evaluation and full Excel layout remain unsupported. No live model inference was used.
 
 ## Assign larger pinned skills to specialists (2026-11-23)
 
