@@ -71,11 +71,99 @@ def test_schema_forty_one_adds_task_scoped_specialist_memory_snapshots(workspace
 
 
 def test_v1_tool_journal_migrates_without_changing_approval_references(workspace_tmp_path):
-    store = RunStore(workspace_tmp_path / "legacy.sqlite3")
-    run_id = store.create_run(
-        objective="Legacy", acceptance_criteria=[], workspace=None, mode="observe", model=None
-    )["id"]
+    database = workspace_tmp_path / "legacy.sqlite3"
+    store = RunStore(database)
+    run = store.create_run(
+        objective="Legacy",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        document_bytes=b"schema one attachment",
+        document_media_type="application/pdf",
+        document_text="schema one extracted text",
+    )
+    run_id = run["id"]
+    attachment = next(
+        item for item in store.list_artifacts(run_id) if item["provenance"] == "user.input_document"
+    )
+    owner = store.acquire_lease(run_id, "legacy-planner")
+    TaskStore(store).save_plan(
+        run_id, owner, [TaskDefinition(id="legacy-task", objective="Keep legacy task")]
+    )
+    schedule = ScheduleStore(store).create(
+        objective="Keep legacy schedule",
+        acceptance_criteria=[],
+        workspace=None,
+        model="fixture/model",
+        start_at=parse_local_time("2030-01-02T12:00"),
+        frequency="daily",
+        timezone="UTC",
+        missed_run_policy="skip",
+        max_iterations=4,
+        max_seconds=60,
+    )
     with store.connection() as connection:
+        # The initial committed store supported schema 3. Reconstruct its v1 core
+        # tables by reversing v2's provider_call_id and v3's conversation index,
+        # then remove tables and columns introduced in later schema versions.
+        legacy_v3_tables = {
+            "runs",
+            "run_limits",
+            "run_checks",
+            "run_events",
+            "sessions",
+            "messages",
+            "tasks",
+            "task_dependencies",
+            "task_leases",
+            "tool_calls",
+            "artifacts",
+            "approvals",
+            "memories",
+            "skills",
+            "skill_versions",
+            "schedules",
+            "schedule_executions",
+            "channel_bindings",
+            "provider_profiles",
+        }
+        connection.execute("PRAGMA foreign_keys=OFF")
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger'"
+        ).fetchall():
+            connection.execute(f'DROP TRIGGER "{row["name"]}"')
+        if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_fts'"
+        ).fetchone():
+            connection.execute("DROP TABLE conversation_fts")
+        tables = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        assert legacy_v3_tables.issubset(tables)
+        for table in tables - legacy_v3_tables:
+            connection.execute(f'DROP TABLE "{table}"')
+        for table, columns in {
+            "tasks": (
+                "procedure_snapshot",
+                "input_artifacts",
+                "expected_outputs",
+                "identity_instructions",
+                "identity_name",
+            ),
+            "artifacts": ("original_filename",),
+            "memories": ("source_uri",),
+            "schedules": ("failure_notification_destination", "mode"),
+        }.items():
+            existing_columns = {
+                row["name"] for row in connection.execute(f'PRAGMA table_info("{table}")')
+            }
+            for column in columns:
+                if column in existing_columns:
+                    connection.execute(f'ALTER TABLE "{table}" DROP COLUMN "{column}"')
         connection.execute("DROP INDEX tool_calls_run_provider_idx")
         connection.execute("ALTER TABLE tool_calls DROP COLUMN provider_call_id")
         connection.execute("PRAGMA user_version=1")
@@ -106,6 +194,7 @@ def test_v1_tool_journal_migrates_without_changing_approval_references(workspace
     restore_database(snapshot, destination)
     for database in (store.path, destination):
         migrated = RunStore(database)
+        assert migrated.get_run(run_id)["objective"] == "Legacy"
         assert migrated.conversation_messages(run_id) == [
             {
                 "role": "tool",
@@ -113,6 +202,15 @@ def test_v1_tool_journal_migrates_without_changing_approval_references(workspace
                 "content": '{"content": "legacy evidence"}',
             }
         ]
+        assert TaskStore(migrated).records(run_id)[0]["objective"] == "Keep legacy task"
+        assert ScheduleStore(migrated).get(schedule["id"])["objective"] == "Keep legacy schedule"
+        migrated_attachment = migrated.get_artifact(attachment["id"])
+        assert migrated_attachment is not None
+        assert migrated_attachment["original_filename"] is None
+        if database == store.path:
+            assert (
+                database.parent / "artifacts" / migrated_attachment["storage_key"]
+            ).read_bytes() == b"schema one attachment"
         with migrated.connection() as connection:
             assert (
                 connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
@@ -123,7 +221,20 @@ def test_v1_tool_journal_migrates_without_changing_approval_references(workspace
                 connection.execute("SELECT tool_call_id FROM approvals").fetchone()[0]
                 == "legacy-call"
             )
+            tables = {
+                row["name"]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+            assert {
+                "specialist_profiles",
+                "mcp_servers",
+                "telegram_bots",
+                "email_mailboxes",
+                "idempotent_run_requests",
+                "task_identity_memories",
+            }.issubset(tables)
             assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+            assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         second = migrated.create_run(
             objective="New run", acceptance_criteria=[], workspace=None, mode="observe", model=None
         )["id"]
