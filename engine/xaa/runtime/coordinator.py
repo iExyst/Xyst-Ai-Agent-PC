@@ -1656,6 +1656,7 @@ class Coordinator:
             batch_calls: list[tuple[str, str, dict[str, Any]]] = []
             resources: list[SkillResourceText] = []
             removals: list[str] = []
+            resource_removal_operation: SkillResourceRemoval | None = None
             current_content: str | None = None
             selected_id: str | None = None
             selected_version: int | None = None
@@ -1710,6 +1711,7 @@ class Coordinator:
                         removal = SkillResourceRemoval.model_validate(raw_arguments)
                         current_resources = []
                         current_removals = [removal.path]
+                        resource_removal_operation = removal
                         skill_id = removal.skill_id
                         expected_version = removal.expected_version
                     if selected_id is None:
@@ -1720,19 +1722,40 @@ class Coordinator:
                     resources.extend(current_resources)
                     removals.extend(current_removals)
                     batch_calls.append((call["id"], name, raw_arguments))
-                if not resources or len(removals) > 1 or len(resources) + len(removals) > 8:
+                if (
+                    (
+                        not resources
+                        and current_content is None
+                        and resource_removal_operation is None
+                    )
+                    or len(removals) > 1
+                    or len(resources) + len(removals) > 8
+                ):
                     raise ValueError(
-                        "A resource batch needs a write and permits at most eight total operations and one removal."
+                        "A procedure edit batch needs a content/resource write or one standalone removal, with at most eight resource operations."
                     )
                 if selected_id is None or selected_version is None:
                     raise ValueError("Resource batch has no selected procedure identity.")
-                revision = SkillResourceRevision(
-                    skill_id=selected_id,
-                    expected_version=selected_version,
-                    path=resources[0].path,
-                    content=resources[0].content,
-                    additional_resources=resources[1:],
-                    remove_paths=removals,
+                content_revision = (
+                    SkillContentRevision(
+                        skill_id=selected_id,
+                        expected_version=selected_version,
+                        content=current_content,
+                    )
+                    if current_content is not None
+                    else None
+                )
+                revision = (
+                    SkillResourceRevision(
+                        skill_id=selected_id,
+                        expected_version=selected_version,
+                        path=resources[0].path,
+                        content=resources[0].content,
+                        additional_resources=resources[1:],
+                        remove_paths=removals,
+                    )
+                    if resources
+                    else None
                 )
                 selected = run.get("procedure_trial")
                 if (
@@ -1741,30 +1764,51 @@ class Coordinator:
                     or selected.get("version") != selected_version
                 ):
                     raise ValueError("Resource batch must target the selected procedure version.")
-                if not run.get("allow_procedure_resource_revision"):
+                if resources and not run.get("allow_procedure_resource_revision"):
                     raise PermissionError("This run has no grant to revise procedure resources.")
                 if removals and not run.get("allow_procedure_resource_removal"):
                     raise PermissionError("This run has no grant to remove procedure resources.")
-                result = SkillStore(self.store).create_model_resource_revision_from_run(
-                    run_id,
-                    token,
-                    next(
-                        call["id"]
-                        for call in calls
-                        if call["function"]["name"] in resource_tool_names
-                    ),
-                    revision,
-                    batch_calls=batch_calls,
-                    content_revision=(
-                        SkillContentRevision(
-                            skill_id=selected_id,
-                            expected_version=selected_version,
-                            content=current_content,
-                        )
-                        if current_content is not None
-                        else None
-                    ),
-                )
+                store = SkillStore(self.store)
+                if revision is not None:
+                    result = store.create_model_resource_revision_from_run(
+                        run_id,
+                        token,
+                        next(
+                            call["id"]
+                            for call in calls
+                            if call["function"]["name"] in resource_tool_names
+                        ),
+                        revision,
+                        batch_calls=batch_calls,
+                        content_revision=content_revision,
+                    )
+                elif resource_removal_operation is not None:
+                    result = store.create_model_resource_removal_from_run(
+                        run_id,
+                        token,
+                        next(
+                            call["id"]
+                            for call in calls
+                            if call["function"]["name"] == "procedure_resource_remove"
+                        ),
+                        resource_removal_operation,
+                        content_revision=content_revision,
+                        batch_calls=batch_calls,
+                    )
+                else:
+                    assert content_revision is not None
+                    content_batch_calls = [
+                        (item_id, arguments)
+                        for item_id, name, arguments in batch_calls
+                        if name == "procedure_revise"
+                    ]
+                    result = store.create_model_revision_from_run(
+                        run_id,
+                        token,
+                        content_batch_calls[0][0],
+                        content_revision,
+                        batch_calls=content_batch_calls,
+                    )
             except PermissionError:
                 raise
             except (

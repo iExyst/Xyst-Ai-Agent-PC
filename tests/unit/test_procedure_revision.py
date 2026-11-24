@@ -851,8 +851,9 @@ async def test_coordinator_applies_same_turn_content_revisions_in_order(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("include_resource_write", [False, True])
 async def test_coordinator_batches_content_and_resource_edits_into_one_candidate(
-    workspace_tmp_path: Path,
+    workspace_tmp_path: Path, include_resource_write: bool
 ) -> None:
     store = RunStore(workspace_tmp_path / "procedure-mixed-revision-batch.sqlite3")
     skills = SkillStore(store)
@@ -923,6 +924,8 @@ async def test_coordinator_batches_content_and_resource_edits_into_one_candidate
             },
         },
     ]
+    if not include_resource_write:
+        calls = [call for call in calls if call["function"]["name"] != "procedure_resource_revise"]
 
     class MixedRevisionProvider(LMStudioProvider):
         async def diagnose_tools(self, model: str, *, request: Any = None) -> bool:
@@ -961,14 +964,23 @@ async def test_coordinator_batches_content_and_resource_edits_into_one_candidate
 
     latest = skills.version(entry["id"], 2)
     assert latest["content"] == "Read approved files and report observed facts."
-    assert [asset["path"] for asset in latest["assets"]] == ["references/current.txt"]
-    assert base64.b64decode(latest["assets"][0]["content_base64"]) == b"Current approved reference."
+    if include_resource_write:
+        assert [asset["path"] for asset in latest["assets"]] == ["references/current.txt"]
+        assert (
+            base64.b64decode(latest["assets"][0]["content_base64"])
+            == b"Current approved reference."
+        )
+    else:
+        assert latest["assets"] == []
     evidence = latest["evaluation_evidence"]
     assert evidence["provenance"] == "model_mixed_revision"
     assert evidence["source"]["content_revision_call_ids"] == '["mixed-content-edit"]'
-    assert evidence["source"]["resource_revision_call_ids"] == json.dumps(
-        ["mixed-resource-add", "mixed-resource-remove"]
-    )
+    if include_resource_write:
+        assert evidence["source"]["resource_revision_call_ids"] == json.dumps(
+            ["mixed-resource-add", "mixed-resource-remove"]
+        )
+    else:
+        assert evidence["source"]["resource_removal_call_ids"] == '["mixed-resource-remove"]'
     assert not store.unresolved_tool_calls(str(run["id"]))
     with store.connection() as connection:
         calls_saved = connection.execute(
@@ -980,9 +992,7 @@ async def test_coordinator_batches_content_and_resource_edits_into_one_candidate
             (run["id"],),
         ).fetchall()
     assert [(row["provider_call_id"], row["state"]) for row in calls_saved] == [
-        ("mixed-content-edit", "completed"),
-        ("mixed-resource-add", "completed"),
-        ("mixed-resource-remove", "completed"),
+        (call["id"], "completed") for call in sorted(calls, key=lambda call: call["id"])
     ]
     assert json.loads(mixed_events[0]["payload"])["content_changed"] is True
 
