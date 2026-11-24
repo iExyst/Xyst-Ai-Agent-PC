@@ -208,7 +208,7 @@ async def test_npm_lock_worker_checks_root_dev_engines(frozen_worker: bool):
         b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},'
         b'"devEngines":{"runtime":{"name":"node","version":">=20 <23"},'
         b'"packageManager":{"name":"npm","version":"^10"},'
-        b'"cpu":{"name":"x64"},"os":{"name":"linux"},'
+        b'"cpu":{"name":"arm64","onFail":"warn"},"os":{"name":"linux"},'
         b'"libc":{"name":"glibc"}}}'
     )
 
@@ -229,6 +229,7 @@ async def test_npm_lock_worker_checks_root_dev_engines(frozen_worker: bool):
 
     assert lock.node_arch == "x64"
     assert lock.node_libc == "glibc"
+    assert lock.dev_engine_warnings == ("cpu",)
 
 
 @pytest.mark.asyncio

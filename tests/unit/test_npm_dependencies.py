@@ -216,10 +216,19 @@ def test_package_manifest_checks_dev_engines(dev_engines: dict[str, Any], compat
         {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "devEngines": dev_engines},
         separators=(",", ":"),
     ).encode()
+    if not compatible:
+        with pytest.raises(ValueError, match="devEngines.*does not match"):
+            parse(package_lock(), manifest=manifest, node_arch="x64", node_libc="glibc")
+        return
+
     lock = parse(package_lock(), manifest=manifest, node_arch="x64", node_libc="glibc")
 
     if compatible:
         assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
+        if dev_engines == {"runtime": {"name": "nodejs", "onFail": "warn"}}:
+            assert lock.dev_engine_warnings == ("runtime",)
+        else:
+            assert lock.dev_engine_warnings == ()
     else:
         with pytest.raises(ValueError, match="devEngines.*does not match"):
             verify_npm_package_manifest(manifest, lock)
@@ -240,9 +249,8 @@ def test_package_manifest_rejects_malformed_dev_engines(dev_engines: object) -> 
     manifest = json.dumps(
         {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "devEngines": dev_engines}
     ).encode()
-    lock = parse(package_lock(), manifest=manifest, node_arch="x64", node_libc="glibc")
     with pytest.raises((TypeError, ValueError)):
-        verify_npm_package_manifest(manifest, lock)
+        parse(package_lock(), manifest=manifest, node_arch="x64", node_libc="glibc")
 
 
 @pytest.mark.parametrize(

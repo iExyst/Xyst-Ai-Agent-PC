@@ -116,6 +116,9 @@ class ProcedureNpmDependencyLock(BaseModel):
     npm_version: str = Field(min_length=5, max_length=128)
     node_arch: str | None = Field(default=None, pattern=r"^[a-z0-9_]{1,32}$")
     node_libc: Literal["glibc", "musl"] | None = None
+    dev_engine_warnings: tuple[Literal["cpu", "os", "libc", "runtime", "packageManager"], ...] = (
+        Field(default=(), max_length=5)
+    )
     requirements: tuple[str, ...] = Field(default=(), max_length=128)
     root_dependencies: tuple[NpmRootDependency, ...] = Field(max_length=512)
     packages: tuple[NpmLockedPackage, ...] = Field(max_length=MAX_LOCKED_PACKAGES)
@@ -123,6 +126,11 @@ class ProcedureNpmDependencyLock(BaseModel):
     @field_validator("requirements", mode="before")
     @classmethod
     def freeze_requirements(cls, values: object) -> object:
+        return tuple(cast(list[str], values)) if isinstance(values, list) else values
+
+    @field_validator("dev_engine_warnings", mode="before")
+    @classmethod
+    def freeze_dev_engine_warnings(cls, values: object) -> object:
         return tuple(cast(list[str], values)) if isinstance(values, list) else values
 
     @field_validator("root_dependencies", mode="before")
@@ -177,6 +185,8 @@ class ProcedureNpmDependencyLock(BaseModel):
             values.pop("node_arch", None)
         if self.node_libc is None:
             values.pop("node_libc", None)
+        if not self.dev_engine_warnings:
+            values.pop("dev_engine_warnings", None)
         return json.dumps(values, sort_keys=True, separators=(",", ":"))
 
 
@@ -364,7 +374,7 @@ def parse_npm_package_lock(
             )
         )
     _validate_npm_dependency_graph(root, raw_packages, root_dependencies, packages)
-    return ProcedureNpmDependencyLock(
+    proposal = ProcedureNpmDependencyLock(
         schema_version=1,
         skill_id=skill_id,
         skill_version=skill_version,
@@ -380,6 +390,18 @@ def parse_npm_package_lock(
         root_dependencies=tuple(root_dependencies),
         packages=tuple(packages),
     )
+    if package_manifest is not None:
+        try:
+            manifest_value: object = json.loads(package_manifest, object_pairs_hook=_unique_object)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError("Linked npm package.json is invalid.") from exc
+        if not isinstance(manifest_value, dict):
+            raise TypeError("Linked npm package.json must be an object.")
+        warnings = _verify_npm_dev_engines(
+            cast(dict[str, Any], manifest_value).get("devEngines", {}), proposal
+        )
+        proposal = proposal.model_copy(update={"dev_engine_warnings": warnings})
+    return proposal
 
 
 def _flatten_v1_dependency_tree(value: object) -> dict[str, Any]:
@@ -590,7 +612,9 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
         if not isinstance(version_range, str):
             raise TypeError(f"npm package.json engines.{name} must be a semantic-version range.")
         _require_npm_version_satisfies(version, version_range, f"required {name} runtime")
-    _verify_npm_dev_engines(manifest.get("devEngines", {}), lock)
+    warnings = _verify_npm_dev_engines(manifest.get("devEngines", {}), lock)
+    if warnings != lock.dev_engine_warnings:
+        raise ValueError("npm package.json devEngines warnings do not match the reviewed lock.")
     raw_os = manifest.get("os")
     if raw_os is not None:
         os_constraints = _npm_platform_constraints(raw_os, "os", _NPM_PLATFORM_NAME)
@@ -631,7 +655,9 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     return digest
 
 
-def _verify_npm_dev_engines(raw: object, lock: ProcedureNpmDependencyLock) -> None:
+def _verify_npm_dev_engines(
+    raw: object, lock: ProcedureNpmDependencyLock
+) -> tuple[Literal["cpu", "os", "libc", "runtime", "packageManager"], ...]:
     """Apply npm's root devEngines checks to the selected WSL environment."""
     if not isinstance(raw, dict):
         raise TypeError("npm package.json devEngines must be an object.")
@@ -642,6 +668,7 @@ def _verify_npm_dev_engines(raw: object, lock: ProcedureNpmDependencyLock) -> No
         "runtime": ("node", lock.node_version),
         "packageManager": ("npm", lock.npm_version),
     }
+    warnings: list[Literal["cpu", "os", "libc", "runtime", "packageManager"]] = []
     for engine, authored in cast(dict[str, Any], raw).items():
         if engine not in current:
             raise ValueError(f"npm package.json devEngines.{engine} is unsupported.")
@@ -697,6 +724,11 @@ def _verify_npm_dev_engines(raw: object, lock: ProcedureNpmDependencyLock) -> No
                 raise ValueError(
                     f"npm package.json devEngines.{engine} does not match the selected WSL runtime."
                 )
+            if on_fail_value == "warn":
+                warnings.append(
+                    cast(Literal["cpu", "os", "libc", "runtime", "packageManager"], engine)
+                )
+    return tuple(warnings)
 
 
 def _npm_platform_constraints(raw: object, field: str, name_pattern: re.Pattern[str]) -> list[str]:

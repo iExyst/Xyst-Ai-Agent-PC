@@ -73,6 +73,7 @@ export function NpmDependencyPanel({client,skillId,version,distribution,hasNodeS
         <summary>{lock.lock.distribution} · Node {lock.lock.node_version}{lock.lock.node_arch?` · ${lock.lock.node_arch}`:''}{lock.lock.node_libc?` · ${lock.lock.node_libc}`:''} · {lock.decision}</summary>
         <p>Source SHA-256: <code>{lock.source_sha256}</code></p>
         <p>Proposal digest: <code>{lock.environment_digest}</code></p>
+        {!!lock.lock.dev_engine_warnings?.length&&<p role="note">Non-fatal npm devEngines warning: {lock.lock.dev_engine_warnings.join(', ')} does not match the selected WSL runtime. Review this requirement before approving the lock.</p>}
         <h6>Root requirements</h6>
         <ul>{lock.lock.root_dependencies.map(item=><li key={`${item.kind}:${item.name}`}><code>{item.name}@{item.version_range}</code> · {item.kind}</li>)}</ul>
         <h6>Complete locked package set ({lock.lock.packages.length})</h6>

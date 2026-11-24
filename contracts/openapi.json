@@ -4044,6 +4044,22 @@
         "additionalProperties": false,
         "description": "Immutable review record for one imported procedure and Node runtime.",
         "properties": {
+          "dev_engine_warnings": {
+            "default": [],
+            "items": {
+              "enum": [
+                "cpu",
+                "os",
+                "libc",
+                "runtime",
+                "packageManager"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Dev Engine Warnings",
+            "type": "array"
+          },
           "distribution": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
             "title": "Distribution",

@@ -3930,6 +3930,11 @@ export interface components {
          * @description Immutable review record for one imported procedure and Node runtime.
          */
         ProcedureNpmDependencyLock: {
+            /**
+             * Dev Engine Warnings
+             * @default []
+             */
+            dev_engine_warnings: ("cpu" | "os" | "libc" | "runtime" | "packageManager")[];
             /** Distribution */
             distribution: string;
             /** Lockfile Sha256 */
