@@ -151,19 +151,37 @@ def version_for(name):
 node_version=version_for('node')
 npm_version=version_for('npm') if node_version is not None else None
 node_arch=None
+node_libc=None
 if node_version is not None:
     executable=shutil.which('node')
     if executable is None:
         raise RuntimeError('Node executable disappeared during runtime probe')
-    result=subprocess.run([executable,'-p','process.arch'],stdin=subprocess.DEVNULL,
+    platform_probe=r'''const fs=require('node:fs');let libc;
+try{const ldd=fs.readFileSync('/usr/bin/ldd','utf8');
+if(ldd.includes('musl'))libc='musl';else if(ldd.includes('GNU C Library'))libc='glibc';else libc=null;
+}catch{libc=undefined;}
+if(libc===undefined){const reportApi=process.report;const previous=reportApi.excludeNetwork;
+reportApi.excludeNetwork=true;const report=reportApi.getReport();reportApi.excludeNetwork=previous;
+if(report.header?.glibcVersionRuntime)libc='glibc';
+else if(Array.isArray(report.sharedObjects)&&report.sharedObjects.some(path=>path.includes('libc.musl-')||path.includes('ld-musl-')))libc='musl';
+else libc=null;}
+process.stdout.write(JSON.stringify({arch:process.arch,libc:libc??null}));'''
+    result=subprocess.run([executable,'-e',platform_probe],stdin=subprocess.DEVNULL,
                           capture_output=True,text=True,timeout=2,check=False)
     if result.returncode!=0:
-        raise RuntimeError('Node architecture probe failed')
-    node_arch=result.stdout.strip()
+        raise RuntimeError('Node platform probe failed')
+    platform=json.loads(result.stdout)
+    if not isinstance(platform,dict) or set(platform)!={'arch','libc'}:
+        raise RuntimeError('Node returned invalid platform metadata')
+    node_arch=platform['arch']
     if not re.fullmatch(r'[a-z0-9_]{1,32}',node_arch):
         raise RuntimeError('Node returned an invalid architecture')
+    node_libc=platform['libc']
+    if node_libc not in (None,'glibc','musl'):
+        raise RuntimeError('Node returned an invalid libc family')
 print(json.dumps({'nonce':request['nonce'],'node_version':node_version,
-                  'npm_version':npm_version,'node_arch':node_arch},separators=(',',':')))
+                  'npm_version':npm_version,'node_arch':node_arch,
+                  'node_libc':node_libc},separators=(',',':')))
 """
 
 
@@ -265,6 +283,7 @@ class SkillNodeRuntimeReadinessResult(BaseModel):
     node_version: str | None = Field(default=None, max_length=128)
     npm_version: str | None = Field(default=None, max_length=128)
     node_arch: str | None = Field(default=None, pattern=r"^[a-z0-9_]{1,32}$")
+    node_libc: Literal["glibc", "musl"] | None = None
     npm_available: bool
     checked_at: datetime
     error_code: (
@@ -635,6 +654,7 @@ class ExecutionReadiness:
         node_version: str | None = None
         npm_version: str | None = None
         node_arch: str | None = None
+        node_libc: Literal["glibc", "musl"] | None = None
         probe_succeeded = False
         try:
             async with self.lock:
@@ -681,12 +701,19 @@ class ExecutionReadiness:
                     ):
                         raise ValueError("Node runtime probe did not finish successfully.")
                     output = response_object(base64.b64decode(encoded, validate=True))
-                    if set(output) != {"nonce", "node_version", "npm_version", "node_arch"}:
+                    if set(output) != {
+                        "nonce",
+                        "node_version",
+                        "npm_version",
+                        "node_arch",
+                        "node_libc",
+                    }:
                         raise ValueError("Node runtime probe returned invalid metadata.")
                     raw_nonce = output.get("nonce")
                     raw_node = output.get("node_version")
                     raw_npm = output.get("npm_version")
                     raw_arch = output.get("node_arch")
+                    raw_libc = output.get("node_libc")
                     version_pattern = re.compile(
                         r"^(?:v)?[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
                         r"(?:[-+][A-Za-z0-9.-]{1,64})?$"
@@ -699,7 +726,9 @@ class ExecutionReadiness:
                         or (isinstance(raw_npm, str) and not version_pattern.fullmatch(raw_npm))
                         or (raw_npm is not None and raw_node is None)
                         or (raw_arch is not None and raw_node is None)
+                        or (raw_libc is not None and raw_node is None)
                         or (raw_node is not None and not isinstance(raw_arch, str))
+                        or (raw_node is not None and raw_libc not in (None, "glibc", "musl"))
                         or (
                             isinstance(raw_arch, str)
                             and not re.fullmatch(r"[a-z0-9_]{1,32}", raw_arch)
@@ -709,6 +738,7 @@ class ExecutionReadiness:
                     node_version = raw_node if isinstance(raw_node, str) else None
                     npm_version = raw_npm if isinstance(raw_npm, str) else None
                     node_arch = raw_arch if isinstance(raw_arch, str) else None
+                    node_libc = raw_libc if raw_libc in ("glibc", "musl") else None
                     if profile_fingerprint()[0] != digest:
                         raise PermissionError(
                             "Execution profile changed during Node runtime probe."
@@ -739,6 +769,7 @@ class ExecutionReadiness:
             node_version = None
             npm_version = None
             node_arch = None
+            node_libc = None
 
         if not probe_succeeded:
             return SkillNodeRuntimeReadinessResult(
@@ -754,6 +785,7 @@ class ExecutionReadiness:
             node_version=node_version,
             npm_version=npm_version,
             node_arch=node_arch,
+            node_libc=node_libc,
             npm_available=npm_version is not None,
             checked_at=datetime.now(UTC),
         )

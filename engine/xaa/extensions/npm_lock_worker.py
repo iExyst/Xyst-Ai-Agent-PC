@@ -55,6 +55,7 @@ def _read_request() -> dict[str, Any]:
         "node_version",
         "npm_version",
         "node_arch",
+        "node_libc",
         "requirements",
     }:
         raise ValueError("npm lock worker request fields are invalid.")
@@ -79,6 +80,7 @@ def _read_request() -> dict[str, Any]:
                 )
             )
         )
+        or request["node_libc"] not in (None, "glibc", "musl")
         or not isinstance(requirements, list)
         or len(cast(list[object], requirements)) > 128
         or any(
@@ -104,6 +106,7 @@ def _inspect(request: dict[str, Any]) -> ProcedureNpmDependencyLock:
         node_version=request["node_version"],
         npm_version=request["npm_version"],
         node_arch=request["node_arch"],
+        node_libc=request["node_libc"],
         requirements=cast(list[str], request["requirements"]),
         package_manifest=manifest,
     )

@@ -82,6 +82,7 @@ def parse(
     requirements: tuple[str, ...] = ("left-pad@^1.3.0",),
     manifest: bytes = MANIFEST,
     node_arch: str | None = None,
+    node_libc: str | None = None,
 ):
     return parse_npm_package_lock(
         raw,
@@ -93,6 +94,7 @@ def parse(
         node_version="v22.2.0",
         npm_version="10.8.1",
         node_arch=node_arch,
+        node_libc=node_libc,
         requirements=requirements,
         package_manifest=manifest,
     )
@@ -103,6 +105,7 @@ def test_npm_v3_lock_is_bound_to_procedure_assets_and_runtime() -> None:
     lock = parse(raw)
 
     assert "node_arch" not in json.loads(lock.canonical_json())
+    assert "node_libc" not in json.loads(lock.canonical_json())
     assert lock.lockfile_sha256 == hashlib.sha256(raw).hexdigest()
     assert lock.packages[0].name == "left-pad"
     assert lock.packages[0].version == "1.3.0"
@@ -191,12 +194,16 @@ def test_package_manifest_rejects_malformed_engine_constraints() -> None:
         (["linux"], True),
         (["darwin", "linux"], True),
         (["!darwin"], True),
+        (["any"], True),
+        ("linux", True),
         (["win32"], False),
         (["!linux"], False),
         (["linux", "!linux"], False),
     ],
 )
-def test_package_manifest_checks_target_wsl_os(platforms: list[str], compatible: bool) -> None:
+def test_package_manifest_checks_target_wsl_os(
+    platforms: list[str] | str, compatible: bool
+) -> None:
     manifest = json.dumps(
         {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "os": platforms},
         separators=(",", ":"),
@@ -210,14 +217,14 @@ def test_package_manifest_checks_target_wsl_os(platforms: list[str], compatible:
             verify_npm_package_manifest(manifest, lock)
 
 
-@pytest.mark.parametrize("platforms", ["linux", [], ["!"], ["Linux"], ["linux", 3], ["linux"] * 33])
+@pytest.mark.parametrize("platforms", [3, [], ["!"], ["Linux"], ["linux", 3], ["linux"] * 33])
 def test_package_manifest_rejects_malformed_os_constraints(platforms: object) -> None:
     manifest = json.dumps(
         {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "os": platforms},
         separators=(",", ":"),
     ).encode()
     lock = parse(package_lock(), manifest=manifest)
-    with pytest.raises(ValueError, match="os must be a bounded list"):
+    with pytest.raises((TypeError, ValueError), match="os must be a bounded platform constraint"):
         verify_npm_package_manifest(manifest, lock)
 
 
@@ -227,13 +234,15 @@ def test_package_manifest_rejects_malformed_os_constraints(platforms: object) ->
         (["x64"], True),
         (["x64", "arm64"], True),
         (["!arm64"], True),
+        (["any"], True),
+        ("x64", True),
         (["arm64"], False),
         (["!x64"], False),
         (["x64", "!x64"], False),
     ],
 )
 def test_package_manifest_checks_target_node_architecture(
-    architectures: list[str], compatible: bool
+    architectures: list[str] | str, compatible: bool
 ) -> None:
     manifest = json.dumps(
         {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "cpu": architectures},
@@ -248,14 +257,14 @@ def test_package_manifest_checks_target_node_architecture(
             verify_npm_package_manifest(manifest, lock)
 
 
-@pytest.mark.parametrize("architectures", ["x64", [], ["!"], ["x64", 3], ["arm64"] * 33])
+@pytest.mark.parametrize("architectures", [3, [], ["!"], ["x64", 3], ["arm64"] * 33])
 def test_package_manifest_rejects_malformed_cpu_constraints(architectures: object) -> None:
     manifest = json.dumps(
         {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "cpu": architectures},
         separators=(",", ":"),
     ).encode()
     lock = parse(package_lock(), manifest=manifest, node_arch="x64")
-    with pytest.raises(ValueError, match="cpu must be a bounded list"):
+    with pytest.raises((TypeError, ValueError), match="cpu must be a bounded platform constraint"):
         verify_npm_package_manifest(manifest, lock)
 
 
@@ -263,6 +272,47 @@ def test_package_manifest_requires_verified_arch_for_cpu_constraints() -> None:
     manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"cpu":["x64"]}'
     lock = parse(package_lock(), manifest=manifest)
     with pytest.raises(ValueError, match="verified Node architecture"):
+        verify_npm_package_manifest(manifest, lock)
+
+
+@pytest.mark.parametrize(
+    ("constraint", "compatible"),
+    [
+        ("glibc", True),
+        (["glibc", "musl"], True),
+        (["!musl"], True),
+        ("musl", False),
+        (["any"], True),
+    ],
+)
+def test_package_manifest_checks_target_linux_libc(constraint: object, compatible: bool) -> None:
+    manifest = json.dumps(
+        {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "libc": constraint},
+        separators=(",", ":"),
+    ).encode()
+    lock = parse(package_lock(), manifest=manifest, node_arch="x64", node_libc="glibc")
+    if compatible:
+        assert verify_npm_package_manifest(manifest, lock) == hashlib.sha256(manifest).hexdigest()
+    else:
+        with pytest.raises(ValueError, match="selected Linux libc"):
+            verify_npm_package_manifest(manifest, lock)
+
+
+def test_package_manifest_requires_verified_libc_for_libc_constraints() -> None:
+    manifest = b'{"name":"fixture","dependencies":{"left-pad":"^1.3.0"},"libc":"glibc"}'
+    lock = parse(package_lock(), manifest=manifest, node_arch="x64")
+    with pytest.raises(ValueError, match="verified Linux libc"):
+        verify_npm_package_manifest(manifest, lock)
+
+
+@pytest.mark.parametrize("constraint", [3, [], ["!"], "Bionic", ["glibc", 3], ["musl"] * 33])
+def test_package_manifest_rejects_malformed_libc_constraints(constraint: object) -> None:
+    manifest = json.dumps(
+        {"name": "fixture", "dependencies": {"left-pad": "^1.3.0"}, "libc": constraint},
+        separators=(",", ":"),
+    ).encode()
+    lock = parse(package_lock(), manifest=manifest, node_arch="x64", node_libc="glibc")
+    with pytest.raises((TypeError, ValueError), match="libc must be a bounded platform constraint"):
         verify_npm_package_manifest(manifest, lock)
 
 

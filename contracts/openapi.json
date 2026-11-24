@@ -4066,6 +4066,21 @@
             ],
             "title": "Node Arch"
           },
+          "node_libc": {
+            "anyOf": [
+              {
+                "enum": [
+                  "glibc",
+                  "musl"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Libc"
+          },
           "node_version": {
             "maxLength": 128,
             "minLength": 5,
@@ -6317,6 +6332,21 @@
               }
             ],
             "title": "Node Arch"
+          },
+          "node_libc": {
+            "anyOf": [
+              {
+                "enum": [
+                  "glibc",
+                  "musl"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Libc"
           },
           "node_version": {
             "anyOf": [

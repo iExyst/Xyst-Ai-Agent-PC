@@ -113,6 +113,23 @@ def _wsl(distribution: str, *arguments: str) -> str:
     return completed.stdout.strip()
 
 
+def _wsl_node_libc(distribution: str) -> str | None:
+    probe = r"""const fs=require('node:fs');let libc;
+try{const ldd=fs.readFileSync('/usr/bin/ldd','utf8');
+if(ldd.includes('musl'))libc='musl';else if(ldd.includes('GNU C Library'))libc='glibc';else libc=null;
+}catch{libc=undefined;}
+if(libc===undefined){const api=process.report;const old=api.excludeNetwork;api.excludeNetwork=true;
+const report=api.getReport();api.excludeNetwork=old;
+if(report.header?.glibcVersionRuntime)libc='glibc';
+else if(Array.isArray(report.sharedObjects)&&report.sharedObjects.some(path=>path.includes('libc.musl-')||path.includes('ld-musl-')))libc='musl';
+else libc=null;}
+process.stdout.write(JSON.stringify(libc??null));"""
+    value = json.loads(_wsl(distribution, "node", "-e", probe))
+    if value not in (None, "glibc", "musl"):
+        raise RuntimeError(f"Unsupported WSL Node libc family: {value!r}")
+    return value
+
+
 def _seed_interrupted_install(distribution: str, digest: str) -> None:
     target = PurePosixPath("/var/lib/xaa-node-environments") / digest
     unit = f"xaa-nodeenv-{digest[:32]}.service"
@@ -269,6 +286,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     node_version = _wsl(distribution, "node", "--version")
     npm_version = _wsl(distribution, "npm", "--version")
     node_arch = _wsl(distribution, "node", "-p", "process.arch")
+    node_libc = _wsl_node_libc(distribution)
     incompatible_cpu = {"x64": "arm64", "arm64": "x64"}.get(node_arch)
     if incompatible_cpu is None:
         raise RuntimeError(f"Unsupported WSL Node architecture for this fixture: {node_arch}")
@@ -315,6 +333,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         node_version=node_version,
         npm_version=npm_version,
         node_arch=node_arch,
+        node_libc=node_libc,
         requirements=("xaa-offline-fixture@^1.0.0",),
         root_dependencies=(
             NpmRootDependency(
@@ -394,6 +413,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         node_version=node_version,
         npm_version=npm_version,
         node_arch=node_arch,
+        node_libc=node_libc,
         requirements=(f"{required_platform_name}@^1.0.0",),
         root_dependencies=(
             NpmRootDependency(
@@ -440,6 +460,32 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
     )
     if required_platform_status.get("installed") is not False:
         raise RuntimeError("Failed required-platform install left a published environment.")
+    wrong_libc_lock = lock.model_copy(update={"node_libc": "musl"})
+    wrong_libc_store = ProcedureNpmTarballStore(report_path.parent / "wrong-libc-tarballs")
+    wrong_libc_store.store_files(
+        wrong_libc_lock,
+        {wrong_libc_lock.packages[0].package_path: archive_path},
+    )
+    try:
+        await transport.install_node_environment(
+            wrong_libc_lock,
+            package_manifest,
+            package_lock,
+            wrong_libc_store.root / wrong_libc_lock.environment_digest(),
+            deadline=time.monotonic() + 300,
+        )
+    except TransportError:
+        pass
+    else:
+        await transport.remove_node_environment(
+            wrong_libc_lock.environment_digest(), deadline=time.monotonic() + 30
+        )
+        raise RuntimeError("npm environment installed after its reviewed libc changed.")
+    wrong_libc_status = await transport.node_environment_status(
+        wrong_libc_lock.environment_digest(), deadline=time.monotonic() + 30
+    )
+    if wrong_libc_status.get("installed") is not False:
+        raise RuntimeError("Rejected libc install left a published environment.")
     directory = store.root / lock.environment_digest()
     installed: dict[str, Any] | None = None
     rollback_lock: ProcedureNpmDependencyLock | None = None
@@ -866,6 +912,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             node_version=node_version,
             npm_version=npm_version,
             node_arch=node_arch,
+            node_libc=node_libc,
             requirements=(
                 f"{scoped_name}@^1.0.0",
                 f"{transitive_name}@^2.0.0",
@@ -1185,6 +1232,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
         return {
             "distribution": distribution,
             "node_arch": node_arch,
+            "node_libc": node_libc,
             "environment_digest": lock.environment_digest(),
             "tree_sha256": installed["tree_sha256"],
             "installed_bytes": installed["installed_bytes"],
@@ -1217,6 +1265,7 @@ async def run(distribution: str, report_path: Path) -> dict[str, Any]:
             "incompatible_platform_optional_dependency_skipped": True,
             "incompatible_cpu_optional_dependency_skipped": True,
             "required_incompatible_platform_dependency_failed_cleanly": True,
+            "reviewed_libc_mismatch_rejected_before_publish": True,
             "transitive_environment_removed_exactly": True,
             "both_active_environments_refused_removal": True,
             "integrity_status": True,

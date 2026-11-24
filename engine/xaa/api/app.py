@@ -2109,6 +2109,7 @@ def create_app(
                 node_version=readiness.node_version or "",
                 npm_version=readiness.npm_version or "",
                 node_arch=readiness.node_arch,
+                node_libc=readiness.node_libc,
                 requirements=requirements,
             )
         except (NpmLockInspectionError, TypeError, ValueError):
@@ -2145,6 +2146,7 @@ def create_app(
             or readiness.node_version != request.node_version
             or readiness.npm_version != request.npm_version
             or readiness.node_arch != request.node_arch
+            or readiness.node_libc != request.node_libc
         ):
             raise HTTPException(
                 status_code=409,
@@ -2162,6 +2164,7 @@ def create_app(
                 node_version=request.node_version,
                 npm_version=request.npm_version,
                 node_arch=request.node_arch,
+                node_libc=request.node_libc,
                 requirements=request.requirements,
             )
             if validated != request:

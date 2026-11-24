@@ -1938,6 +1938,7 @@ class SkillStore:
             or result.get("node_version") != lock.node_version
             or result.get("npm_version") != lock.npm_version
             or result.get("node_arch") != lock.node_arch
+            or result.get("node_libc") != lock.node_libc
             or not isinstance(tree_hash, str)
             or re.fullmatch(r"[a-f0-9]{64}", tree_hash) is None
             or type(installed_bytes) is not int

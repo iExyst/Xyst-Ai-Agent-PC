@@ -40,7 +40,7 @@ for path in (project, cache, temp): path.mkdir(mode=0o777)
 shutil.copyfile('/source/package.json', project / 'package.json')
 shutil.copyfile('/source/package-lock.json', project / 'package-lock.json')
 os.environ['TMPDIR'] = str(temp)
-expected_node, expected_npm, expected_arch, packages = json.loads(sys.argv[1])
+expected_node, expected_npm, expected_arch, expected_libc, packages = json.loads(sys.argv[1])
 def run(args, timeout=30):
     result = subprocess.run(args, cwd=project, capture_output=True, timeout=timeout)
     if result.returncode:
@@ -51,8 +51,21 @@ if run(['/usr/bin/node', '--version']) != 'v' + expected_node.removeprefix('v'):
     raise RuntimeError('WSL Node version changed after dependency review.')
 if run(['/usr/bin/npm', '--version']) != expected_npm:
     raise RuntimeError('WSL npm version changed after dependency review.')
-if expected_arch is not None and run(['/usr/bin/node', '-p', 'process.arch']) != expected_arch:
+platform_probe = r'''const fs=require('node:fs');let libc;
+try{const ldd=fs.readFileSync('/usr/bin/ldd','utf8');
+if(ldd.includes('musl'))libc='musl';else if(ldd.includes('GNU C Library'))libc='glibc';else libc=null;
+}catch{libc=undefined;}
+if(libc===undefined){const reportApi=process.report;const previous=reportApi.excludeNetwork;
+reportApi.excludeNetwork=true;const report=reportApi.getReport();reportApi.excludeNetwork=previous;
+if(report.header?.glibcVersionRuntime)libc='glibc';
+else if(Array.isArray(report.sharedObjects)&&report.sharedObjects.some(path=>path.includes('libc.musl-')||path.includes('ld-musl-')))libc='musl';
+else libc=null;}
+process.stdout.write(JSON.stringify({arch:process.arch,libc:libc??null}));'''
+platform = json.loads(run(['/usr/bin/node', '-e', platform_probe]))
+if expected_arch is not None and platform.get('arch') != expected_arch:
     raise RuntimeError('WSL Node architecture changed after dependency review.')
+if expected_libc is not None and platform.get('libc') != expected_libc:
+    raise RuntimeError('WSL Node libc changed after dependency review.')
 for filename in packages:
     run(['/usr/bin/npm', 'cache', 'add', '/tarballs/' + filename,
          '--offline', '--ignore-scripts', '--cache', str(cache)], timeout=60)
@@ -378,6 +391,11 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
         not isinstance(node_arch, str) or re.fullmatch(r"[a-z0-9_]{1,32}", node_arch) is None
     ):
         raise TypeError("Reviewed Node architecture is invalid.")
+    node_libc = lock.get("node_libc")
+    if node_libc is not None and (
+        not isinstance(node_libc, str) or node_libc not in {"glibc", "musl"} or node_arch is None
+    ):
+        raise TypeError("Reviewed Node libc family is invalid.")
     _private_root()
     target = ROOT / digest
     unit = f"xaa-nodeenv-{digest[:32]}.service"
@@ -491,7 +509,13 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
                 "-c",
                 _INSTALL_SCRIPT,
                 json.dumps(
-                    [node_version, npm_version, node_arch, [item["filename"] for item in tarballs]]
+                    [
+                        node_version,
+                        npm_version,
+                        node_arch,
+                        node_libc,
+                        [item["filename"] for item in tarballs],
+                    ]
                 ),
             ]
             run_as_sandbox = [
@@ -543,6 +567,7 @@ def install(request: dict[str, Any], syscall_filter: bytes, file_lock: Any) -> d
                 "node_version": node_version,
                 "npm_version": npm_version,
                 "node_arch": node_arch,
+                "node_libc": node_libc,
                 "tree_sha256": tree_hash,
                 "file_count": count,
                 "installed_bytes": total,

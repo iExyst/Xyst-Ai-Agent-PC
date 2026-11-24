@@ -18,11 +18,11 @@ export function NodeRuntimeReadinessPanel({client,skillId,version,distribution}:
   }
   return <section aria-label="Restricted WSL Node.js runtime readiness">
     <h4>Node.js scripts in the selected WSL distribution</h4>
-    <p>This checks Node.js and npm versions plus Node architecture inside the restricted distribution. It does not run procedure scripts, resolve packages, or install dependencies.</p>
+    <p>This checks Node.js and npm versions, architecture, and Linux libc inside the restricted distribution. It does not run procedure scripts, resolve packages, or install dependencies.</p>
     <button disabled={busy||!distribution} onClick={()=>void check()}>{busy?'Checking…':'Check Node.js and npm'}</button>
     {!distribution&&<p>Run the sandbox check first to select a ready WSL distribution.</p>}
     {result&&<div role="status">
-      <p>Check state: {result.state}{result.node_version?` · Node.js ${result.node_version}`:''}{result.node_arch?` · ${result.node_arch}`:''}{result.npm_version?` · npm ${result.npm_version}`:''}</p>
+      <p>Check state: {result.state}{result.node_version?` · Node.js ${result.node_version}`:''}{result.node_arch?` · ${result.node_arch}`:''}{result.node_libc?` · ${result.node_libc}`:''}{result.npm_version?` · npm ${result.npm_version}`:''}</p>
       {result.state==='node_missing'&&<p>Node.js was not found in this distribution’s restricted PATH, so linked JavaScript scripts cannot run there.</p>}
       {result.state==='ready'&&!result.npm_available&&<p>Node.js scripts can run, but npm is unavailable. Package resolution and dependency installation are not supported yet.</p>}
       {result.state==='ready'&&result.npm_available&&<p>Runtime check passed. Approved npm locks can be installed offline; this check does not run procedure scripts or bind an installed package environment to a procedure run.</p>}

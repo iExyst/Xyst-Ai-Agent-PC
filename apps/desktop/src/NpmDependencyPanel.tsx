@@ -61,7 +61,7 @@ export function NpmDependencyPanel({client,skillId,version,distribution,hasNodeS
   if(!hasNodeScripts||!hasNpmDependencies)return null;
   return <section aria-label="npm dependency lock review">
     <h4>Node.js package dependencies</h4>
-    <p>Inspection checks linked package.json and package-lock.json against this procedure and the selected WSL Node/npm runtime and architecture. Acquisition fetches only exact lockfile tarballs through the network-denied worker. Package scripts are recorded for review and never run during acquisition.</p>
+    <p>Inspection checks linked package.json and package-lock.json against this procedure and the selected WSL Node/npm runtime, architecture, and Linux libc. Acquisition fetches only exact lockfile tarballs through the network-denied worker. Package scripts are recorded for review and never run during acquisition.</p>
     <button disabled={busy||!distribution} onClick={()=>void prepare()}>{busy?'Inspecting…':'Inspect and prepare npm lock'}</button>
     {!distribution&&<p>Run the sandbox check first to select a ready WSL distribution.</p>}
     {error&&<p role="alert">{error}</p>}
@@ -70,7 +70,7 @@ export function NpmDependencyPanel({client,skillId,version,distribution,hasNodeS
     {locks.length===0?<p>No npm dependency lock has been prepared for this procedure version.</p>:locks.map(lock=>{
       const reports=new Map(lock.verified_tarballs.map(report=>[report.package_path,report]));
       return <details key={lock.environment_digest}>
-        <summary>{lock.lock.distribution} · Node {lock.lock.node_version}{lock.lock.node_arch?` · ${lock.lock.node_arch}`:''} · {lock.decision}</summary>
+        <summary>{lock.lock.distribution} · Node {lock.lock.node_version}{lock.lock.node_arch?` · ${lock.lock.node_arch}`:''}{lock.lock.node_libc?` · ${lock.lock.node_libc}`:''} · {lock.decision}</summary>
         <p>Source SHA-256: <code>{lock.source_sha256}</code></p>
         <p>Proposal digest: <code>{lock.environment_digest}</code></p>
         <h6>Root requirements</h6>

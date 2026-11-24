@@ -32,6 +32,7 @@ MAX_NPM_TARBALL_STREAM_BYTES = 320 * 1024 * 1024
 MAX_NPM_TARBALL_PACKAGE_JSON_BYTES = 1024 * 1024
 _NPM_NAME = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]{0,127}/)?[a-z0-9][a-z0-9._-]{0,127}$")
 _NPM_PLATFORM_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+_NPM_LIBC_NAME = re.compile(r"^(?:glibc|musl|any)$")
 _SEMVER = re.compile(
     r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
     r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
@@ -114,6 +115,7 @@ class ProcedureNpmDependencyLock(BaseModel):
     node_version: str = Field(min_length=5, max_length=128)
     npm_version: str = Field(min_length=5, max_length=128)
     node_arch: str | None = Field(default=None, pattern=r"^[a-z0-9_]{1,32}$")
+    node_libc: Literal["glibc", "musl"] | None = None
     requirements: tuple[str, ...] = Field(default=(), max_length=128)
     root_dependencies: tuple[NpmRootDependency, ...] = Field(max_length=512)
     packages: tuple[NpmLockedPackage, ...] = Field(max_length=MAX_LOCKED_PACKAGES)
@@ -145,6 +147,8 @@ class ProcedureNpmDependencyLock(BaseModel):
             or _SEMVER.fullmatch(self.npm_version) is None
         ):
             raise ValueError("Node and npm versions must be semantic versions.")
+        if self.node_libc is not None and self.node_arch is None:
+            raise ValueError("A verified Node architecture is required with a libc family.")
         paths = [item.package_path for item in self.packages]
         if len(paths) != len(set(paths)):
             raise ValueError("npm lock package paths must be unique.")
@@ -171,6 +175,8 @@ class ProcedureNpmDependencyLock(BaseModel):
         values = self.model_dump(mode="json")
         if self.node_arch is None:
             values.pop("node_arch", None)
+        if self.node_libc is None:
+            values.pop("node_libc", None)
         return json.dumps(values, sort_keys=True, separators=(",", ":"))
 
 
@@ -278,6 +284,7 @@ def parse_npm_package_lock(
     node_version: str,
     npm_version: str,
     node_arch: str | None = None,
+    node_libc: Literal["glibc", "musl"] | None = None,
     requirements: Iterable[str] = (),
     package_manifest: bytes | None = None,
 ) -> ProcedureNpmDependencyLock:
@@ -368,6 +375,7 @@ def parse_npm_package_lock(
         node_version=node_version,
         npm_version=npm_version,
         node_arch=node_arch,
+        node_libc=node_libc,
         requirements=tuple(requirements),
         root_dependencies=tuple(root_dependencies),
         packages=tuple(packages),
@@ -584,46 +592,23 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
         _require_npm_version_satisfies(version, version_range, f"required {name} runtime")
     raw_os = manifest.get("os")
     if raw_os is not None:
-        if not isinstance(raw_os, list):
-            raise ValueError("npm package.json os must be a bounded list of platform names.")
-        raw_os_values = cast(list[object], raw_os)
-        if (
-            not raw_os_values
-            or len(raw_os_values) > 32
-            or any(
-                not isinstance(value, str)
-                or _NPM_PLATFORM_NAME.fullmatch(value.removeprefix("!")) is None
-                for value in raw_os_values
-            )
-        ):
-            raise ValueError("npm package.json os must be a bounded list of platform names.")
-        os_constraints = cast(list[str], raw_os_values)
-        allowed_os = {value for value in os_constraints if not value.startswith("!")}
-        blocked_os = {value[1:] for value in os_constraints if value.startswith("!")}
-        if "linux" in blocked_os or (allowed_os and "linux" not in allowed_os):
+        os_constraints = _npm_platform_constraints(raw_os, "os", _NPM_PLATFORM_NAME)
+        if not _npm_platform_matches("linux", os_constraints):
             raise ValueError("npm package does not support the target Linux WSL environment.")
     raw_cpu = manifest.get("cpu")
     if raw_cpu is not None:
-        if not isinstance(raw_cpu, list):
-            raise ValueError("npm package.json cpu must be a bounded list of architecture names.")
-        raw_cpu_values = cast(list[object], raw_cpu)
-        if (
-            not raw_cpu_values
-            or len(raw_cpu_values) > 32
-            or any(
-                not isinstance(value, str)
-                or _NPM_PLATFORM_NAME.fullmatch(value.removeprefix("!")) is None
-                for value in raw_cpu_values
-            )
-        ):
-            raise ValueError("npm package.json cpu must be a bounded list of architecture names.")
+        cpu_constraints = _npm_platform_constraints(raw_cpu, "cpu", _NPM_PLATFORM_NAME)
         if lock.node_arch is None:
             raise ValueError("npm package cpu constraints require a verified Node architecture.")
-        cpu_constraints = cast(list[str], raw_cpu_values)
-        allowed_cpu = {value for value in cpu_constraints if not value.startswith("!")}
-        blocked_cpu = {value[1:] for value in cpu_constraints if value.startswith("!")}
-        if lock.node_arch in blocked_cpu or (allowed_cpu and lock.node_arch not in allowed_cpu):
+        if not _npm_platform_matches(lock.node_arch, cpu_constraints):
             raise ValueError("npm package does not support the selected Node architecture.")
+    raw_libc = manifest.get("libc")
+    if raw_libc is not None:
+        libc_constraints = _npm_platform_constraints(raw_libc, "libc", _NPM_LIBC_NAME)
+        if lock.node_libc is None:
+            raise ValueError("npm package libc constraints require a verified Linux libc.")
+        if not _npm_platform_matches(lock.node_libc, libc_constraints):
+            raise ValueError("npm package does not support the selected Linux libc.")
     declared: list[NpmRootDependency] = []
     for kind in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
         values = manifest.get(kind, {})
@@ -643,6 +628,34 @@ def verify_npm_package_manifest(raw: bytes, lock: ProcedureNpmDependencyLock) ->
     if digest != lock.package_manifest_sha256:
         raise ValueError("npm package.json bytes do not match the bound procedure resource.")
     return digest
+
+
+def _npm_platform_constraints(raw: object, field: str, name_pattern: re.Pattern[str]) -> list[str]:
+    values: list[object]
+    if isinstance(raw, str):
+        values = [raw]
+    elif isinstance(raw, list):
+        values = cast(list[object], raw)
+    else:
+        raise TypeError(f"npm package.json {field} must be a bounded platform constraint.")
+    if (
+        not values
+        or len(values) > 32
+        or any(
+            not isinstance(value, str) or name_pattern.fullmatch(value.removeprefix("!")) is None
+            for value in values
+        )
+    ):
+        raise ValueError(f"npm package.json {field} must be a bounded platform constraint.")
+    return cast(list[str], values)
+
+
+def _npm_platform_matches(platform: str, constraints: list[str]) -> bool:
+    if constraints == ["any"]:
+        return True
+    blocked = {value[1:] for value in constraints if value.startswith("!")}
+    allowed = {value for value in constraints if not value.startswith("!")}
+    return platform not in blocked and (not allowed or platform in allowed)
 
 
 def verify_npm_tarball(locked: NpmLockedPackage, archive: bytes) -> NpmVerifiedTarball:

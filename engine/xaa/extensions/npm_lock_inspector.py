@@ -51,6 +51,7 @@ async def inspect_npm_package_lock_in_appcontainer(
     node_version: str,
     npm_version: str,
     node_arch: str | None = None,
+    node_libc: str | None = None,
     requirements: tuple[str, ...] | list[str],
     test_worker_executable: Path | None = None,
 ) -> ProcedureNpmDependencyLock:
@@ -118,6 +119,7 @@ async def inspect_npm_package_lock_in_appcontainer(
             "node_version": node_version,
             "npm_version": npm_version,
             "node_arch": node_arch,
+            "node_libc": node_libc,
             "requirements": list(requirements),
         }
         request_bytes = json.dumps(request, separators=(",", ":")).encode("utf-8")
@@ -179,6 +181,7 @@ async def inspect_npm_package_lock_in_appcontainer(
         or proposal.node_version != node_version
         or proposal.npm_version != npm_version
         or proposal.node_arch != node_arch
+        or proposal.node_libc != node_libc
         or proposal.requirements != tuple(requirements)
     ):
         raise NpmLockInspectionError("The isolated npm lock worker returned a mismatched identity.")
