@@ -91,6 +91,19 @@ def test_procedure_credential_grant_is_bound_to_the_selected_script(workspace_tm
             {"argv": ["python3", "-c", "print('unrelated')"]},
             idempotency_key="unrelated-command",
         )
+    powershell_intent = journal.reserve(
+        run,
+        owner,
+        "selected-powershell-script",
+        {
+            "argv": [
+                "pwsh",
+                f"__xaa_selected_skill__/{skill_id}/v2/scripts/check.ps1",
+            ]
+        },
+        idempotency_key="selected-powershell-script",
+    )
+    assert powershell_intent.procedure_credential_names == ["API_TOKEN"]
 
 
 def test_specialist_command_uses_only_its_snapshotted_credential_names(workspace_tmp_path):

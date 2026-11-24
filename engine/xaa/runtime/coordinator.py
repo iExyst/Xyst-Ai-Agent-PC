@@ -2408,10 +2408,11 @@ class Coordinator:
                                 " Integrity-checked selected skill scripts are included in this "
                                 "private command snapshot at: "
                                 + ", ".join(script_paths)
-                                + ". Invoke .py with Python, .sh with bash, or .js/.mjs/.cjs "
-                                "with Node.js, using structured argv. Node.js must be installed "
-                                "in the selected WSL distribution; npm dependencies are not "
-                                "installed by this procedure environment."
+                                + ". Invoke .py with Python, .sh with bash, .js/.mjs/.cjs "
+                                "with Node.js, or .ps1 with PowerShell (`pwsh`), using "
+                                "structured argv. The required interpreter must be installed "
+                                "in the selected WSL distribution; procedure dependencies "
+                                "are not installed implicitly."
                             )
                 tools.append(
                     {

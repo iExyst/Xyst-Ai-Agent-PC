@@ -1262,7 +1262,7 @@ class SpecialistRunner:
                 script_hint += (
                     " The owner-approved Python environment is mounted read-only at "
                     "`/opt/xaa/procedure-python`; the saved WSL PATH selects it first. "
-                    "Use `python` for selected procedure scripts and do not install packages."
+                    "Use `python` for Python scripts and `pwsh` for PowerShell scripts; do not install packages."
                 )
             messages[0]["content"] += (
                 " You may use workspace_run_command with a directly launched Windows "

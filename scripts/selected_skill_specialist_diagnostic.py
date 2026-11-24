@@ -1,10 +1,11 @@
-"""Execute selected Python, shell and JavaScript resources through a specialist task."""
+"""Execute selected Python, shell, JavaScript, and PowerShell resources in a specialist."""
 
 import argparse
 import asyncio
 import base64
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
 from uuid import uuid4
@@ -37,6 +38,14 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
         b"import { readFileSync } from 'node:fs';\n"
         b"console.log(readFileSync('fixture.txt', 'utf8'));\n"
     )
+    powershell_script = (
+        b"$passwd = (Get-Content /etc/passwd -Raw).Trim()\n"
+        b"$group = (Get-Content /etc/group -Raw).Trim()\n"
+        b"if ($passwd -ne 'nobody:x:65534:65534:nobody:/tmp:/usr/sbin/nologin') { exit 31 }\n"
+        b"if ($group -ne 'nogroup:x:65534:') { exit 32 }\n"
+        b"Get-Content fixture.txt\n"
+        b'Write-Output "PS_VERSION=$($PSVersionTable.PSVersion.ToString())"\n'
+    )
     skill = SkillStore(store).create(
         SkillDraft(
             name="Selected specialist script diagnostic",
@@ -61,6 +70,12 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
                     content_base64=base64.b64encode(node_script).decode("ascii"),
                     media_type="text/javascript",
                     sha256=hashlib.sha256(node_script).hexdigest(),
+                ),
+                SkillAsset(
+                    path="scripts/check.ps1",
+                    content_base64=base64.b64encode(powershell_script).decode("ascii"),
+                    media_type="text/plain",
+                    sha256=hashlib.sha256(powershell_script).hexdigest(),
                 ),
             ],
         )
@@ -121,12 +136,18 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
     python_path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.py"
     shell_path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.sh"
     node_path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.mjs"
+    powershell_path = f"__xaa_selected_skill__/{skill['id']}/v1/scripts/check.ps1"
     controller = CommandController(store, transport, task_scope=scope)
     commands_succeeded = 0
+    powershell_version: str | None = None
     for call_id, argv in [
         ("selected-specialist-python-script", ["/usr/bin/python3", "-I", python_path]),
         ("selected-specialist-shell-script", ["/bin/bash", shell_path]),
         ("selected-specialist-node-script", ["/usr/bin/node", "--no-addons", node_path]),
+        (
+            "selected-specialist-powershell-script",
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", powershell_path],
+        ),
     ]:
         result = await controller.execute(
             run_id,
@@ -138,9 +159,21 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
         )
         if not result.get("succeeded") or marker not in str(result.get("stdout_excerpt", "")):
             raise AssertionError(f"Specialist script {argv[-1]} did not return the fixture marker.")
+        if call_id == "selected-specialist-powershell-script":
+            version_match = re.search(
+                r"(?m)^PS_VERSION=(\d+\.\d+\.\d+)\s*$",
+                str(result.get("stdout_excerpt", "")),
+            )
+            if version_match is None:
+                raise AssertionError(
+                    "Specialist PowerShell script did not report its runtime version."
+                )
+            powershell_version = version_match.group(1)
         commands_succeeded += 1
+    if powershell_version is None:
+        raise AssertionError("Specialist PowerShell runtime acceptance did not run.")
     evidence = command_evidence(store, run_id, scope.task_id)
-    if len(evidence) != 3 or not all(item["matches_current_private_tree"] for item in evidence):
+    if len(evidence) != 4 or not all(item["matches_current_private_tree"] for item in evidence):
         raise AssertionError("Specialist command evidence does not match its augmented snapshot.")
     if capture_workspace(project).sha256 != original_snapshot.sha256:
         raise AssertionError("Restricted specialist execution modified the original project.")
@@ -153,17 +186,19 @@ async def diagnose(distribution: str, report_root: Path) -> Path:
         "passed": True,
         "distribution": distribution,
         "profile_sha256": profile_sha256,
-        "selected_script_paths": [python_path, shell_path, node_path],
+        "selected_script_paths": [python_path, shell_path, node_path, powershell_path],
         "task_id": scope.task_id,
         "task_permission_scope": ["workspace.read", "workspace.write", "workspace.command"],
         "commands_succeeded": commands_succeeded,
-        "python_shell_and_node_scripts_read_private_project_fixture": True,
+        "python_shell_node_and_powershell_scripts_read_private_project_fixture": True,
+        "powershell_received_only_synthetic_sandbox_identity": True,
+        "powershell_version": powershell_version,
         "command_evidence_matches_current_augmented_snapshot": True,
         "original_project_unchanged": True,
         "unresolved_commands": 0,
         "run_state": "cancelled_after_diagnostic",
         "model_inference": False,
-        "scope": "Selected Python, shell and Node.js resources execute through a specialist private snapshot with saved WSL and task command grants; npm dependencies are not installed.",
+        "scope": "Selected Python, shell, Node.js, and PowerShell resources execute through a specialist private snapshot with saved WSL and task command grants; npm dependencies are not installed.",
     }
     report_path = root / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

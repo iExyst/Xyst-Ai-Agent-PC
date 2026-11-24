@@ -4,7 +4,59 @@ import ctypes
 import ctypes.util
 import errno
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+POWERSHELL_HOME = Path("/opt/microsoft/powershell/7")
+POWERSHELL_MOUNT = "/opt/microsoft/powershell/7"
+
+
+def powershell_runtime_mount(
+    home: Path = POWERSHELL_HOME,
+    *,
+    mount: str = POWERSHELL_MOUNT,
+    existing_directories: set[str] | None = None,
+) -> list[str]:
+    """Expose the system PowerShell runtime without exposing other /opt contents."""
+    if not home.exists():
+        if home.is_symlink():
+            raise ValueError("PowerShell runtime path is a broken symbolic link.")
+        return []
+    resolved_home = home.resolve(strict=True)
+    if (
+        home.is_symlink()
+        or not resolved_home.is_dir()
+        or resolved_home != home
+        or not (resolved_home / "pwsh").is_file()
+    ):
+        raise ValueError("PowerShell runtime path is invalid.")
+    mount_path = PurePosixPath(mount)
+    parents = [
+        str(parent) for parent in reversed(mount_path.parents) if str(parent) not in {".", "/"}
+    ]
+    directories = set(existing_directories or ())
+    result: list[str] = []
+    for directory in parents:
+        if directory not in directories:
+            result.extend(("--dir", directory))
+            directories.add(directory)
+    result.extend(("--ro-bind", str(resolved_home), mount))
+    return result
+
+
+def powershell_identity_mount(
+    passwd_file: Path,
+    group_file: Path,
+    *,
+    existing_directories: set[str] | None = None,
+) -> list[str]:
+    """Mount synthetic sandbox identities without exposing host account files."""
+    files = (passwd_file, group_file)
+    if any(not path.is_absolute() or not path.is_file() for path in files):
+        raise ValueError("PowerShell sandbox identity files are unavailable.")
+    result = [] if "/etc" in (existing_directories or set()) else ["--dir", "/etc"]
+    result.extend(("--ro-bind", str(passwd_file), "/etc/passwd"))
+    result.extend(("--ro-bind", str(group_file), "/etc/group"))
+    return result
 
 
 def syscall_filter() -> bytes:
@@ -105,6 +157,7 @@ def bubblewrap_arguments(
     node_modules: Path | None = None,
     node_modules_link: str | None = None,
     procedure_credentials_file: Path | None = None,
+    powershell_identity_files: tuple[Path, Path] | None = None,
 ) -> list[str]:
     """stdin is the BPF descriptor and is consumed before the command starts."""
     bootstrap = (
@@ -184,6 +237,24 @@ def bubblewrap_arguments(
                 str(procedure_environment),
                 "/opt/xaa/procedure-python",
             ]
+        )
+    existing_directories = {
+        environment_mount[index + 1]
+        for index, argument in enumerate(environment_mount[:-1])
+        if argument == "--dir"
+    }
+    environment_mount.extend(powershell_runtime_mount(existing_directories=existing_directories))
+    if powershell_identity_files is not None:
+        existing_directories = {
+            environment_mount[index + 1]
+            for index, argument in enumerate(environment_mount[:-1])
+            if argument == "--dir"
+        }
+        environment_mount.extend(
+            powershell_identity_mount(
+                *powershell_identity_files,
+                existing_directories=existing_directories,
+            )
         )
     path = ":".join(path_parts)
     return [

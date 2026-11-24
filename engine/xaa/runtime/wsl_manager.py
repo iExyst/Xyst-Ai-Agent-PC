@@ -177,6 +177,7 @@ def run(
             ".js": {"node", "nodejs"},
             ".mjs": {"node", "nodejs"},
             ".cjs": {"node", "nodejs"},
+            ".ps1": {"pwsh", "powershell"},
         }
         expected_root = (
             f"__xaa_selected_skill__/{request['procedure_skill_id']}"
@@ -265,6 +266,18 @@ def run(
                     target.flush()
                     os.fsync(target.fileno())
                 os.chmod(credential_file, 0o444)
+            powershell_identity_files: tuple[Path, Path] | None = None
+            executable_name = arguments[0].replace("\\", "/").rsplit("/", 1)[-1].casefold()
+            if executable_name in {"pwsh", "powershell"}:
+                passwd_file = stage / "sandbox-passwd"
+                group_file = stage / "sandbox-group"
+                passwd_file.write_text(
+                    "nobody:x:65534:65534:nobody:/tmp:/usr/sbin/nologin\n", encoding="ascii"
+                )
+                group_file.write_text("nogroup:x:65534:\n", encoding="ascii")
+                os.chmod(passwd_file, 0o444)
+                os.chmod(group_file, 0o444)
+                powershell_identity_files = (passwd_file, group_file)
             unit = f"xaa-exec-{identity}.service"
             command = [
                 "/usr/bin/systemd-run",
@@ -294,6 +307,7 @@ def run(
                     node_environment_path,
                     procedure_modules_link,
                     credential_file,
+                    powershell_identity_files=powershell_identity_files,
                 )
                 if node_environment_path is not None
                 else profile["bubblewrap_arguments"](
@@ -301,6 +315,7 @@ def run(
                     arguments,
                     environment_path,
                     procedure_credentials_file=credential_file,
+                    powershell_identity_files=powershell_identity_files,
                 )
             )
             started = time.monotonic()

@@ -218,6 +218,12 @@ def selected_trial(path="scripts/check.py", content=b"print('selected')\n"):
                     b"const fs = require('node:fs');\nconsole.log(fs.readFileSync('fixture.txt', 'utf8'));\n"
                 ).hexdigest(),
             },
+            {
+                "path": "scripts/check.ps1",
+                "media_type": "text/plain",
+                "content_base64": base64.b64encode(b"Get-Content fixture.txt\n").decode("ascii"),
+                "sha256": hashlib.sha256(b"Get-Content fixture.txt\n").hexdigest(),
+            },
         ],
     }
     trial["snapshot_sha256"] = snapshot_digest(trial)
@@ -242,11 +248,15 @@ def test_selected_script_is_added_to_immutable_sandbox_snapshot():
     assert paths["__xaa_selected_skill__/fixture-skill/v2/scripts/check.cjs"].startswith(
         b"const fs = require"
     )
+    assert paths["__xaa_selected_skill__/fixture-skill/v2/scripts/check.ps1"] == (
+        b"Get-Content fixture.txt\n"
+    )
     assert selected_skill_script_paths(selected_trial()) == [
         "__xaa_selected_skill__/fixture-skill/v2/scripts/check.py",
         "__xaa_selected_skill__/fixture-skill/v2/scripts/check.sh",
         "__xaa_selected_skill__/fixture-skill/v2/scripts/check.mjs",
         "__xaa_selected_skill__/fixture-skill/v2/scripts/check.cjs",
+        "__xaa_selected_skill__/fixture-skill/v2/scripts/check.ps1",
     ]
     assert "__xaa_selected_skill__/fixture-skill/v2/scripts" in staged.directories
     assert "__xaa_selected_skill__/fixture-skill/v2" in staged.directories

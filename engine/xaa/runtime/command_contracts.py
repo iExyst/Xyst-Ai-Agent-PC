@@ -105,6 +105,7 @@ class CommandIntent(CommandArguments):
                 ".js": {"node", "nodejs"},
                 ".mjs": {"node", "nodejs"},
                 ".cjs": {"node", "nodejs"},
+                ".ps1": {"pwsh", "powershell"},
             }
             if (
                 script is None

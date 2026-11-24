@@ -28,7 +28,7 @@ def selected_skill_script_resources(
     trial: dict[str, Any] | None,
     specialist_procedure: dict[str, Any] | None = None,
 ) -> tuple[str, int, list[tuple[str, bytes]]] | None:
-    """Return selected, integrity-checked Python/shell/Node resources in their immutable version."""
+    """Return selected, integrity-checked Python/shell/Node/PowerShell resources."""
     if trial is None and specialist_procedure is None:
         return None
     from xaa.storage.skills import snapshot_digest
@@ -81,7 +81,7 @@ def selected_skill_script_resources(
             raise TypeError("Selected procedure resource metadata is invalid.")
         checked_path(path)
         suffix = PurePosixPath(path).suffix.casefold()
-        if suffix not in {".py", ".sh", ".js", ".mjs", ".cjs"}:
+        if suffix not in {".py", ".sh", ".js", ".mjs", ".cjs", ".ps1"}:
             continue
         javascript = suffix in {".js", ".mjs", ".cjs"}
         valid_media_type = media_type.startswith("text/") or (

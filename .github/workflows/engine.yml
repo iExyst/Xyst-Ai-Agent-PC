@@ -807,6 +807,22 @@ jobs:
           wsl.exe --distribution Ubuntu-24.04 --user root --exec /bin/bash -lc 'test "$(cat /proc/1/comm)" = systemd'
           if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 systemd is not running as PID 1 under WSL.' }
         timeout-minutes: 12
+      - name: Install the verified PowerShell runtime for script acceptance
+        if: inputs.acceptance == 'wsl-specialist-profile'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Join-Path $env:RUNNER_TEMP 'powershell_7.6.6-1.deb_amd64.deb'
+          Invoke-WebRequest -Uri 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell_7.6.6-1.deb_amd64.deb' -OutFile $package
+          $digest = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne '9585f38ab5a026c3fc0995486e26e12050777960fef47a22dca98b577c5d27a7') { throw "PowerShell package SHA-256 mismatch: $digest" }
+          $linuxPackage = (wsl.exe --distribution Ubuntu-24.04 --user root --exec /usr/bin/wslpath -a -u $package | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $linuxPackage.StartsWith('/mnt/')) { throw 'Could not map the verified PowerShell package into WSL.' }
+          wsl.exe --distribution Ubuntu-24.04 --user root --exec /usr/bin/dpkg -i $linuxPackage
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the verified PowerShell package in WSL.' }
+          wsl.exe --distribution Ubuntu-24.04 --user root --exec /usr/bin/pwsh -NoLogo -NoProfile -NonInteractive -Command '$PSVersionTable.PSVersion.ToString()'
+          if ($LASTEXITCODE -ne 0) { throw 'PowerShell did not start in the Ubuntu 24.04 WSL distribution.' }
+        timeout-minutes: 5
       - name: Verify the Phase 3 workspace slice through WSL
         if: inputs.acceptance == 'wsl-workspace-slice'
         run: uv run python scripts/workspace_vertical_slice_diagnostic.py --backend wsl-bubblewrap-v1 --distribution Ubuntu-24.04 --root .acceptance/workspace-vertical-slice-${{ github.run_id }}
@@ -847,6 +863,10 @@ jobs:
         if: inputs.acceptance == 'wsl-specialist-profile'
         run: uv run python scripts/selected_skill_specialist_diagnostic.py --distribution Ubuntu-24.04 --report-root .acceptance/selected-specialist-profile-script-${{ github.run_id }}
         timeout-minutes: 12
+      - name: Verify selected parent procedure scripts through WSL
+        if: inputs.acceptance == 'wsl-specialist-profile'
+        run: uv run python scripts/selected_skill_script_diagnostic.py --distribution Ubuntu-24.04 --report-root .acceptance/selected-parent-profile-script-${{ github.run_id }}
+        timeout-minutes: 8
       - name: Verify specialist profile dependency environments through WSL
         if: inputs.acceptance == 'wsl-specialist-profile'
         run: uv run python scripts/specialist_dependency_environment_diagnostic.py --distribution Ubuntu-24.04 --report-root .acceptance/specialist-dependency-environment-${{ github.run_id }}
@@ -863,7 +883,9 @@ jobs:
         if: always() && inputs.acceptance == 'wsl-specialist-profile'
         with:
           name: selected-specialist-profile-script-${{ github.run_id }}
-          path: .acceptance/selected-specialist-profile-script-${{ github.run_id }}/
+          path: |
+            .acceptance/selected-specialist-profile-script-${{ github.run_id }}/
+            .acceptance/selected-parent-profile-script-${{ github.run_id }}/
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 90
