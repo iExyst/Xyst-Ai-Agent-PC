@@ -2305,6 +2305,10 @@ Dedicated Ubuntu 24.04 workflow [45666926397](https://github.com/iExyst/Xyst-Ai-
 
 Hosted Windows workflow [45667310577](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45667310577) provisioned Ubuntu 24.04 under WSL and passed the coordinator workspace repair and separate final-tree validation. Both restricted commands returned `1 passed`; the report confirms denied command-sandbox networking, discarded command-side changes, cleanup, no unresolved calls, and no model inference ([report](../.acceptance/hosted-wsl-workspace-45667310577/report.json); [artifact 15048281711](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45667310577/artifacts/15048281711)). This verifies the bounded fixture gate on a hosted Windows runner, not general project compatibility or independent customer-machine recovery.
 
+## Recheck pinned Hermes inventories (2026-11-25)
+
+All four pinned-source audits pass on the current branch: skill import compatibility `186/186`; channel audit `27` manifests, `28` platform names, and `3` core transports; execution audit `6` built-in backend families, `8` external declarations, and `25` reviewed candidates; catalog audit `975` plugin manifests across `976` YAML files with one catalog-control file. Commands: `uv run python scripts/audit_skill_import_compatibility.py --check`, `uv run python scripts/audit_channel_inventory.py --check`, `uv run python scripts/audit_execution_inventory.py --check`, and `uv run python scripts/audit_catalog_inventory.py --check`. Inventory consistency does not establish behavior parity, exhaustive runtime compatibility, or live integrations; those remain open in the matrix.
+
 This snapshot records verified gate scope, not an overall release-readiness percentage. The latest installer is unsigned; selected package acceptance does not close Phase 9 or the remaining legal, signing and live-model criteria.
 
 ## Owner-reviewed workspace write recovery (2026-11-08)
