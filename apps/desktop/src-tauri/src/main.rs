@@ -89,8 +89,15 @@ fn engine_connection(state: tauri::State<'_, EngineState>) -> Result<Connection,
     Ok(state.connection.clone())
 }
 
-fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
+fn configure_engine_environment(
+    command: &mut Command,
+    token: &str,
+    port: u16,
+    test_user_profile: Option<std::ffi::OsString>,
+) {
     command.env_clear();
+    #[cfg(not(windows))]
+    let _ = test_user_profile;
     #[cfg(windows)]
     {
         for name in [
@@ -107,6 +114,9 @@ fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
             if let Some(value) = std::env::var_os(name) {
                 command.env(name, value);
             }
+        }
+        if let Some(profile) = test_user_profile {
+            command.env("USERPROFILE", profile);
         }
         let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
         let system32 = std::path::PathBuf::from(system_root).join("System32");
@@ -471,14 +481,14 @@ fn selected_settings_path(
     hidden_acceptance: bool,
     requested: Option<PathBuf>,
     data_directory: Option<PathBuf>,
-) -> Option<PathBuf> {
-    if hidden_acceptance {
-        requested
-            .or(data_directory)
-            .map(|directory| directory.join("desktop-settings.json"))
+    default: PathBuf,
+) -> PathBuf {
+    let directory = if hidden_acceptance {
+        requested.or(data_directory).unwrap_or(default)
     } else {
-        None
-    }
+        default
+    };
+    directory.join("desktop-settings.json")
 }
 
 #[cfg(test)]
@@ -493,7 +503,7 @@ mod tests {
     #[test]
     fn packaged_engine_launch_enables_streamed_responses() {
         let mut command = Command::new("xaa-engine.exe");
-        configure_engine_environment(&mut command, "fixture-token", 8765);
+        configure_engine_environment(&mut command, "fixture-token", 8765, None);
         let streaming = command
             .get_envs()
             .find(|(name, _)| *name == "XAA_STREAM_RESPONSES")
@@ -505,7 +515,7 @@ mod tests {
     #[test]
     fn packaged_engine_path_includes_the_windows_openssh_client() {
         let mut command = Command::new("xaa-engine.exe");
-        configure_engine_environment(&mut command, "fixture-token", 8765);
+        configure_engine_environment(&mut command, "fixture-token", 8765, None);
         let search_path = command
             .get_envs()
             .find(|(name, _)| *name == "PATH")
@@ -522,12 +532,31 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn acceptance_can_scope_a_synthetic_user_profile_to_the_engine() {
+        let profile = std::path::PathBuf::from("acceptance-profile");
+        let mut command = Command::new("xaa-engine.exe");
+        configure_engine_environment(
+            &mut command,
+            "fixture-token",
+            8765,
+            Some(profile.clone().into_os_string()),
+        );
+        let user_profile = command
+            .get_envs()
+            .find(|(name, _)| *name == "USERPROFILE")
+            .and_then(|(_, value)| value);
+
+        assert_eq!(user_profile, Some(profile.as_os_str()));
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn packaged_engine_environment_preserves_program_data_for_openssh() {
         let Some(expected) = std::env::var_os("ProgramData") else {
             return;
         };
         let mut command = Command::new("xaa-engine.exe");
-        configure_engine_environment(&mut command, "fixture-token", 8765);
+        configure_engine_environment(&mut command, "fixture-token", 8765, None);
         let actual = command
             .get_envs()
             .find(|(name, _)| *name == "ProgramData")
@@ -609,17 +638,28 @@ mod tests {
     fn acceptance_settings_use_isolated_paths_and_ignore_overrides_in_visible_app() {
         let requested = std::path::PathBuf::from("acceptance-config");
         let data = std::path::PathBuf::from("acceptance-data");
+        let default = std::path::PathBuf::from("user-config");
         assert_eq!(
-            selected_settings_path(false, Some(requested.clone()), Some(data.clone())),
-            None
+            selected_settings_path(
+                false,
+                Some(requested.clone()),
+                Some(data.clone()),
+                default.clone()
+            ),
+            default.join("desktop-settings.json")
         );
         assert_eq!(
-            selected_settings_path(true, Some(requested.clone()), Some(data.clone())),
-            Some(requested.join("desktop-settings.json"))
+            selected_settings_path(
+                true,
+                Some(requested.clone()),
+                Some(data.clone()),
+                default.clone()
+            ),
+            requested.join("desktop-settings.json")
         );
         assert_eq!(
-            selected_settings_path(true, None, Some(data.clone())),
-            Some(data.join("desktop-settings.json"))
+            selected_settings_path(true, None, Some(data.clone()), default),
+            data.join("desktop-settings.json")
         );
     }
 
@@ -709,11 +749,8 @@ fn main() {
                 acceptance_mode,
                 std::env::var_os("XAA_TEST_CONFIG_DIR").map(PathBuf::from),
                 std::env::var_os("XAA_DATA_DIR").map(PathBuf::from),
+                app.path().app_config_dir()?,
             );
-            let settings_path = match settings_path {
-                Some(path) => path,
-                None => app.path().app_config_dir()?.join("desktop-settings.json"),
-            };
             let settings = load_desktop_settings(&settings_path);
             let active_data_root = settings.active_data_root.clone();
             app.manage(CloseBehaviorState {
@@ -747,7 +784,10 @@ fn main() {
                 .append(true)
                 .open(logs.join("engine.log"))?;
             let mut command = Command::new(executable);
-            configure_engine_environment(&mut command, &token, port);
+            let test_user_profile = acceptance_mode
+                .then(|| std::env::var_os("XAA_TEST_LM_STUDIO_PROFILE"))
+                .flatten();
+            configure_engine_environment(&mut command, &token, port, test_user_profile);
             if std::env::var_os("XAA_DATA_DIR").is_none() {
                 if let Some(data_root) = active_data_root {
                     command.env("XAA_DATA_DIR", data_root);
