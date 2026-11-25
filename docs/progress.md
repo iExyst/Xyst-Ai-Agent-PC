@@ -1,3 +1,7 @@
+## Verify hosted Windows coverage for final-review path validation (2026-11-24)
+
+Exact-source Windows workflow [45515335121](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45515335121) passed on source commit `4a23fca7e262386653bcb8e3b66a5a6b001d11a6`: 1,705 Python tests passed, 29 skipped, and the configured browser, Hermes inventory, Ruff, format, Pyright, API-contract, desktop UI, and recovery checks passed. This verifies the legacy public completion visibility, internal-call privacy, and malformed-path rejection change in hosted CI. The separate full installer acceptance is still running. Live-model validation and the broader Phase 4 and release gates remain open.
+
 ## Preserve legacy tool visibility and internal-call privacy in final review (2026-11-24)
 
 The changed-file projection now treats older completion events with no `internal` field as public, while also honoring an internal marker on the corresponding intent event. It rejects journal paths that are absolute, drive-qualified, traversal-based, or use backslash separators before exposing them. A regression exercises both legacy privacy cases and malformed paths: the public file appears, internal and invalid paths stay hidden, and file contents are never returned. The focused projection test passes, along with Ruff and Pyright. This preserves historical review evidence without weakening internal-call privacy; exact-source hosted verification is pending.
