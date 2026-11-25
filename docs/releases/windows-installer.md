@@ -1,5 +1,13 @@
 # Unsigned Windows installer development build
 
+## Latest exact-branch hosted installer acceptance (2026-11-25)
+
+Manual Windows installer workflow [45678161554](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45678161554) passed for product commit `f467b00c` (workflow head `043f5617`, with documentation-only commits after the product commit). The 0.1.1 package passed release-notice verification, frozen and installed AppContainer execution, native recovery, packaged specialist/workspace/browser checks, upgrade from 0.1.0, current-user install, standard-user install, boot, uninstall, data preservation, and explicit data removal. The hosted Windows source workflow [45674340645](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45674340645) passed for the same product commit (1,745 Python tests passed; 36 skipped). The `all` installer dispatch skipped the separate Windows source, WSL and Docker jobs.
+
+The unsigned current-user setup is [artifact 15053603790](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45678161554/artifacts/15053603790), retained at [`.acceptance/hosted-installer-45678161554/build/installer/`](../../.acceptance/hosted-installer-45678161554/build/installer/). It is 83,239,570 bytes, SHA-256 `d797f87049f3b5d4b87d0ea17ca796ea60765c1c98726a9898bae17ad4a93cc6`. Its manifest records desktop SHA-256 `51a9cb658d459d5ffeb77be3882f94bf374d8c270ac6114aaf85b47eea4c6cb4` and engine SHA-256 `5bda000b8b6d35899a0957b5f1aa69c5a989a57ba5b9f8d9d1e613b7c5156549`; the standard-user acceptance independently confirms both installed binary hashes. Reports in the retained artifact also show user-data preservation and explicit removal. No live LM Studio inference was requested.
+
+The manifest records `signed: false`. Code signing, legal review, independent-machine coverage, and final live-model acceptance remain open.
+
 ## Latest exact-source hosted installer acceptance (2026-11-25)
 
 Manual Windows installer run [45644269638](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45644269638) passed for product commit `b73b22366abf02688208be77a5327616dfc546b8`. The unsigned current-user 0.1.1 package passed release-notice verification, frozen and installed AppContainer execution, native onboarding/recovery, successful and unavailable provider-estimate UI states, specialist and workspace recovery, upgrade from 0.1.0, standard-user install, boot, uninstall, and explicit data-removal acceptance. Exact-source workflow [45644259873](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45644259873) passed Windows desktop/UI checks, including the provider estimate and GPU telemetry fallback. The Python suite was skipped by the workflow's input filter; all 14 Rust desktop tests passed locally.
