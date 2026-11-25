@@ -16,7 +16,7 @@ The pinned inventory checks pass on this revision: 186/186 skill import compatib
 
 ## Check accessible names in channel controls (2026-11-25)
 
-The messaging-channel panel checks programmatic names for visible controls and headings, plus WCAG contrast in initial, linked-identity, connected-Telegram, pending-reply and email-confirmation states. The channel flow also verifies focus entry and return for identity and delivery confirmation groups. Channel and onboarding browser tests and TypeScript checking pass locally. Windows CI [45670108586](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45670108586) passed the earlier name/focus test; hosted confirmation of the expanded contrast scan is pending. This remains automated browser coverage, not a complete screen-reader audit. See [`progress.md`](../progress.md#check-accessible-names-in-messaging-channel-controls-2026-11-25).
+The messaging-channel panel checks programmatic names for visible controls and headings, plus WCAG contrast in initial, linked-identity, connected-Telegram, pending-reply and email-confirmation states. The channel flow also verifies focus entry and return for identity and delivery confirmation groups. Channel and onboarding browser tests and TypeScript checking pass locally. Exact-source Windows CI [45671818885](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45671818885) passed the expanded channel test and configured checks; Python suite and installer/WSL/Docker jobs were skipped by input scope. This remains automated browser coverage, not a complete screen-reader audit. See [`progress.md`](../progress.md#check-accessible-names-in-messaging-channel-controls-2026-11-25).
 
 ## Compare the pinned Hermes Docker and SSH adapters with X.A.A. (2026-11-25)
 
