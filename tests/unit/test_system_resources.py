@@ -81,6 +81,50 @@ def test_gpu_devices_merge_dxgi_memory_with_nvidia_utilization() -> None:
     ]
 
 
+def test_linux_amd_gpu_devices_reads_only_bounded_amd_vram_counters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(system_resources.sys, "platform", "linux")
+    drm = tmp_path / "drm"
+
+    def device(card_name: str, vendor: str, total: str, used: str, name: str = "") -> None:
+        path = drm / card_name / "device"
+        path.mkdir(parents=True)
+        (path / "vendor").write_text(vendor, encoding="ascii")
+        (path / "mem_info_vram_total").write_text(total, encoding="ascii")
+        (path / "mem_info_vram_used").write_text(used, encoding="ascii")
+        if name:
+            (path / "product_name").write_text(name, encoding="utf-8")
+
+    device("card0", "0x10de", "800", "300", "NVIDIA ignored")
+    device("card1", "0x1002", "1000", "250", "AMD Radeon Fixture")
+    device("card2", "0x1002", "400", "900")
+    device("card3", "0x1002", "bad", "0")
+    (drm / "card0-DP-1").mkdir()
+
+    assert system_resources.linux_amd_gpu_devices(drm) == [
+        {
+            "name": "AMD Radeon Fixture",
+            "memory_total_bytes": 1000,
+            "memory_free_bytes": 750,
+            "utilization_percent": None,
+        },
+        {
+            "name": "AMD GPU 2",
+            "memory_total_bytes": 400,
+            "memory_free_bytes": 0,
+            "utilization_percent": None,
+        },
+    ]
+
+
+def test_linux_amd_gpu_probe_is_disabled_on_other_hosts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(system_resources.sys, "platform", "win32")
+    assert system_resources.linux_amd_gpu_devices(tmp_path) == []
+
+
 def test_monitor_reports_cpu_memory_disk_queue_and_missing_gpu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

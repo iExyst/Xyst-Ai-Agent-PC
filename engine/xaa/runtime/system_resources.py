@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 from datetime import UTC, datetime
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -171,6 +172,47 @@ def _nvidia_smi_path() -> Path | None:
     else:
         candidates = [Path("/usr/bin/nvidia-smi"), Path("/usr/local/bin/nvidia-smi")]
     return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def linux_amd_gpu_devices(drm_root: Path = Path("/sys/class/drm")) -> list[dict[str, Any]]:
+    """Read bounded system-wide AMD VRAM counters exposed by Linux DRM sysfs."""
+    if not sys.platform.startswith("linux"):
+        return []
+    devices: list[dict[str, Any]] = []
+    try:
+        card_paths = (path for path in drm_root.glob("card[0-9]*") if path.name[4:].isdigit())
+        cards = list(islice(card_paths, 32))
+    except OSError:
+        return []
+    for card in cards:
+        if len(devices) >= 8:
+            continue
+        device = card / "device"
+        try:
+            vendor = (device / "vendor").read_text(encoding="ascii").strip().lower()
+            if vendor != "0x1002":
+                continue
+            total = int((device / "mem_info_vram_total").read_text(encoding="ascii").strip())
+            used = int((device / "mem_info_vram_used").read_text(encoding="ascii").strip())
+            if total <= 0 or used < 0:
+                continue
+        except (OSError, UnicodeError, ValueError):
+            continue
+        try:
+            name = (device / "product_name").read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            name = ""
+        if not name:
+            name = f"AMD GPU {card.name[4:]}"
+        devices.append(
+            {
+                "name": name[:128],
+                "memory_total_bytes": total,
+                "memory_free_bytes": max(0, total - min(used, total)),
+                "utilization_percent": None,
+            }
+        )
+    return devices
 
 
 def _com_method(instance: ctypes.c_void_p, index: int, restype: Any, argtypes: list[Any]) -> Any:
@@ -350,6 +392,8 @@ def _dxgi_gpu_devices() -> list[dict[str, Any]]:
 
 def _gpu_devices() -> list[dict[str, Any]]:
     devices = _dxgi_gpu_devices()
+    if sys.platform.startswith("linux"):
+        devices = merge_gpu_devices(devices, linux_amd_gpu_devices())
     executable = _nvidia_smi_path()
     if executable is not None:
         try:
