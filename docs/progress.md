@@ -24,6 +24,8 @@ Added a two-worker race regression that starts independent specialist inferences
 
 The Windows-first Provider Setup screen now fetches a current system-resource snapshot alongside LM Studio's non-loading model estimate. It lists each reported NVIDIA GPU's free/total VRAM and utilization, compares the estimate with the sum of reported free memory, and labels the comparison advisory because readings change and model placement/offload may differ. If telemetry is absent or unavailable, the UI says so and leaves loading under LM Studio's own controls. The provider-setup browser flow and desktop TypeScript/production build pass; generated API types remain current. The development host reported an RTX 5080 through `nvidia-smi`; this confirms telemetry is available on this machine only. This is visibility, not queue enforcement or a resource-fit guarantee; other accelerator vendors and actual load outcomes remain open. No live model was loaded.
 
+Exact-source Windows workflow [45599229322](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45599229322) passed on `99adf672cf7efd7ea6da49890838da693b565534`: 1,740 Python tests passed and 36 skipped; configured browser, Edge, static-analysis, contract, desktop, and recovery checks passed. WSL, installer, and Docker jobs were skipped by workflow conditions. This validates the source revision but does not exercise the model-setup screen in a packaged installer.
+
 Dependency-order note: the original live-inference gate is intentionally scheduled for the final release pass. Work continues on remaining deterministic core and release gaps meanwhile; this does not mark later phases complete or waive any gate.
 
 ## Run the native desktop on the development Windows host (2026-11-24)
