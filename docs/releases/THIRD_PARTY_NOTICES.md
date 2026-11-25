@@ -9498,7 +9498,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### 139. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
-**Packages:** `base64@0.23.1`, `bitflags@2.13.2`, `camino@1.2.6`, `cc@1.11.0`, `cfg-if@1.0.5`, `crossbeam-channel@0.5.17`, `crossbeam-utils@0.8.23`, `displaydoc@0.2.7`, `find-msvc-tools@0.1.15`, `flate2@1.1.10`, `form_urlencoded@1.2.2`, `glob@0.3.4`, `hashbrown@0.12.3`, `hashbrown@0.17.1`, `heck@0.5.0`, `html5ever@0.39.0`, `idna@1.1.0`, `keyboard-types@0.8.3`, `lock_api@0.4.14`, `log@0.4.35`, `markup5ever@0.39.0`, `mime@0.3.17`, `num-traits@0.2.19`, `once_cell@1.21.4`, `parking_lot@0.12.5`, `parking_lot_core@0.9.12`, `percent-encoding@2.3.2`, `png@0.18.1`, `regex-automata@0.4.18`, `regex-syntax@0.8.11`, `regex@1.13.1`, `rustc_version@0.4.1`, `scopeguard@1.2.0`, `serde_with@3.24.0`, `serde_with_macros@3.24.0`, `servo_arc@0.4.3`, `smallvec@1.16.4`, `socket2@0.6.5`, `stable_deref_trait@1.2.1`, `string_cache@0.9.0`, `string_cache_codegen@0.6.1`, `tendril@0.5.1`, `tray-icon@0.25.1`, `unicode-segmentation@1.13.3`, `url@2.5.8`, `web_atoms@0.2.6`
+**Packages:** `base64@0.23.1`, `bitflags@2.13.2`, `camino@1.2.6`, `cc@1.11.0`, `cfg-if@1.0.5`, `crossbeam-channel@0.5.17`, `crossbeam-utils@0.8.23`, `displaydoc@0.2.7`, `find-msvc-tools@0.1.15`, `flate2@1.1.10`, `form_urlencoded@1.2.3`, `glob@0.3.4`, `hashbrown@0.12.3`, `hashbrown@0.17.1`, `heck@0.5.0`, `html5ever@0.39.0`, `idna@1.1.0`, `keyboard-types@0.8.3`, `lock_api@0.4.14`, `log@0.4.35`, `markup5ever@0.39.0`, `mime@0.3.17`, `num-traits@0.2.19`, `once_cell@1.21.4`, `parking_lot@0.12.5`, `parking_lot_core@0.9.12`, `percent-encoding@2.3.2`, `png@0.18.1`, `regex-automata@0.4.18`, `regex-syntax@0.8.11`, `regex@1.13.1`, `rustc_version@0.4.1`, `scopeguard@1.2.0`, `serde_with@3.24.0`, `serde_with_macros@3.24.0`, `servo_arc@0.4.3`, `smallvec@1.16.4`, `socket2@0.6.5`, `stable_deref_trait@1.2.1`, `string_cache@0.9.0`, `string_cache_codegen@0.6.1`, `tendril@0.5.1`, `tray-icon@0.25.1`, `unicode-segmentation@1.13.3`, `url@2.5.9`, `web_atoms@0.2.6`
 
 ```text
 Apache License
@@ -10492,7 +10492,7 @@ limitations under the License.
 
 ### 147. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
-**Packages:** `cookie@0.18.2`
+**Packages:** `cookie@0.18.3`
 
 ```text
 Apache License
@@ -10701,7 +10701,7 @@ limitations under the License.
 
 ### 148. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
-**Packages:** `cookie@0.18.2`
+**Packages:** `cookie@0.18.3`
 
 ```text
 Copyright (c) 2017 Sergio Benitez
@@ -12628,7 +12628,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### 165. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
-**Packages:** `form_urlencoded@1.2.2`
+**Packages:** `form_urlencoded@1.2.3`
 
 ```text
 Copyright (c) 2013-2016 The rust-url developers
@@ -13297,7 +13297,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### 175. Rust/Cargo (Windows target) — MIT OR Apache-2.0
 
-**Packages:** `idna@1.1.0`, `percent-encoding@2.3.2`, `url@2.5.8`
+**Packages:** `idna@1.1.0`, `percent-encoding@2.3.2`, `url@2.5.9`
 
 ```text
 Copyright (c) 2013-2025 The rust-url developers

@@ -208,7 +208,7 @@ License expressions below are copied from package metadata without normalization
 | Rust/Cargo | cfg-if | 1.0.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/cfg-if |
 | Rust/Cargo | chrono | 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono |
 | Rust/Cargo | combine | 4.6.9 | MIT | https://github.com/Marwes/combine |
-| Rust/Cargo | cookie | 0.18.2 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/cookie-rs |
+| Rust/Cargo | cookie | 0.18.3 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/cookie-rs |
 | Rust/Cargo | core-foundation | 0.10.1 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs |
 | Rust/Cargo | core-foundation-sys | 0.8.7 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs |
 | Rust/Cargo | core-graphics | 0.25.0 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs |
@@ -258,7 +258,7 @@ License expressions below are copied from package metadata without normalization
 | Rust/Cargo | foreign-types | 0.5.0 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types |
 | Rust/Cargo | foreign-types-macros | 0.2.4 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types |
 | Rust/Cargo | foreign-types-shared | 0.3.1 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types |
-| Rust/Cargo | form_urlencoded | 1.2.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-url |
+| Rust/Cargo | form_urlencoded | 1.2.3 | MIT OR Apache-2.0 | https://github.com/servo/rust-url |
 | Rust/Cargo | futures-channel | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs |
 | Rust/Cargo | futures-core | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs |
 | Rust/Cargo | futures-executor | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs |
@@ -509,7 +509,7 @@ License expressions below are copied from package metadata without normalization
 | Rust/Cargo | typenum | 1.20.1 | MIT OR Apache-2.0 | https://github.com/paholg/typenum |
 | Rust/Cargo | unicode-ident | 1.0.27 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident |
 | Rust/Cargo | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-segmentation |
-| Rust/Cargo | url | 2.5.8 | MIT OR Apache-2.0 | https://github.com/servo/rust-url |
+| Rust/Cargo | url | 2.5.9 | MIT OR Apache-2.0 | https://github.com/servo/rust-url |
 | Rust/Cargo | urlpattern | 0.6.0 | MIT | https://github.com/denoland/rust-urlpattern |
 | Rust/Cargo | utf8_iter | 1.1.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf8_iter |
 | Rust/Cargo | utf_types | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf_types |
