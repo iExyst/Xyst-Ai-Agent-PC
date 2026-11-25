@@ -126,9 +126,26 @@ try{
   await expect(page.getByRole('heading',{name:'Procedure candidates'})).toBeVisible();
   await page.getByRole('link',{name:'Automations',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Automations',level:1,exact:true})).toBeVisible();
+  const systemResourcesResponsePromise=page.waitForResponse(response=>response.request().method()==='GET'&&new URL(response.url()).pathname==='/system/resources',{timeout:10000});
   await page.getByRole('link',{name:'System monitor',exact:true}).click();
   await expect(page.getByRole('heading',{name:'System monitor',exact:true})).toBeVisible();
-  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory',...Array.from({length:5},(_,index)=>`extra-${index+1}`),'review'],dependency_stages:2,stage_one_tasks:7,stage_two_tasks:1,nested_parent_id:'review',nested_child_count:7,parent_waits_for_owner_review:true,subtask_parent_links_verified:true,child_to_parent_graph_edges:7,stage_progress_bars_verified:true,task_purpose_and_expected_outputs_visible_in_graph:true,task_details_collapsed_by_default:true,expected_output_visible_in_task_summary:true,task_details_expand_verified:true,large_graph_viewport_scroll_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',run_wall_clock_begins_at_planning:true,queue_delay_excluded_seconds:300,elapsed_and_remaining_wall_time_verified:true,singular_task_budget_label_verified:true,specialist_resource_usage_display_verified:true,on_demand_screens_verified:['Memory','Skills','Automations','System monitor','Saved runs','Conversations'],on_demand_integration_panels_verified:['Search','Specialist profiles','Channels','MCP','Agent Plugins','Command sandbox'],dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
+  const systemResourcesResponse=await systemResourcesResponsePromise;
+  if(!systemResourcesResponse.ok())throw new Error(`Native System Monitor request failed (${systemResourcesResponse.status()})`);
+  const systemResources=await systemResourcesResponse.json();
+  if(!Array.isArray(systemResources.gpu_devices))throw new Error('Native System Monitor response did not include a GPU device list');
+  await expect(page.getByRole('region',{name:'Processor'})).toBeVisible();
+  const systemMonitorCards=await page.locator('.system-resource-card[aria-label]').evaluateAll(cards=>cards.map(card=>card.getAttribute('aria-label')).filter(Boolean));
+  const fixedResourceCards=new Set(['Processor','Memory','Profile drive','Inference queue']);
+  const displayedGpuNames=systemMonitorCards.filter(name=>!fixedResourceCards.has(name)).sort();
+  const reportedGpuNames=systemResources.gpu_devices.map(gpu=>gpu.name).sort();
+  if(JSON.stringify(displayedGpuNames)!==JSON.stringify(reportedGpuNames))throw new Error(`Native System Monitor cards do not match the bundled engine GPU response: displayed=${JSON.stringify(displayedGpuNames)}, reported=${JSON.stringify(reportedGpuNames)}`);
+  for(const gpu of systemResources.gpu_devices){
+    const card=page.getByRole('region',{name:gpu.name,exact:true});
+    await expect(card).toContainText('GPU memory free of');
+    await expect(card).toContainText(gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`);
+  }
+  const systemMonitorGpuAcceptance={platform:systemResources.platform,gpu_devices:systemResources.gpu_devices.map(gpu=>({name:gpu.name,memory_total_bytes:gpu.memory_total_bytes,memory_free_bytes:gpu.memory_free_bytes,utilization_percent:gpu.utilization_percent})),api_cards_match:true,utilization_representation_verified:true};
+  const report={passed:true,run_id:run.id,task_ids:['inspect','inventory',...Array.from({length:5},(_,index)=>`extra-${index+1}`),'review'],dependency_stages:2,stage_one_tasks:7,stage_two_tasks:1,nested_parent_id:'review',nested_child_count:7,parent_waits_for_owner_review:true,subtask_parent_links_verified:true,child_to_parent_graph_edges:7,stage_progress_bars_verified:true,task_purpose_and_expected_outputs_visible_in_graph:true,task_details_collapsed_by_default:true,expected_output_visible_in_task_summary:true,task_details_expand_verified:true,large_graph_viewport_scroll_verified:true,all_tasks_waiting:true,inference_allowance_verified:true,saved_inference_attempts:1,iterations_remaining:'7 of 8',run_wall_clock_begins_at_planning:true,queue_delay_excluded_seconds:300,elapsed_and_remaining_wall_time_verified:true,singular_task_budget_label_verified:true,specialist_resource_usage_display_verified:true,system_monitor_gpu_acceptance:systemMonitorGpuAcceptance,on_demand_screens_verified:['Memory','Skills','Automations','System monitor','Saved runs','Conversations'],on_demand_integration_panels_verified:['Search','Specialist profiles','Channels','MCP','Agent Plugins','Command sandbox'],dispatch_disabled_without_model:true,queued_cancel_remains_enabled:true,exit_on_close_behavior_selected:true,model_inference_requested:false,desktop_sha256:desktopSha256,engine_sha256:engineSha256};
   await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));
   passed=true;
   await page.evaluate(async()=>{
