@@ -1,0 +1,10 @@
+{
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "kernel": "6.18.33.2-microsoft-standard-WSL2",
+  "drm_class_entries": [
+    "version"
+  ],
+  "drm_cards": [],
+  "physical_amd_drm_visible": false,
+  "acceptance_scope": "WSL visibility probe only; does not validate physical Linux GPU telemetry"
+}
