@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -11,8 +13,9 @@ from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest
 
 
 @pytest.mark.skipif(os.name != "nt", reason="SSH execution profile is Windows-first")
+@pytest.mark.parametrize("manager_matches", [True, False])
 async def test_ssh_discovery_pins_identity_and_builds_fixed_restricted_invocation(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, manager_matches: bool
 ) -> None:
     ssh_directory = tmp_path / ".ssh"
     ssh_directory.mkdir()
@@ -41,18 +44,38 @@ remotecommand none
 """
 
     async def fake_request(command, payload, *, timeout, output_limit, on_stdout_line=None):
-        del payload, timeout, output_limit, on_stdout_line
+        del timeout, output_limit, on_stdout_line
         if "-G" in command:
             assert command[command.index("-F") + 1] == str(ssh_directory / "config")
             return options
-        if "-F" in command:
+        if "-F" in command and command[-1] == str(known_hosts):
             assert command[-1] == str(known_hosts)
             return b"# Host [127.0.0.1]:22222 found: line 1\n" + pinned_key
         if "-lf" in command:
             return b"256 SHA256:identity-fingerprint fixture (ED25519)\n"
+        if ssh_transport.REMOTE_MANAGER_COMMAND in command:
+            challenge = json.loads(payload)
+            digest, resources = ssh_transport.profile_fingerprint()
+            hashes = {
+                path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in resources
+            }
+            if not manager_matches:
+                digest = "0" * 64
+            return json.dumps(
+                {
+                    "protocol_version": 1,
+                    "nonce": challenge["nonce"],
+                    "manager_sha256": digest,
+                    "resource_sha256": hashes,
+                }
+            ).encode()
         raise AssertionError(f"Unexpected subprocess: {command!r}")
 
     monkeypatch.setattr(ssh_transport, "request_process", fake_request)
+    if not manager_matches:
+        with pytest.raises(PermissionError, match="remote X.A.A. manager does not match"):
+            await ssh_transport.SSHTransport.discover("xaa-test", str(identity), deadline=10**12)
+        return
     transport = await ssh_transport.SSHTransport.discover(
         "xaa-test", str(identity), deadline=10**12
     )

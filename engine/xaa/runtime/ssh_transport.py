@@ -11,11 +11,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.owned_transport import request_process
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
-from xaa.runtime.wsl_transport import WSLTransport, profile_fingerprint
+from xaa.runtime.wsl_transport import WSLTransport, profile_fingerprint, response_object
 
 SSH_BACKEND = "ssh-wsl-bubblewrap-v1"
 REMOTE_MANAGER_COMMAND = "xaa-ssh-execution-manager"
@@ -110,7 +111,10 @@ class SSHTransport:
             raise ValueError("SSH execution profiles are available on Windows only.")
         if _ALIAS.fullmatch(alias) is None:
             raise ValueError("Enter a simple OpenSSH host alias.")
-        manager_sha256, _ = profile_fingerprint()
+        manager_sha256, manager_resources = profile_fingerprint()
+        manager_resource_hashes = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in manager_resources
+        }
         profile_value = os.environ.get("USERPROFILE")
         if not profile_value:
             raise ValueError("The Windows user profile is unavailable.")
@@ -227,7 +231,7 @@ class SSHTransport:
             identity_path=str(identity),
             identity_fingerprint=identity_fingerprint,
         )
-        return cls(
+        transport = cls(
             distribution=alias,
             profile_sha256=digest,
             manager_profile_sha256=manager_sha256,
@@ -240,6 +244,38 @@ class SSHTransport:
             host_pin=pin,
             identity_fingerprint=identity_fingerprint,
         )
+        await transport._verify_remote_manager(deadline, manager_resource_hashes)
+        return transport
+
+    async def _verify_remote_manager(
+        self, deadline: float, expected_resources: dict[str, str] | None = None
+    ) -> None:
+        if expected_resources is None:
+            _, resources = profile_fingerprint()
+            expected_resources = {
+                path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in resources
+            }
+        nonce = uuid4().hex
+        raw = await request_process(
+            self.invocation,
+            json.dumps({"action": "profile", "nonce": nonce}, separators=(",", ":")).encode(
+                "utf-8"
+            ),
+            timeout=min(8, deadline - time.monotonic()),
+            output_limit=4096,
+        )
+        result = response_object(raw)
+        if (
+            set(result) != {"protocol_version", "nonce", "manager_sha256", "resource_sha256"}
+            or type(result.get("protocol_version")) is not int
+            or result["protocol_version"] != 1
+            or result.get("nonce") != nonce
+            or result.get("manager_sha256") != self.manager_profile_sha256
+            or result.get("resource_sha256") != expected_resources
+        ):
+            raise PermissionError(
+                "The remote X.A.A. manager does not match this Windows client's verified profile."
+            )
 
     def require_intent(self, intent: CommandIntent) -> None:
         if (

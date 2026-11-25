@@ -22,6 +22,15 @@ from typing import Any, cast
 BASE = Path("/tmp/xaa-executions")
 MAX_REQUEST_BYTES = 18 * 1024 * 1024
 MAX_OUTPUT_BYTES = 1024 * 1024
+PROFILE_RESOURCE_NAMES = (
+    "wsl_manager.py",
+    "workspace_snapshot.py",
+    "sandbox_profile.py",
+    "execution_receipts.py",
+    "cgroup_gate.py",
+    "procedure_environment_manager.py",
+    "node_environment_manager.py",
+)
 
 
 def execution_id(value: object) -> str:
@@ -456,6 +465,26 @@ def decode_request(raw: bytes) -> dict[str, Any]:
     return cast(dict[str, Any], request)
 
 
+def manager_profile() -> dict[str, Any]:
+    """Hash the exact root-owned manager files used by this forced command."""
+    if len(sys.argv) != len(PROFILE_RESOURCE_NAMES):
+        raise ValueError("The SSH manager must receive its complete fixed resource list.")
+    paths = tuple(Path(value) for value in sys.argv)
+    if tuple(path.name for path in paths) != PROFILE_RESOURCE_NAMES:
+        raise ValueError("The SSH manager resource list is not in its fixed order.")
+    resolved = tuple(path.resolve(strict=True) for path in paths)
+    if len({path.parent for path in resolved}) != 1:
+        raise ValueError("SSH manager resources must come from one installed directory.")
+    hashes: dict[str, str] = {}
+    for path, resolved_path in zip(paths, resolved, strict=True):
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0:
+            raise PermissionError("SSH manager resources must be root-owned regular files.")
+        hashes[resolved_path.name] = hashlib.sha256(resolved_path.read_bytes()).hexdigest()
+    profile_sha256 = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+    return {"manager_sha256": profile_sha256, "resource_sha256": hashes}
+
+
 def main() -> None:
     if os.name != "posix" or os.getuid() != 0:
         raise PermissionError("The selected WSL manager must have root service-management access.")
@@ -463,6 +492,22 @@ def main() -> None:
     os.environ.update({"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
     raw = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
     request = decode_request(raw)
+    if request.get("action") == "profile" and set(request) == {"action", "nonce"}:
+        nonce = request["nonce"]
+        if not isinstance(nonce, str) or not re.fullmatch(r"[a-f0-9]{32}", nonce):
+            raise ValueError("Manager profile challenge is invalid.")
+        result = manager_profile()
+        print(
+            json.dumps(
+                {
+                    "protocol_version": 1,
+                    "nonce": nonce,
+                    **result,
+                },
+                sort_keys=True,
+            )
+        )
+        return
     prepare_base()
     receipts = runpy.run_path(sys.argv[3])
     environments = runpy.run_path(sys.argv[5])
