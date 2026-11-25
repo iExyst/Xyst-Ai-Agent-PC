@@ -4,13 +4,12 @@ import {navigateMainSection} from './navigation';
 test('save Telegram token securely, pair an account and clear the credential',async({page})=>{
   const errors:string[]=[];const requests:any[]=[];
   let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{},unknown_deliveries:[]};
-  let discordStatus:any={configured:false,bot_id:null,bot_username:null,linked_users:0,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   let webhookStatus:any={configured:false};
   let identityBindings:any[]=[
     {id:'telegram-binding',channel:'telegram',account_id:'bot-1',external_identity:'456',session_id:'telegram-session',session_channel:'telegram',identity_link_id:null,authorized:true,title:'Telegram history',link_created_at:null},
     {id:'email-binding',channel:'email',account_id:'mailbox-1',external_identity:'owner@example.test',session_id:'email-session',session_channel:'email',identity_link_id:null,authorized:true,title:'Email history',link_created_at:null},
-    {id:'discord-binding',channel:'discord',account_id:'bot-2',external_identity:'3001',session_id:'discord-session',session_channel:'discord',identity_link_id:null,authorized:true,title:'Discord history',link_created_at:null},
+    {id:'cli-binding',channel:'cli',account_id:'bot-2',external_identity:'3001',session_id:'cli-session',session_channel:'cli',identity_link_id:null,authorized:true,title:'CLI history',link_created_at:null},
     {id:'webhook-binding',channel:'webhook',account_id:'endpoint-1',external_identity:'sender-1',session_id:'webhook-session',session_channel:'webhook',identity_link_id:null,authorized:true,title:'Webhook history',link_created_at:null},
   ];
   let identityLinkId='';
@@ -29,7 +28,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/channels/identity-bindings'&&request.method()==='GET')return route.fulfill({json:identityBindings,headers});
     if(path==='/channels/identity-links'&&request.method()==='POST'){
-      const body=request.postDataJSON(),source=body.binding_ids.includes('discord-binding');
+      const body=request.postDataJSON(),source=body.binding_ids.includes('cli-binding');
       if(!source){expect(body.binding_ids).toEqual(['telegram-binding','email-binding']);expect(body.shared_history_binding_id).toBe('telegram-binding');}
       identityLinkId=identityLinkId||'shared-identity-link';sourceIdentityLinkId=source?'source-identity-link':sourceIdentityLinkId;
       const selected=identityBindings.find(binding=>binding.id===body.shared_history_binding_id),linkId=source?sourceIdentityLinkId:identityLinkId;
@@ -37,14 +36,14 @@ test('save Telegram token securely, pair an account and clear the credential',as
       return route.fulfill({status:201,json:{id:linkId,shared_history_binding_id:body.shared_history_binding_id},headers});
     }
     if(path==='/channels/identity-links/shared-identity-link/members'&&request.method()==='POST'){
-      expect(request.postDataJSON()).toEqual({binding_id:'discord-binding',confirmed:true});
-      identityBindings=identityBindings.map(binding=>binding.id==='discord-binding'?{...binding,identity_link_id:identityLinkId,session_id:'telegram-session',session_channel:'telegram'}:binding);
-      return route.fulfill({status:201,json:{link_id:identityLinkId,binding_id:'discord-binding',shared_session_id:'telegram-session'},headers});
+      expect(request.postDataJSON()).toEqual({binding_id:'cli-binding',confirmed:true});
+      identityBindings=identityBindings.map(binding=>binding.id==='cli-binding'?{...binding,identity_link_id:identityLinkId,session_id:'telegram-session',session_channel:'telegram'}:binding);
+      return route.fulfill({status:201,json:{link_id:identityLinkId,binding_id:'cli-binding',shared_session_id:'telegram-session'},headers});
     }
     if(path==='/channels/identity-links/shared-identity-link/merge'&&request.method()==='POST'){
       expect(request.postDataJSON()).toEqual({source_link_id:'source-identity-link',confirmed:true});
       identityBindings=identityBindings.map(binding=>binding.identity_link_id===sourceIdentityLinkId?{...binding,identity_link_id:identityLinkId,session_id:'telegram-session',session_channel:'telegram'}:binding);
-      return route.fulfill({json:{target_link_id:identityLinkId,source_link_id:sourceIdentityLinkId,merged_bindings:2,shared_session_id:'telegram-session',retained_source_session_id:'discord-session'},headers});
+      return route.fulfill({json:{target_link_id:identityLinkId,source_link_id:sourceIdentityLinkId,merged_bindings:2,shared_session_id:'telegram-session',retained_source_session_id:'cli-session'},headers});
     }
     if(path==='/channels/identity-links/shared-identity-link'&&request.method()==='DELETE'){
       expect(request.postDataJSON()).toEqual({confirmed:true});
@@ -54,28 +53,6 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/memory'||path==='/memory/export')return route.fulfill({json:[],headers});
     if(path.startsWith('/execution/'))return route.fulfill({json:[],headers});
     if(path==='/channels/telegram'&&request.method()==='GET')return route.fulfill({json:status,headers});
-    if(path==='/channels/discord'&&request.method()==='GET')return route.fulfill({json:discordStatus,headers});
-    if(path==='/channels/discord/credential'&&request.method()==='PUT'){
-      const body=request.postDataJSON();requests.push(body);expect(body.token).toBe('discord-test-secret');
-      discordStatus={configured:true,bot_id:'100000000000000001',bot_username:'xaa-test',linked_users:0,processed_messages:0,deliveries:{unknown:1},unknown_deliveries:[{message_id:'51',user_id:'300000000000000003',run_id:'discord-run',updated_at:'2026-11-08T12:00:00Z'}]};
-      return route.fulfill({json:discordStatus,headers});
-    }
-    if(path==='/channels/discord/deliveries/51/reconcile'&&request.method()==='POST'){
-      expect(request.postDataJSON()).toEqual({resolution:'retry',confirmed_destination_checked:true});
-      discordStatus={...discordStatus,deliveries:{pending:1},unknown_deliveries:[]};
-      return route.fulfill({json:discordStatus,headers});
-    }
-    if(path==='/channels/discord/credential'&&request.method()==='DELETE'){
-      discordStatus={...discordStatus,configured:false};return route.fulfill({json:discordStatus,headers});
-    }
-    if(path==='/channels/discord/pairing'&&request.method()==='POST'){
-      discordStatus={...discordStatus,linked_users:1};
-      return route.fulfill({status:201,json:{code:'discord-one-time-code',expires_at:'2030-01-01T12:05:00Z'},headers});
-    }
-    if(path==='/channels/discord/links'&&request.method()==='DELETE'){
-      discordStatus={...discordStatus,linked_users:0};
-      return route.fulfill({json:{revoked_users:1,linked_users:0},headers});
-    }
     if(path==='/channels/telegram/credential'&&request.method()==='PUT'){
       const body=request.postDataJSON();requests.push(body);expect(body.token).toBe('123456:telegram-test-secret');
       status={configured:true,bot_username:'xaa_test_bot',linked_users:0,processed_updates:2,deliveries:{unknown:1},unknown_deliveries:[{update_id:17,user_id:'456',run_id:'fixture-run',updated_at:'2026-11-08T12:00:00Z'}]};
@@ -130,14 +107,15 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await navigateMainSection(page,'Tools & integrations');
   await page.locator('summary').filter({hasText:'Messaging channels'}).click();
   const panel=page.getByRole('region',{name:'Messaging channels',exact:true});
+  await expect(panel.getByText('Discord (private DMs)',{exact:true})).toHaveCount(0);
   await panel.getByLabel('First authorized account').selectOption('telegram-binding');
   await panel.getByLabel('Second account from another channel').selectOption('email-binding');
   await panel.getByRole('radio',{name:/telegram · 456/}).check();
   await panel.getByRole('button',{name:'Link accounts and share selected history'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('telegram: 456 ↔ email: owner@example.test');
-  await panel.getByLabel('First authorized account').selectOption('discord-binding');
+  await panel.getByLabel('First authorized account').selectOption('cli-binding');
   await panel.getByLabel('Second account from another channel').selectOption('webhook-binding');
-  await panel.getByRole('radio',{name:/discord · 3001/}).check();
+  await panel.getByRole('radio',{name:/cli · 3001/}).check();
   await panel.getByRole('button',{name:'Link accounts and share selected history'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('webhook: sender-1');
   await panel.locator('#identity-merge-shared-identity-link').selectOption('source-identity-link');
@@ -155,7 +133,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(mergeDialog).toContainText('earlier session will remain in local session history without being combined');
   await mergeDialog.getByRole('button',{name:'Confirm merge into this history'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'}).getByRole('listitem')).toHaveCount(1);
-  await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('discord: 3001');
+  await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('cli: 3001');
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('shared history from telegram');
   const closedUnlinkButton=panel.getByRole('button',{name:'Unlink these accounts'});
   const unlinkTargetId=await closedUnlinkButton.getAttribute('aria-controls');
@@ -177,32 +155,11 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByRole('group',{name:'Confirm unlink accounts'})).toBeFocused();
   await panel.getByRole('button',{name:'Confirm unlink'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toHaveCount(0);
-  await panel.getByLabel('Discord bot token',{exact:true}).fill('discord-test-secret');
-  await panel.getByRole('button',{name:'Verify and save Discord bot token',exact:true}).click();
-  await expect(panel.getByLabel('Discord bot token',{exact:true})).toHaveValue('');
-  await expect(panel.getByText('Connected bot: xaa-test')).toBeVisible();
-  await expect(panel.getByRole('region',{name:'Discord replies needing review'})).toBeVisible();
-  await panel.getByRole('button',{name:'I checked; retry Discord reply'}).click();
-  const discordConfirmation=panel.getByRole('group',{name:'Confirm Discord delivery reconciliation'});
-  await expect(discordConfirmation).toBeFocused();
-  const discordRetry=panel.getByRole('button',{name:'I checked; retry Discord reply'});
-  await expect(discordRetry).toHaveAttribute('aria-expanded','true');
-  await expect(discordRetry).toHaveAttribute('aria-controls',await discordConfirmation.getAttribute('id')??'');
-  await panel.getByRole('button',{name:'Confirm Discord retry'}).click();
-  await expect(panel.getByRole('region',{name:'Discord replies needing review'})).toHaveCount(0);
-  await panel.getByRole('button',{name:'Generate one-time Discord pairing code',exact:true}).click();
-  await expect(panel.getByLabel('Discord pairing instructions')).toContainText('/pair discord-one-time-code');
-  await panel.getByRole('button',{name:'Refresh Discord status',exact:true}).click();
-  await panel.getByRole('button',{name:'Revoke all Discord users',exact:true}).click();
-  await expect(panel.getByRole('group',{name:'Confirm revoke Discord links'})).toBeFocused();
-  await panel.getByRole('button',{name:'Confirm revoke Discord links',exact:true}).click();
-  await panel.getByRole('button',{name:'Clear saved Discord token',exact:true}).click();
-  await expect(panel.getByText('Discord bot is not configured')).toBeVisible();
   await panel.getByLabel('Telegram bot token',{exact:true}).fill('123456:telegram-test-secret');
   await panel.getByRole('button',{name:'Verify and save bot token',exact:true}).click();
   await expect(panel.getByLabel('Telegram bot token',{exact:true})).toHaveValue('');
   await expect(panel.getByText('Connected bot: @xaa_test_bot')).toBeVisible();
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(1);
   await panel.getByRole('button',{name:'Generate one-time pairing code',exact:true}).click();
   await expect(panel.getByLabel('Telegram pairing instructions')).toContainText('/pair one-time-pair-code');
   await expect(panel.getByText(/Update 17 · Telegram user 456/)).toBeVisible();
@@ -245,6 +202,6 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByText('Unconfirmed email replies')).toHaveCount(0);
   await panel.getByRole('button',{name:'Clear email credentials',exact:true}).click();
   await expect(panel.getByText('Email is not configured')).toBeVisible();
-  expect(requests).toHaveLength(3);
+  expect(requests).toHaveLength(2);
   expect(errors).toEqual([]);
 });

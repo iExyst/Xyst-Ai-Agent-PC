@@ -244,10 +244,17 @@ class CommandJournal:
             grant, workspace = self._grant(
                 connection, run_id, self.store.path, validate_workspace=False
             )
-            if (intent.backend, intent.distribution, intent.profile_sha256, intent.workspace) != (
+            if (
+                intent.backend,
+                intent.distribution,
+                intent.profile_sha256,
+                intent.image_reference,
+                intent.workspace,
+            ) != (
                 grant.backend,
                 grant.distribution,
                 grant.profile_sha256,
+                grant.image_reference,
                 workspace,
             ):
                 raise PermissionError("Stopped command recovery authority changed.")
@@ -510,6 +517,7 @@ class CommandJournal:
                 backend=grant.backend,
                 distribution=grant.distribution,
                 profile_sha256=grant.profile_sha256,
+                image_reference=grant.image_reference,
                 workspace=workspace,
                 procedure_environment_digest=(
                     procedure_environment["environment_digest"]
@@ -635,10 +643,17 @@ class CommandJournal:
             grant, workspace = self._grant(
                 connection, run_id, self.store.path, validate_workspace=False
             )
-            if (intent.backend, intent.profile_sha256, intent.distribution, intent.workspace) != (
+            if (
+                intent.backend,
+                intent.profile_sha256,
+                intent.distribution,
+                intent.image_reference,
+                intent.workspace,
+            ) != (
                 grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
+                grant.image_reference,
                 workspace,
             ):
                 raise PermissionError("Saved command recovery authority changed.")
@@ -653,10 +668,17 @@ class CommandJournal:
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
             self.require_state(connection, run_id, call_id)
-            if (intent.backend, intent.profile_sha256, intent.distribution, intent.workspace) != (
+            if (
+                intent.backend,
+                intent.profile_sha256,
+                intent.distribution,
+                intent.image_reference,
+                intent.workspace,
+            ) != (
                 grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
+                grant.image_reference,
                 workspace,
             ):
                 raise PermissionError("Saved snapshot authority changed.")
@@ -718,10 +740,17 @@ class CommandJournal:
             self._require_reservation_owner(connection, run_id, call_id, owner)
             grant, workspace = self._grant(connection, run_id, self.store.path)
             self.require_state(connection, run_id, call_id)
-            if (intent.backend, intent.profile_sha256, intent.distribution, intent.workspace) != (
+            if (
+                intent.backend,
+                intent.profile_sha256,
+                intent.distribution,
+                intent.image_reference,
+                intent.workspace,
+            ) != (
                 grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
+                grant.image_reference,
                 workspace,
             ):
                 raise PermissionError("Saved command authority changed.")

@@ -50,92 +50,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/channels/discord": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Discord Status */
-        get: operations["discord_status_channels_discord_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/channels/discord/credential": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Set Discord Credential */
-        put: operations["set_discord_credential_channels_discord_credential_put"];
-        post?: never;
-        /** Clear Discord Credential */
-        delete: operations["clear_discord_credential_channels_discord_credential_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/channels/discord/deliveries/{message_id}/reconcile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reconcile Discord Delivery */
-        post: operations["reconcile_discord_delivery_channels_discord_deliveries__message_id__reconcile_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/channels/discord/links": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Revoke Discord Links */
-        delete: operations["revoke_discord_links_channels_discord_links_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/channels/discord/pairing": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Discord Pairing */
-        post: operations["create_discord_pairing_channels_discord_pairing_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/channels/email": {
         parameters: {
             query?: never;
@@ -2704,9 +2618,11 @@ export interface components {
              * @default wsl-bubblewrap-v1
              * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1";
             /** Distribution */
             distribution: string;
+            /** Image Reference */
+            image_reference?: string | null;
             /**
              * Max Seconds
              * @default 30
@@ -2951,71 +2867,6 @@ export interface components {
             timezone: string;
             /** Workspace */
             workspace?: string | null;
-        };
-        /** DiscordCredentialRequest */
-        DiscordCredentialRequest: {
-            /**
-             * Token
-             * Format: password
-             */
-            token: string;
-        };
-        /** DiscordCredentialStatus */
-        DiscordCredentialStatus: {
-            /** Bot Id */
-            bot_id: string | null;
-            /** Bot Username */
-            bot_username: string | null;
-            /** Configured */
-            configured: boolean;
-            /** Deliveries */
-            deliveries: {
-                [key: string]: number;
-            };
-            /** Linked Users */
-            linked_users: number;
-            /** Processed Messages */
-            processed_messages: number;
-            /** Unknown Deliveries */
-            unknown_deliveries: components["schemas"]["DiscordUnknownDelivery"][];
-        };
-        /** DiscordDeliveryReconciliation */
-        DiscordDeliveryReconciliation: {
-            /**
-             * Confirmed Destination Checked
-             * @constant
-             */
-            confirmed_destination_checked: true;
-            /**
-             * Resolution
-             * @enum {string}
-             */
-            resolution: "delivered" | "retry";
-        };
-        /** DiscordLinkRevocation */
-        DiscordLinkRevocation: {
-            /** Linked Users */
-            linked_users: number;
-            /** Revoked Users */
-            revoked_users: number;
-        };
-        /** DiscordPairingCode */
-        DiscordPairingCode: {
-            /** Code */
-            code: string;
-            /** Expires At */
-            expires_at: string;
-        };
-        /** DiscordUnknownDelivery */
-        DiscordUnknownDelivery: {
-            /** Message Id */
-            message_id: string;
-            /** Run Id */
-            run_id: string | null;
-            /** Updated At */
-            updated_at: string;
-            /** User Id */
-            user_id: string | null;
         };
         /** DistributionInventory */
         DistributionInventory: {
@@ -4160,9 +4011,11 @@ export interface components {
              * @default wsl-bubblewrap-v1
              * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1";
             /** Distribution */
             distribution: string;
+            /** Image Reference */
+            image_reference?: string | null;
         };
         /** ReadinessResult */
         ReadinessResult: {
@@ -4171,7 +4024,7 @@ export interface components {
              * @default wsl-bubblewrap-v1
              * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1";
             /**
              * Checked At
              * Format: date-time
@@ -4188,6 +4041,8 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+            /** Image Reference */
+            image_reference?: string | null;
             policy?: components["schemas"]["ExecutionPolicy"];
             /** Profile Sha256 */
             profile_sha256: string | null;
@@ -5532,154 +5387,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    discord_status_channels_discord_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscordCredentialStatus"];
-                };
-            };
-        };
-    };
-    set_discord_credential_channels_discord_credential_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DiscordCredentialRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscordCredentialStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clear_discord_credential_channels_discord_credential_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscordCredentialStatus"];
-                };
-            };
-        };
-    };
-    reconcile_discord_delivery_channels_discord_deliveries__message_id__reconcile_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                message_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DiscordDeliveryReconciliation"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscordCredentialStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    revoke_discord_links_channels_discord_links_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscordLinkRevocation"];
-                };
-            };
-        };
-    };
-    create_discord_pairing_channels_discord_pairing_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiscordPairingCode"];
                 };
             };
         };

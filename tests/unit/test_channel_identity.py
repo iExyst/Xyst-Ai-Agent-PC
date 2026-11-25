@@ -4,7 +4,6 @@ from email.message import EmailMessage
 from uuid import uuid4
 
 import pytest
-from xaa.channels.discord import DiscordIdentity, DiscordMessage, DiscordStore
 from xaa.channels.email import EmailConfig, EmailStore
 from xaa.channels.telegram import TelegramIdentity, TelegramStore
 from xaa.storage.channel_identity import ChannelIdentityLinks
@@ -141,39 +140,18 @@ def test_linked_telegram_and_email_ingress_use_the_selected_shared_session(works
     assert {row["session_id"] for row in sessions} == {telegram_session}
 
 
-def test_linked_discord_ingress_uses_the_selected_shared_session(workspace_tmp_path):
-    store = RunStore(workspace_tmp_path / "identity-link-discord.sqlite3")
-    telegram_binding, telegram_session = _binding(store, "telegram", "bot-1", "1001")
-    discord_binding, _ = _binding(store, "discord", "2001", "3001")
-    ChannelIdentityLinks(store).create_link((telegram_binding, discord_binding), telegram_binding)
-
-    result = DiscordStore(store).process_message(
-        DiscordIdentity("2001", "fixture-bot"),
-        DiscordMessage("10", "3001", "4001", "message from Discord", True),
-        model="fixture/model",
-    )
-
-    assert result["state"] == "queued"
-    with store.connection() as connection:
-        message = connection.execute(
-            "SELECT session_id,content FROM messages WHERE run_id=?", (result["run_id"],)
-        ).fetchone()
-    assert message["session_id"] == telegram_session
-    assert message["content"] == "message from Discord"
-
-
 def test_link_can_add_more_channels_and_unlink_all_members(workspace_tmp_path):
     store = RunStore(workspace_tmp_path / "identity-link-members.sqlite3")
     telegram, session_id = _binding(store, "telegram", "bot-1", "1001")
     email, _ = _binding(store, "email", "mailbox", "owner@example.test")
-    discord, _ = _binding(store, "discord", "bot-2", "3001")
+    cli, _ = _binding(store, "cli", "bot-2", "3001")
     other_telegram, _ = _binding(store, "telegram", "bot-3", "1002")
     links = ChannelIdentityLinks(store)
     link_id = links.create_link((telegram, email), telegram)
 
-    assert links.add_member(link_id, discord) == session_id
+    assert links.add_member(link_id, cli) == session_id
     members = [item for item in links.list_bindings() if item["identity_link_id"] == link_id]
-    assert {item["channel"] for item in members} == {"telegram", "email", "discord"}
+    assert {item["channel"] for item in members} == {"telegram", "email", "cli"}
     assert {item["session_id"] for item in members} == {session_id}
     with pytest.raises(ValueError, match="only one identity from each channel"):
         links.add_member(link_id, other_telegram)
@@ -191,7 +169,7 @@ def test_merge_keeps_target_history_and_retains_source_history(workspace_tmp_pat
     store = RunStore(workspace_tmp_path / "identity-link-merge.sqlite3")
     telegram, target_session = _binding(store, "telegram", "bot-1", "1001")
     email, _ = _binding(store, "email", "mailbox-1", "owner@example.test")
-    discord, source_session = _binding(store, "discord", "bot-2", "3001")
+    cli, source_session = _binding(store, "cli", "bot-2", "3001")
     webhook, _ = _binding(store, "webhook", "endpoint-1", "sender-1")
     with store.connection() as connection:
         for session_id, content in (
@@ -204,7 +182,7 @@ def test_merge_keeps_target_history_and_retains_source_history(workspace_tmp_pat
             )
     links = ChannelIdentityLinks(store)
     target_link = links.create_link((telegram, email), telegram)
-    source_link = links.create_link((discord, webhook), discord)
+    source_link = links.create_link((cli, webhook), cli)
 
     result = links.merge_links(target_link, source_link)
 
@@ -217,11 +195,10 @@ def test_merge_keeps_target_history_and_retains_source_history(workspace_tmp_pat
     }
     bindings = {item["id"]: item for item in links.list_bindings()}
     assert {
-        bindings[binding_id]["identity_link_id"]
-        for binding_id in (telegram, email, discord, webhook)
+        bindings[binding_id]["identity_link_id"] for binding_id in (telegram, email, cli, webhook)
     } == {target_link}
     assert {
-        bindings[binding_id]["session_id"] for binding_id in (telegram, email, discord, webhook)
+        bindings[binding_id]["session_id"] for binding_id in (telegram, email, cli, webhook)
     } == {target_session}
     with store.connection() as connection:
         source_messages = connection.execute(
@@ -250,12 +227,12 @@ def test_merge_rejects_same_group_unauthorized_members_and_channel_collisions(wo
     store = RunStore(workspace_tmp_path / "identity-link-merge-rejected.sqlite3")
     target_telegram, _ = _binding(store, "telegram", "bot-1", "1001")
     target_email, _ = _binding(store, "email", "mailbox-1", "owner@example.test")
-    source_discord, _ = _binding(store, "discord", "bot-2", "3001")
+    source_cli, _ = _binding(store, "cli", "bot-2", "3001")
     source_webhook, _ = _binding(store, "webhook", "endpoint-1", "sender-1")
     source_telegram, _ = _binding(store, "telegram", "bot-3", "1002")
     links = ChannelIdentityLinks(store)
     target = links.create_link((target_telegram, target_email), target_telegram)
-    source = links.create_link((source_discord, source_webhook), source_discord)
+    source = links.create_link((source_cli, source_webhook), source_cli)
 
     with pytest.raises(ValueError, match="different active"):
         links.merge_links(target, target)
@@ -274,7 +251,7 @@ def test_merge_rejects_same_group_unauthorized_members_and_channel_collisions(wo
     with store.connection() as connection:
         assignments = connection.execute(
             "SELECT id,identity_link_id FROM channel_bindings WHERE id IN (?,?,?)",
-            (source_discord, source_webhook, source_telegram),
+            (source_cli, source_webhook, source_telegram),
         ).fetchall()
         source_link = connection.execute(
             "SELECT revoked_at FROM channel_identity_links WHERE id=?", (source,)

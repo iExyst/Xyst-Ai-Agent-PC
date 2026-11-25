@@ -20,10 +20,11 @@ on:
   workflow_dispatch:
     inputs:
       acceptance:
-        description: Windows package, WSL dependency, or credential acceptance
+        description: Windows package, Docker, WSL dependency, or credential acceptance
         type: choice
         options:
           - all
+          - docker-local
           - wsl-workspace-slice
           - wsl-node
           - wsl-python
@@ -889,6 +890,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 90
+
       - uses: actions/upload-artifact@v4
         if: always() && inputs.acceptance == 'wsl-procedure-credentials'
         with:
@@ -912,4 +914,55 @@ jobs:
           path: .acceptance/specialist-dependency-environment-${{ github.run_id }}/
           include-hidden-files: true
           if-no-files-found: warn
+          retention-days: 90
+
+  docker-local-acceptance:
+    if: github.event_name == 'workflow_dispatch' && inputs.acceptance == 'docker-local'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UV_CACHE_DIR: .uv-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: .github/requirements-uv.txt
+      - name: Install pinned uv from its verified PyPI wheel
+        run: python -m pip install --disable-pip-version-check --no-deps --require-hashes -r .github/requirements-uv.txt
+      - name: Install locked project dependencies
+        run: uv sync --locked
+      - name: Pull and bind the Docker fixture to its immutable digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker info --format '{{json .SecurityOptions}}'
+          docker pull python:3.13-slim
+          image_reference="$(docker image inspect --format '{{index .RepoDigests 0}}' python:3.13-slim)"
+          if [[ ! "$image_reference" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}@sha256:[a-f0-9]{64}$ ]]; then
+            echo "Expected a repository digest, got: $image_reference" >&2
+            exit 1
+          fi
+          echo "XAA_DOCKER_IMAGE_DIGEST=$image_reference" >> "$GITHUB_ENV"
+          echo "Docker acceptance image: $image_reference"
+      - name: Run the real Docker Engine acceptance cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          report_dir=".acceptance/docker-live-${GITHUB_RUN_ID}"
+          mkdir -p "$report_dir"
+          printf '{"image_reference":"%s","docker_server":"%s"}\n' \
+            "$XAA_DOCKER_IMAGE_DIGEST" \
+            "$(docker version --format '{{.Server.Version}}')" > "$report_dir/environment.json"
+          uv run pytest tests/integration/test_docker_local_transport.py -q -rA \
+            --junitxml="$report_dir/junit.xml"
+        timeout-minutes: 12
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-local-acceptance-${{ github.run_id }}
+          path: .acceptance/docker-live-${{ github.run_id }}/
+          if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 90

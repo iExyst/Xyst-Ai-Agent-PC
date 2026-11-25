@@ -15,12 +15,6 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
-from xaa.channels.discord import (
-    DiscordIdentity,
-    DiscordMessage,
-    DiscordStore,
-    dm_only_intents,
-)
 from xaa.channels.webhook import sign_webhook
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
 from xaa.runtime.states import RunState
@@ -180,7 +174,8 @@ def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspa
         for channel, account, identity in (
             ("telegram", "bot-1", "1001"),
             ("email", "mailbox-1", "person@example.test"),
-            ("discord", "bot-2", "3001"),
+            ("cli", "account-2", "3001"),
+            ("discord", "legacy-account", "legacy-user"),
         ):
             session_id = f"session-{channel}"
             binding_id = f"binding-{channel}"
@@ -199,7 +194,15 @@ def test_explicit_channel_identity_links_are_authenticated_and_revocable(workspa
         assert client.get("/channels/identity-bindings").status_code == 401
         listed = client.get("/channels/identity-bindings", headers=headers)
         assert listed.status_code == 200
-        assert {item["channel"] for item in listed.json()} == {"telegram", "email", "discord"}
+        assert {item["channel"] for item in listed.json()} == {"telegram", "email", "cli"}
+        assert "/channels/discord" not in client.get("/openapi.json").json()["paths"]
+        with store.connection() as connection:
+            assert (
+                connection.execute(
+                    "SELECT count(*) FROM channel_bindings WHERE channel='discord'"
+                ).fetchone()[0]
+                == 1
+            )
 
         created = client.post(
             "/channels/identity-links",
@@ -265,7 +268,7 @@ def test_channel_identity_group_merge_requires_confirmation_and_preserves_target
         for binding_id, session_id, channel, account, identity in (
             ("binding-telegram", "session-telegram", "telegram", "bot-1", "1001"),
             ("binding-email", "session-email", "email", "mailbox-1", "person@example.test"),
-            ("binding-discord", "session-discord", "discord", "bot-2", "3001"),
+            ("binding-cli", "session-cli", "cli", "account-2", "3001"),
             ("binding-webhook", "session-webhook", "webhook", "endpoint-1", "sender-1"),
         ):
             connection.execute(
@@ -290,8 +293,8 @@ def test_channel_identity_group_merge_requires_confirmation_and_preserves_target
             "/channels/identity-links",
             headers=headers,
             json={
-                "binding_ids": ["binding-discord", "binding-webhook"],
-                "shared_history_binding_id": "binding-discord",
+                "binding_ids": ["binding-cli", "binding-webhook"],
+                "shared_history_binding_id": "binding-cli",
             },
         ).json()["id"]
         assert (
@@ -320,119 +323,11 @@ def test_channel_identity_group_merge_requires_confirmation_and_preserves_target
             "source_link_id": source,
             "merged_bindings": 2,
             "shared_session_id": "session-telegram",
-            "retained_source_session_id": "session-discord",
+            "retained_source_session_id": "session-cli",
         }
         bindings = client.get("/channels/identity-bindings", headers=headers).json()
         assert {item["identity_link_id"] for item in bindings} == {target}
         assert {item["session_id"] for item in bindings} == {"session-telegram"}
-
-
-def test_discord_channel_credentials_pairing_and_dm_only_intents(workspace_tmp_path, monkeypatch):
-    class Credentials:
-        def __init__(self):
-            self.values: dict[str, str] = {}
-
-        def get(self, profile="lm-studio"):
-            return self.values.get(profile)
-
-        def set(self, token, profile="lm-studio"):
-            self.values[profile] = token
-
-        def delete(self, profile="lm-studio"):
-            self.values.pop(profile, None)
-
-    async def fake_get_me(self):
-        return DiscordIdentity("100000000000000001", "xaa-test")
-
-    monkeypatch.setattr("xaa.api.app.DiscordBotApi.get_me", fake_get_me)
-    monkeypatch.setattr("xaa.api.app.DiscordGatewayService.start", lambda self: None)
-    credentials = Credentials()
-    store = RunStore(workspace_tmp_path / "discord-api.sqlite3")
-    app = create_app(
-        FakeProvider(),
-        SecretStr(TOKEN),
-        store=store,
-        credential_store=credentials,
-    )
-    headers = {"Authorization": f"Bearer {TOKEN}"}
-    with TestClient(app) as client:
-        assert client.get("/channels/discord").status_code == 401
-        assert client.get("/channels/discord", headers=headers).json() == {
-            "configured": False,
-            "bot_id": None,
-            "bot_username": None,
-            "linked_users": 0,
-            "processed_messages": 0,
-            "deliveries": {},
-            "unknown_deliveries": [],
-        }
-        saved = client.put(
-            "/channels/discord/credential",
-            headers=headers,
-            json={"token": "secret-discord-bot-token"},
-        )
-        assert saved.status_code == 200
-        assert "secret-discord-bot-token" not in saved.text
-        assert credentials.values["discord-bot"] == "secret-discord-bot-token"
-        pairing = client.post("/channels/discord/pairing", headers=headers)
-        assert pairing.status_code == 201
-        assert len(pairing.json()["code"]) >= 32
-
-        discord = DiscordStore(store)
-        identity = DiscordIdentity("100000000000000001", "xaa-test")
-        discord.process_message(
-            identity,
-            DiscordMessage(
-                "1",
-                "300000000000000003",
-                "200000000000000002",
-                f"/pair {pairing.json()['code']}",
-                True,
-            ),
-            model="fixture/model",
-        )
-        queued = discord.process_message(
-            identity,
-            DiscordMessage("2", "300000000000000003", "200000000000000002", "hello", True),
-            model="fixture/model",
-        )
-        with store.connection() as connection:
-            connection.execute(
-                "UPDATE runs SET state='completed',updated_at=? WHERE id=?",
-                ("2026-11-08T12:00:00+00:00", queued["run_id"]),
-            )
-            RunStore.record_event(
-                connection,
-                queued["run_id"],
-                "model.message",
-                {"message": {"role": "assistant", "content": "answer"}},
-            )
-        assert discord.claim_delivery(identity.account_id) is not None
-        assert discord.reconcile_abandoned_sends() == 1
-        unresolved = "/channels/discord/deliveries/2/reconcile"
-        assert (
-            client.post(
-                unresolved,
-                headers=headers,
-                json={"resolution": "retry", "confirmed_destination_checked": False},
-            ).status_code
-            == 422
-        )
-        assert client.post(
-            unresolved,
-            headers=headers,
-            json={"resolution": "delivered", "confirmed_destination_checked": True},
-        ).json()["deliveries"] == {"sent": 1}
-        revoked = client.delete("/channels/discord/links", headers=headers)
-        assert revoked.json() == {"revoked_users": 1, "linked_users": 0}
-        cleared = client.delete("/channels/discord/credential", headers=headers)
-        assert cleared.status_code == 200
-        assert cleared.json()["configured"] is False
-
-    intents = dm_only_intents()
-    assert intents.dm_messages is True
-    assert intents.guild_messages is False
-    assert intents.message_content is False
 
 
 def test_openapi_advertises_packaged_engine_version(workspace_tmp_path) -> None:

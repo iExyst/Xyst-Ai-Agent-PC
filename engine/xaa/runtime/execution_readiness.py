@@ -17,11 +17,14 @@ from packaging.markers import default_environment
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.tags import parse_tag
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from xaa.redaction import redact_text
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
+from xaa.runtime.docker_execution_policy import validate_image_reference
+from xaa.runtime.docker_local_probe import DOCKER_LOCAL_CHECKS
+from xaa.runtime.docker_local_transport import DockerLocalTransport
 from xaa.runtime.windows_local_probe import (
     PROBE_CODE as WINDOWS_LOCAL_PROBE_CODE,
 )
@@ -187,8 +190,28 @@ print(json.dumps({'nonce':request['nonce'],'node_version':node_version,
 
 class ReadinessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1"] = "wsl-bubblewrap-v1"
+    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1", "docker-local-v1"] = (
+        "wsl-bubblewrap-v1"
+    )
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+    image_reference: str | None = Field(default=None, max_length=320)
+
+    @field_validator("image_reference")
+    @classmethod
+    def validate_docker_image(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_image_reference(value)
+
+    @model_validator(mode="after")
+    def validate_backend_profile(self) -> "ReadinessRequest":
+        if self.backend == "docker-local-v1" and self.distribution != "Docker-local":
+            raise ValueError("Docker readiness requires the local Docker daemon.")
+        if self.backend == "docker-local-v1" and self.image_reference is None:
+            raise ValueError("Docker readiness requires an immutable image digest.")
+        if self.backend != "docker-local-v1" and self.image_reference is not None:
+            raise ValueError("A Docker image can be selected only for the Docker backend.")
+        return self
 
 
 class ExecutionPolicy(BaseModel):
@@ -206,8 +229,11 @@ class ExecutionPolicy(BaseModel):
 
 class ReadinessResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1"] = "wsl-bubblewrap-v1"
+    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1", "docker-local-v1"] = (
+        "wsl-bubblewrap-v1"
+    )
     distribution: str
+    image_reference: str | None = None
     profile_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
     state: Literal["ready", "unavailable", "unsupported", "busy"]
     checked_at: datetime
@@ -301,11 +327,30 @@ class SkillNodeRuntimeReadinessResult(BaseModel):
 class ExecutionReadiness:
     def __init__(self, *, secrets: tuple[str, ...] = ()) -> None:
         self.lock = asyncio.Lock()
-        self.cache: dict[tuple[str, str], tuple[float, ReadinessResult]] = {}
+        self.cache: dict[tuple[str, ...], tuple[float, ReadinessResult]] = {}
         self.secrets = tuple(secret for secret in secrets if len(secret) >= 4)
 
     def require_grant(self, grant: CommandGrant) -> None:
         """Accept only a current successful server-observed check, never client claims."""
+        if grant.backend == "docker-local-v1":
+            cache_key = (grant.backend, grant.distribution, grant.image_reference or "")
+            cached = self.cache.get(cache_key)
+            if (
+                grant.distribution != "Docker-local"
+                or grant.image_reference is None
+                or cached is None
+                or cached[0] <= time.monotonic()
+                or cached[1].expires_at <= datetime.now(UTC)
+                or cached[1].state != "ready"
+                or cached[1].backend != grant.backend
+                or cached[1].image_reference != grant.image_reference
+                or cached[1].profile_sha256 != grant.profile_sha256
+                or tuple(cached[1].checks) != DOCKER_LOCAL_CHECKS
+            ):
+                raise PermissionError(
+                    "A current successful local Docker isolation check is required for this grant."
+                )
+            return
         if grant.backend == "windows-appcontainer-v1":
             try:
                 digest = windows_local_profile_fingerprint()
@@ -791,6 +836,8 @@ class ExecutionReadiness:
         )
 
     async def check(self, request: ReadinessRequest) -> ReadinessResult:
+        if request.backend == "docker-local-v1":
+            return await self._check_docker_local(request)
         if request.backend == "windows-appcontainer-v1":
             return await self._check_windows_local(request.distribution)
         distribution = request.distribution
@@ -919,6 +966,86 @@ class ExecutionReadiness:
                 checked_at=now,
                 expires_at=now + timedelta(seconds=ttl),
                 checks=list(CHECKS) if ready else [],
+                error_code=None if ready else "backend_probe_failed",
+            )
+            self.cache = {
+                key: value for key, value in self.cache.items() if value[0] > time.monotonic()
+            }
+            if len(self.cache) >= 8:
+                self.cache.pop(next(iter(self.cache)))
+            self.cache[cache_key] = (time.monotonic() + ttl, answer)
+            return answer
+
+    async def _check_docker_local(self, request: ReadinessRequest) -> ReadinessResult:
+        now = datetime.now(UTC)
+        image_reference = request.image_reference
+        if image_reference is None:
+            raise ValueError("Docker readiness requires an immutable image digest.")
+        cache_key = ("docker-local-v1", request.distribution, image_reference)
+        if not SUPPORTED:
+            return ReadinessResult(
+                backend="docker-local-v1",
+                distribution=request.distribution,
+                image_reference=image_reference,
+                profile_sha256=None,
+                state="unsupported",
+                checked_at=now,
+                expires_at=now,
+                checks=[],
+                error_code="unsupported_platform",
+            )
+        if self.lock.locked():
+            return ReadinessResult(
+                backend="docker-local-v1",
+                distribution=request.distribution,
+                image_reference=image_reference,
+                profile_sha256=None,
+                state="busy",
+                checked_at=now,
+                expires_at=now,
+                checks=[],
+                error_code="probe_busy",
+            )
+        async with self.lock:
+            ready = False
+            profile: str | None = None
+            try:
+                authority = CommandGrant(
+                    backend="docker-local-v1",
+                    distribution="Docker-local",
+                    profile_sha256="0" * 64,
+                    image_reference=image_reference,
+                )
+                transport = await DockerLocalTransport.discover(
+                    authority, deadline=time.monotonic() + 15
+                )
+                profile = transport.profile_sha256
+                cached = self.cache.get(cache_key)
+                if (
+                    cached is not None
+                    and cached[0] > time.monotonic()
+                    and cached[1].profile_sha256 == profile
+                    and cached[1].state == "ready"
+                ):
+                    return cached[1]
+                await transport.verify_profile(deadline=time.monotonic() + 20)
+                current = await DockerLocalTransport.discover(
+                    authority, deadline=time.monotonic() + 15
+                )
+                ready = current.profile_sha256 == profile
+            except (OSError, RuntimeError, ValueError, TypeError, TimeoutError):
+                ready = False
+            observed = datetime.now(UTC)
+            ttl = 60 if ready else 10
+            answer = ReadinessResult(
+                backend="docker-local-v1",
+                distribution="Docker-local",
+                image_reference=image_reference,
+                profile_sha256=profile,
+                state="ready" if ready else "unavailable",
+                checked_at=observed,
+                expires_at=observed + timedelta(seconds=ttl),
+                checks=list(DOCKER_LOCAL_CHECKS) if ready else [],
                 error_code=None if ready else "backend_probe_failed",
             )
             self.cache = {

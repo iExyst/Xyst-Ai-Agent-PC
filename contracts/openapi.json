@@ -530,7 +530,8 @@
             "default": "wsl-bubblewrap-v1",
             "enum": [
               "wsl-bubblewrap-v1",
-              "windows-appcontainer-v1"
+              "windows-appcontainer-v1",
+              "docker-local-v1"
             ],
             "title": "Backend",
             "type": "string"
@@ -539,6 +540,18 @@
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
             "title": "Distribution",
             "type": "string"
+          },
+          "image_reference": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}@sha256:[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Reference"
           },
           "max_seconds": {
             "default": 30,
@@ -1258,193 +1271,6 @@
           "timezone"
         ],
         "title": "CreateScheduleRequest",
-        "type": "object"
-      },
-      "DiscordCredentialRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "token": {
-            "format": "password",
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Token",
-            "type": "string",
-            "writeOnly": true
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "title": "DiscordCredentialRequest",
-        "type": "object"
-      },
-      "DiscordCredentialStatus": {
-        "additionalProperties": false,
-        "properties": {
-          "bot_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bot Id"
-          },
-          "bot_username": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bot Username"
-          },
-          "configured": {
-            "title": "Configured",
-            "type": "boolean"
-          },
-          "deliveries": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "title": "Deliveries",
-            "type": "object"
-          },
-          "linked_users": {
-            "title": "Linked Users",
-            "type": "integer"
-          },
-          "processed_messages": {
-            "title": "Processed Messages",
-            "type": "integer"
-          },
-          "unknown_deliveries": {
-            "items": {
-              "$ref": "#/components/schemas/DiscordUnknownDelivery"
-            },
-            "title": "Unknown Deliveries",
-            "type": "array"
-          }
-        },
-        "required": [
-          "configured",
-          "bot_id",
-          "bot_username",
-          "linked_users",
-          "processed_messages",
-          "deliveries",
-          "unknown_deliveries"
-        ],
-        "title": "DiscordCredentialStatus",
-        "type": "object"
-      },
-      "DiscordDeliveryReconciliation": {
-        "additionalProperties": false,
-        "properties": {
-          "confirmed_destination_checked": {
-            "const": true,
-            "title": "Confirmed Destination Checked",
-            "type": "boolean"
-          },
-          "resolution": {
-            "enum": [
-              "delivered",
-              "retry"
-            ],
-            "title": "Resolution",
-            "type": "string"
-          }
-        },
-        "required": [
-          "resolution",
-          "confirmed_destination_checked"
-        ],
-        "title": "DiscordDeliveryReconciliation",
-        "type": "object"
-      },
-      "DiscordLinkRevocation": {
-        "additionalProperties": false,
-        "properties": {
-          "linked_users": {
-            "title": "Linked Users",
-            "type": "integer"
-          },
-          "revoked_users": {
-            "title": "Revoked Users",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "revoked_users",
-          "linked_users"
-        ],
-        "title": "DiscordLinkRevocation",
-        "type": "object"
-      },
-      "DiscordPairingCode": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "expires_at": {
-            "title": "Expires At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code",
-          "expires_at"
-        ],
-        "title": "DiscordPairingCode",
-        "type": "object"
-      },
-      "DiscordUnknownDelivery": {
-        "additionalProperties": false,
-        "properties": {
-          "message_id": {
-            "title": "Message Id",
-            "type": "string"
-          },
-          "run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Id"
-          },
-          "updated_at": {
-            "title": "Updated At",
-            "type": "string"
-          },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
-          }
-        },
-        "required": [
-          "message_id",
-          "user_id",
-          "run_id",
-          "updated_at"
-        ],
-        "title": "DiscordUnknownDelivery",
         "type": "object"
       },
       "DistributionInventory": {
@@ -4788,7 +4614,8 @@
             "default": "wsl-bubblewrap-v1",
             "enum": [
               "wsl-bubblewrap-v1",
-              "windows-appcontainer-v1"
+              "windows-appcontainer-v1",
+              "docker-local-v1"
             ],
             "title": "Backend",
             "type": "string"
@@ -4797,6 +4624,18 @@
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
             "title": "Distribution",
             "type": "string"
+          },
+          "image_reference": {
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Reference"
           }
         },
         "required": [
@@ -4812,7 +4651,8 @@
             "default": "wsl-bubblewrap-v1",
             "enum": [
               "wsl-bubblewrap-v1",
-              "windows-appcontainer-v1"
+              "windows-appcontainer-v1",
+              "docker-local-v1"
             ],
             "title": "Backend",
             "type": "string"
@@ -4854,6 +4694,17 @@
             "format": "date-time",
             "title": "Expires At",
             "type": "string"
+          },
+          "image_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Reference"
           },
           "policy": {
             "$ref": "#/components/schemas/ExecutionPolicy"
@@ -8704,193 +8555,6 @@
           }
         ],
         "summary": "Restore Backup"
-      }
-    },
-    "/channels/discord": {
-      "get": {
-        "operationId": "discord_status_channels_discord_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordCredentialStatus"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Discord Status"
-      }
-    },
-    "/channels/discord/credential": {
-      "delete": {
-        "operationId": "clear_discord_credential_channels_discord_credential_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordCredentialStatus"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Clear Discord Credential"
-      },
-      "put": {
-        "operationId": "set_discord_credential_channels_discord_credential_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiscordCredentialRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordCredentialStatus"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Set Discord Credential"
-      }
-    },
-    "/channels/discord/deliveries/{message_id}/reconcile": {
-      "post": {
-        "operationId": "reconcile_discord_delivery_channels_discord_deliveries__message_id__reconcile_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "message_id",
-            "required": true,
-            "schema": {
-              "title": "Message Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiscordDeliveryReconciliation"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordCredentialStatus"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Reconcile Discord Delivery"
-      }
-    },
-    "/channels/discord/links": {
-      "delete": {
-        "operationId": "revoke_discord_links_channels_discord_links_delete",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordLinkRevocation"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Revoke Discord Links"
-      }
-    },
-    "/channels/discord/pairing": {
-      "post": {
-        "operationId": "create_discord_pairing_channels_discord_pairing_post",
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DiscordPairingCode"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Create Discord Pairing"
       }
     },
     "/channels/email": {

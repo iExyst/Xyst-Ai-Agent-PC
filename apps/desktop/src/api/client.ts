@@ -25,7 +25,6 @@ export type ProjectValidation = components['schemas']['ProjectValidationSummary'
 export type RunHistory = components['schemas']['RunHistory'];
 export type Schedule = components['schemas']['ScheduleRecord'];
 export type TelegramChannelStatus = components['schemas']['TelegramCredentialStatus'];
-export type DiscordChannelStatus = components['schemas']['DiscordCredentialStatus'];
 export type EmailChannelStatus = components['schemas']['EmailCredentialStatus'];
 export type WebhookChannelStatus = components['schemas']['WebhookChannelStatus'];
 export type WebhookCredential = components['schemas']['WebhookCredentialRecord'];
@@ -306,8 +305,8 @@ export class EngineClient {
     return this.#request('/execution/distributions', {signal});
   }
 
-  executionReadiness(distribution: string, signal?: AbortSignal, backend: 'wsl-bubblewrap-v1'|'windows-appcontainer-v1'='wsl-bubblewrap-v1'): Promise<components['schemas']['ReadinessResult']> {
-    return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({backend,distribution}),signal});
+  executionReadiness(distribution: string, signal?: AbortSignal, backend: 'wsl-bubblewrap-v1'|'windows-appcontainer-v1'|'docker-local-v1'='wsl-bubblewrap-v1', imageReference?: string): Promise<components['schemas']['ReadinessResult']> {
+    return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({backend,distribution,...(imageReference?{image_reference:imageReference}:{})}),signal});
   }
 
   schedules(): Promise<Schedule[]> { return this.#request('/schedules'); }
@@ -344,28 +343,6 @@ export class EngineClient {
 
   telegramPairing(): Promise<components['schemas']['TelegramPairingCode']> {
     return this.#request('/channels/telegram/pairing',{method:'POST',body:JSON.stringify({})});
-  }
-
-  discordStatus(): Promise<DiscordChannelStatus> { return this.#request('/channels/discord'); }
-
-  setDiscordToken(token:string): Promise<DiscordChannelStatus> {
-    return this.#request('/channels/discord/credential',{method:'PUT',body:JSON.stringify({token})});
-  }
-
-  clearDiscordToken(): Promise<DiscordChannelStatus> {
-    return this.#request('/channels/discord/credential',{method:'DELETE'});
-  }
-
-  discordPairing(): Promise<components['schemas']['DiscordPairingCode']> {
-    return this.#request('/channels/discord/pairing',{method:'POST',body:JSON.stringify({})});
-  }
-
-  revokeDiscordLinks(): Promise<components['schemas']['DiscordLinkRevocation']> {
-    return this.#request('/channels/discord/links',{method:'DELETE'});
-  }
-
-  reconcileDiscordDelivery(messageId:string,resolution:'delivered'|'retry'):Promise<DiscordChannelStatus> {
-    return this.#request(`/channels/discord/deliveries/${encodeURIComponent(messageId)}/reconcile`,{method:'POST',body:JSON.stringify({resolution,confirmed_destination_checked:true})});
   }
 
   telegramLinkedUsers(): Promise<components['schemas']['TelegramLinkedUsersRecord']> {

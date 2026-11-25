@@ -4,11 +4,12 @@ import type {EngineClient} from './api/client.ts';
 
 type Inventory=components['schemas']['DistributionInventory'];
 type Result=components['schemas']['ReadinessResult'];
-type Backend='wsl-bubblewrap-v1'|'windows-appcontainer-v1';
+type Backend='wsl-bubblewrap-v1'|'windows-appcontainer-v1'|'docker-local-v1';
 
 export function ExecutionSetup({client,onReady}:{client:EngineClient;onReady:(result:Result|undefined)=>void}) {
   const [inventory,setInventory]=useState<Inventory>();
   const [selected,setSelected]=useState('');
+  const [imageReference,setImageReference]=useState('');
   const [backend,setBackend]=useState<Backend>('wsl-bubblewrap-v1');
   const [result,setResult]=useState<Result>();
   const [busy,setBusy]=useState(false);
@@ -27,18 +28,19 @@ export function ExecutionSetup({client,onReady}:{client:EngineClient;onReady:(re
     finally{if(!controller.signal.aborted)setBusy(false);}
   }
   async function check() {
-    if(!selected)return;
+    if(!selected||(backend==='docker-local-v1'&&!imageReference.trim()))return;
     request.current?.abort();const controller=new AbortController();request.current=controller;
     setBusy(true);setError('');setResult(undefined);
-    try {const next=await client.executionReadiness(selected,controller.signal,backend);if(!controller.signal.aborted){setResult(next);setNow(Date.now());}}
+    try {const next=await client.executionReadiness(selected,controller.signal,backend,backend==='docker-local-v1'?imageReference.trim():undefined);if(!controller.signal.aborted){setResult(next);setNow(Date.now());}}
     catch(failure){if(!controller.signal.aborted)setError(String(failure));}
     finally{if(!controller.signal.aborted)setBusy(false);}
   }
   return <section aria-label="Command sandbox setup">
     <p>Choose where commands will run and check its isolation controls. The check uses a private fixture, not your project files, and does not enable command execution.</p>
-    <label>Execution backend <select value={backend} disabled={busy} onChange={event=>{const value=event.target.value as Backend;setBackend(value);setSelected(value==='windows-appcontainer-v1'?'Windows-Local':'');setInventory(undefined);setResult(undefined);}}>
+    <label>Execution backend <select value={backend} disabled={busy} onChange={event=>{const value=event.target.value as Backend;setBackend(value);setSelected(value==='windows-appcontainer-v1'?'Windows-Local':value==='docker-local-v1'?'Docker-local':'');setInventory(undefined);setResult(undefined);}}>
       <option value="wsl-bubblewrap-v1">WSL isolated Linux environment</option>
       <option value="windows-appcontainer-v1">Windows AppContainer (no network)</option>
+      <option value="docker-local-v1">Local Docker Engine (Linux containers)</option>
     </select></label>
     {backend==='wsl-bubblewrap-v1'&&<button onClick={()=>void load()} disabled={busy}>Find installed distributions</button>}
     {backend==='wsl-bubblewrap-v1'&&inventory?.state==='unsupported'&&<p>WSL command sandboxes require Windows with WSL.</p>}
@@ -48,9 +50,10 @@ export function ExecutionSetup({client,onReady}:{client:EngineClient;onReady:(re
       <option value="">Select a distribution</option>{inventory.distributions.map(item=><option key={item.name} value={item.name} disabled={!item.supported_by_profile}>{item.name}{item.supported_by_profile?'':' (not supported by this profile)'}</option>)}
     </select></label>}
     {backend==='windows-appcontainer-v1'&&<p>Commands run in a no-network AppContainer against a private copy of the selected workspace. The original project is never mounted writable.</p>}
-    <button disabled={busy||!selected} onClick={()=>void check()}>{busy?'Working…':'Check sandbox'}</button>
+    {backend==='docker-local-v1'&&<><p>Docker must already be installed and running with Linux containers enabled. X.A.A. never pulls an image. Use a locally available image pinned by its repository SHA-256 digest; commands run in a disposable private container.</p><label>Local image digest <input aria-label="Local Docker image digest" value={imageReference} disabled={busy} onChange={event=>{setImageReference(event.target.value);setResult(undefined);}} placeholder="registry.example/image@sha256:…" /></label></>}
+    <button disabled={busy||!selected||(backend==='docker-local-v1'&&!imageReference.trim())} onClick={()=>void check()}>{busy?'Working…':'Check sandbox'}</button>
     {result&&<div role="status">
-      <p>{expired?'Check expired. Check again to refresh status.':result.state==='ready'?'Sandbox check passed.':result.state==='busy'?'Another sandbox check is running. Try again shortly.':result.state==='unsupported'?'This backend is not supported on this platform.':result.backend==='windows-appcontainer-v1'?'Windows AppContainer controls could not be verified. Check Windows security settings and try again.':'Sandbox controls could not be verified. The selected distribution needs Python, Bubblewrap, systemd and libseccomp.'}</p>
+      <p>{expired?'Check expired. Check again to refresh status.':result.state==='ready'?'Sandbox check passed.':result.state==='busy'?'Another sandbox check is running. Try again shortly.':result.state==='unsupported'?'This backend is not supported on this platform.':result.backend==='docker-local-v1'?'Docker is unavailable or the selected image failed an isolation check. Start the local Docker Engine with Linux containers, verify the digest exists locally, then retry.':result.backend==='windows-appcontainer-v1'?'Windows AppContainer controls could not be verified. Check Windows security settings and try again.':'Sandbox controls could not be verified. The selected distribution needs Python, Bubblewrap, systemd and libseccomp.'}</p>
       {result.state==='ready'&&result.policy&&<p>Network denied · Project changes stay in a private copy{result.policy.max_seconds!==undefined&&<> · Up to {result.policy.max_seconds} seconds per command</>}{result.policy.memory_bytes!==undefined&&<> · {result.policy.memory_bytes/1048576} MiB per command</>}{result.policy.max_active_executions_per_distribution!==undefined&&<> · {result.policy.max_active_executions_per_distribution} shared slots in this distribution</>}.</p>}
       <p>Checked {new Date(result.checked_at).toLocaleTimeString()} · Valid until {new Date(result.expires_at).toLocaleTimeString()}</p>
     </div>}

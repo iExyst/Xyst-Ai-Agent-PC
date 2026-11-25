@@ -60,3 +60,32 @@ test('sandbox selection checks controls without granting a run, including unavai
   await expect(page.getByText('Sandbox check passed.',{exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Check sandbox',exact:true})).toBeDisabled();
 });
+
+test('Docker setup requires a pinned local image and sends it for server isolation checks',async({page})=>{
+  const imageReference=`registry.example/xaa/python@sha256:${'b'.repeat(64)}`;let checks=0;let runCreates=0;
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const req=route.request();const path=new URL(req.url()).pathname;
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
+    if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
+    if(path==='/models')return route.fulfill({status:503,headers});
+    if(path==='/runs'&&req.method()==='POST')runCreates++;
+    if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path==='/memory'||path==='/skills')return route.fulfill({json:[],headers});
+    if(path==='/execution/readiness'){
+      checks++;expect(req.postDataJSON()).toEqual({backend:'docker-local-v1',distribution:'Docker-local',image_reference:imageReference});
+      return route.fulfill({json:{backend:'docker-local-v1',distribution:'Docker-local',image_reference:imageReference,profile_sha256:'c'.repeat(64),state:'ready',checked_at:new Date().toISOString(),expires_at:new Date(Date.now()+60000).toISOString(),checks:['local_daemon','cleanup_confirmed'],policy:{network:'denied',workspace_changes:'private_copy_only',max_seconds:30,memory_bytes:134217728,max_active_executions_per_distribution:2},error_code:null},headers});
+    }
+    return route.fulfill({status:404,headers});
+  });
+  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('details').filter({has:page.locator('summary').filter({hasText:'Command sandbox setup'})}).evaluate(element=>{(element as HTMLDetailsElement).open=true;});
+  await page.getByLabel('Execution backend').selectOption('docker-local-v1');
+  await expect(page.getByRole('button',{name:'Check sandbox',exact:true})).toBeDisabled();
+  await page.getByLabel('Local Docker image digest').fill(imageReference);
+  await page.getByRole('button',{name:'Check sandbox',exact:true}).click();
+  await expect(page.getByText('Sandbox check passed.',{exact:true})).toBeVisible();
+  expect(checks).toBe(1);expect(runCreates).toBe(0);
+});

@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.providers.lm_studio import LMStudioProvider
 from xaa.runtime import execution_readiness as module
+from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.execution_readiness import (
     ExecutionReadiness,
     ReadinessRequest,
@@ -125,6 +126,62 @@ class Backend:
             "closed": True,
             "manager_alive": False,
         }
+
+
+def test_docker_readiness_requires_local_daemon_and_pinned_digest():
+    image = "registry.example/xaa/python@sha256:" + "b" * 64
+    with pytest.raises(ValueError, match="local Docker daemon"):
+        ReadinessRequest(backend="docker-local-v1", distribution="Ubuntu", image_reference=image)
+    with pytest.raises(ValueError, match="immutable image digest"):
+        ReadinessRequest(backend="docker-local-v1", distribution="Docker-local")
+    with pytest.raises(ValueError, match="pinned by SHA-256"):
+        ReadinessRequest(
+            backend="docker-local-v1", distribution="Docker-local", image_reference="python:3.12"
+        )
+
+
+@pytest.mark.parametrize("fault", [None, "probe", "profile_change"])
+async def test_docker_readiness_requires_live_probe_and_current_profile(monkeypatch, fault):
+    image = "registry.example/xaa/python@sha256:" + "b" * 64
+
+    class DockerBackend:
+        profile_sha256 = "a" * 64
+
+        def __init__(self):
+            self.probes = 0
+
+        async def verify_profile(self, *, deadline):
+            self.probes += 1
+            if fault == "probe":
+                raise OSError("probe failed")
+
+    docker = DockerBackend()
+
+    async def discover(authority, *, deadline):
+        if fault == "profile_change" and docker.probes:
+            docker.profile_sha256 = "c" * 64
+        return docker
+
+    monkeypatch.setattr(module, "SUPPORTED", True)
+    monkeypatch.setattr(module.DockerLocalTransport, "discover", discover)
+    service = ExecutionReadiness()
+    request = ReadinessRequest(
+        backend="docker-local-v1", distribution="Docker-local", image_reference=image
+    )
+    result = await service.check(request)
+    assert result.state == ("ready" if fault is None else "unavailable")
+    assert result.image_reference == image
+    assert result.checks == (list(module.DOCKER_LOCAL_CHECKS) if fault is None else [])
+    if fault is None:
+        grant = CommandGrant(
+            backend="docker-local-v1",
+            distribution="Docker-local",
+            profile_sha256="a" * 64,
+            image_reference=image,
+        )
+        service.require_grant(grant)
+        with pytest.raises(PermissionError, match="successful local Docker isolation check"):
+            service.require_grant(grant.model_copy(update={"profile_sha256": "d" * 64}))
 
 
 def install(monkeypatch, backend):

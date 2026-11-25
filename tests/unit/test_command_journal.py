@@ -15,12 +15,16 @@ from xaa.storage.specialist_profiles import SpecialistProfileStore
 from xaa.storage.tasks import TaskStore
 
 
-def setup(root, *, granted=True):
+def setup(root, *, granted=True, command_grant=None):
     project = root / "project"
     project.mkdir(exist_ok=True)
     (project / "fixture.txt").write_bytes(b"fixture")
     store = RunStore(root / "data" / "runs.sqlite3")
-    grant = {"distribution": "Ubuntu-24.04", "profile_sha256": "a" * 64, "max_seconds": 10}
+    grant = command_grant or {
+        "distribution": "Ubuntu-24.04",
+        "profile_sha256": "a" * 64,
+        "max_seconds": 10,
+    }
     run = store.create_run(
         objective="Inspect a fixture",
         acceptance_criteria=[],
@@ -584,3 +588,28 @@ def test_user_stop_cleanup_is_revision_fenced_and_never_promotes_success(workspa
     assert "exit_code" not in result and not store.unresolved_tool_calls(run)
     assert store.get_run(run)["state"] == "cancelled"
     assert store.get_run(run)["revision"] == current["revision"]
+
+
+def test_docker_command_intent_inherits_persisted_image_digest(workspace_tmp_path):
+    image = "registry.example/xaa/python@sha256:" + "d" * 64
+    store, run, owner, _project = setup(
+        workspace_tmp_path,
+        command_grant={
+            "backend": "docker-local-v1",
+            "distribution": "Docker-local",
+            "profile_sha256": "a" * 64,
+            "image_reference": image,
+            "max_seconds": 10,
+        },
+    )
+    journal = CommandJournal(store)
+    intent = journal.reserve(
+        run,
+        owner,
+        "docker-call",
+        {"argv": ["python", "--version"]},
+        idempotency_key="docker-call",
+    )
+    assert intent.backend == "docker-local-v1"
+    assert intent.image_reference == image
+    assert journal.grant(run, owner=owner).image_reference == image
