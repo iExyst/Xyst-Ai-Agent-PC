@@ -255,6 +255,9 @@ jobs:
       - name: Verify LM Studio model estimate and GPU telemetry fallback
         run: npm run test:browser -- tests/browser/provider-setup.spec.ts
         timeout-minutes: 3
+      - name: Verify multi-adapter GPU readings in the system monitor
+        run: npm run test:browser -- tests/browser/system-monitor.spec.ts
+        timeout-minutes: 3
       - name: Verify explicit specialist conflict choices in the desktop UI
         run: npm run test:browser -- tests/browser/task-review.spec.ts tests/browser/voice-input.spec.ts tests/browser/onboarding.spec.ts
         timeout-minutes: 3
