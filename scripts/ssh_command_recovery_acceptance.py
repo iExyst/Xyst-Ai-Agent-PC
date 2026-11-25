@@ -50,7 +50,9 @@ async def _accept(args: argparse.Namespace) -> dict[str, object]:
     if sys.platform != "win32":
         raise RuntimeError("This acceptance must run on Windows with Windows OpenSSH installed.")
     identity = Path(args.identity).resolve(strict=True)
-    transport = await SSHTransport.discover(args.alias, str(identity), deadline=time.monotonic() + 20)
+    transport = await SSHTransport.discover(
+        args.alias, str(identity), deadline=time.monotonic() + 20
+    )
     with tempfile.TemporaryDirectory(prefix="xaa-ssh-recovery-") as temporary:
         root = Path(temporary)
         workspace = root / "project"
@@ -97,9 +99,7 @@ async def _accept(args: argparse.Namespace) -> dict[str, object]:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            worker_stdout, worker_stderr = await asyncio.wait_for(
-                worker.communicate(), timeout=60
-            )
+            worker_stdout, worker_stderr = await asyncio.wait_for(worker.communicate(), timeout=60)
         except TimeoutError:
             worker.kill()
             await worker.wait()
@@ -123,12 +123,8 @@ async def _accept(args: argparse.Namespace) -> dict[str, object]:
         recovery_owner = recovered_store.acquire_lease(run_id, "ssh-recovery-after-restart")
         if recovery_owner is None:
             raise RuntimeError("Could not acquire a replacement recovery lease.")
-        intent = CommandJournal(recovered_store).recovery_intent(
-            run_id, recovery_owner, CALL_ID
-        )
-        fresh_transport = await discover_command_transport(
-            intent, deadline=time.monotonic() + 20
-        )
+        intent = CommandJournal(recovered_store).recovery_intent(run_id, recovery_owner, CALL_ID)
+        fresh_transport = await discover_command_transport(intent, deadline=time.monotonic() + 20)
         result = await CommandController(recovered_store, fresh_transport).recover(
             run_id, recovery_owner, CALL_ID
         )
