@@ -1,5 +1,13 @@
 # Unsigned Windows installer development build
 
+## Latest exact-commit hosted installer acceptance (2026-11-25)
+
+Manual Windows installer workflow [45684084736](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45684084736) passed for product commit `79b628c9`. It passed release-notice verification, frozen and installed AppContainer execution, native recovery, specialist/workspace/browser checks, upgrade from 0.1.0, current-user and standard-user installation, boot, uninstall, data preservation, and explicit data removal. Exact-source Windows workflow [45683184435](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45683184435) passed for the same commit with 1,746 Python tests (36 skipped) and its configured browser, static, API-contract, desktop, and recovery checks. The dispatch ran only the installer job; WSL and Docker acceptance were skipped.
+
+The unsigned current-user 0.1.1 setup is [artifact 15057067492](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45684084736/artifacts/15057067492), retained at [`.acceptance/hosted-installer-45684084736/build/installer/`](../../.acceptance/hosted-installer-45684084736/build/installer/). It is 83,237,547 bytes, SHA-256 `366b54e1ad1f97c8f25cbbfd52a16e967ac20abfb5d5a3714978897bb3de923d`. Its manifest records desktop SHA-256 `e3bf0656bdcc82035deaa0ab2325c65443bd362762a3d5f357779c7f7e8e141a` and engine SHA-256 `261a484e2713398912a7c7ed319ffa8bff91b45e95ce1c81cc9e7c145f7b6c49`; downloaded and installed binary hashes match. Reports confirm both user-data preservation and explicit removal. No model inference was requested.
+
+The manifest records `signed: false`. Code signing, legal review, independent-machine coverage, and final live-model acceptance remain open.
+
 ## Latest exact-branch hosted installer acceptance (2026-11-25)
 
 Manual Windows installer workflow [45678161554](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45678161554) passed for product commit `f467b00c` (workflow head `043f5617`, with documentation-only commits after the product commit). The 0.1.1 package passed release-notice verification, frozen and installed AppContainer execution, native recovery, packaged specialist/workspace/browser checks, upgrade from 0.1.0, current-user install, standard-user install, boot, uninstall, data preservation, and explicit data removal. The hosted Windows source workflow [45674340645](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45674340645) passed for the same product commit (1,745 Python tests passed; 36 skipped). The `all` installer dispatch skipped the separate Windows source, WSL and Docker jobs.
