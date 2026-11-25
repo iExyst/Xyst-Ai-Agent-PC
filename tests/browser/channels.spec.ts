@@ -1,5 +1,6 @@
 import {expect,test} from '@playwright/test';
 import {navigateMainSection} from './navigation';
+import {visibleTextContrastFailures} from './accessibility';
 
 async function visibleUnnamedControls(panel:import('@playwright/test').Locator){
   return panel.evaluate(root=>Array.from(root.querySelectorAll<HTMLElement>('a[href],button,input:not([type="hidden"]),select,textarea,summary,[role="button"],[role="link"]'))
@@ -125,12 +126,14 @@ test('save Telegram token securely, pair an account and clear the credential',as
   const panel=page.getByRole('region',{name:'Messaging channels',exact:true});
   await expect.poll(()=>visibleUnnamedControls(panel)).toEqual([]);
   await expect(panel.getByRole('heading',{level:2})).toBeVisible();
+  expect(await visibleTextContrastFailures(page)).toEqual([]);
   await expect(panel.getByText('Discord (private DMs)',{exact:true})).toHaveCount(0);
   await panel.getByLabel('First authorized account').selectOption('telegram-binding');
   await panel.getByLabel('Second account from another channel').selectOption('email-binding');
   await panel.getByRole('radio',{name:/telegram · 456/}).check();
   await panel.getByRole('button',{name:'Link accounts and share selected history'}).click();
   await expect(panel.getByRole('list',{name:'Active cross-channel identity links'})).toContainText('telegram: 456 ↔ email: owner@example.test');
+  expect(await visibleTextContrastFailures(page)).toEqual([]);
   await panel.getByLabel('First authorized account').selectOption('cli-binding');
   await panel.getByLabel('Second account from another channel').selectOption('webhook-binding');
   await panel.getByRole('radio',{name:/cli · 3001/}).check();
@@ -181,6 +184,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'Generate one-time pairing code',exact:true}).click();
   await expect(panel.getByLabel('Telegram pairing instructions')).toContainText('/pair one-time-pair-code');
   await expect(panel.getByText(/Update 17 · Telegram user 456/)).toBeVisible();
+  expect(await visibleTextContrastFailures(page)).toEqual([]);
   await panel.getByRole('button',{name:'I checked; retry reply',exact:true}).click();
   const telegramConfirmation=panel.getByRole('group',{name:'Confirm Telegram delivery reconciliation'});
   await expect(telegramConfirmation).toBeFocused();
@@ -213,6 +217,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'I checked; retry email',exact:true}).click();
   const emailConfirmation=panel.getByRole('group',{name:'Confirm email delivery reconciliation'});
   await expect(emailConfirmation).toBeFocused();
+  expect(await visibleTextContrastFailures(page)).toEqual([]);
   const emailRetry=panel.getByRole('button',{name:'I checked; retry email',exact:true});
   await expect(emailRetry).toHaveAttribute('aria-expanded','true');
   await expect(emailRetry).toHaveAttribute('aria-controls',await emailConfirmation.getAttribute('id')??'');
