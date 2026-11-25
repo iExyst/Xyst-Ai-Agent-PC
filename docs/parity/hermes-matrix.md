@@ -28,6 +28,10 @@ The native Windows restart acceptance downloads saved plain-text, Markdown, DOCX
 
 # Hermes capability reference matrix
 
+## Verify the native desktop on the development Windows host (2026-11-24)
+
+The freshly built native desktop and bundled engine passed isolated boot/shutdown acceptance on Windows OS build 26200. The test used a unique `.acceptance` bundle and profile, confirmed authenticated engine readiness, tray hide/restore, settings persistence, system monitor, zero runs and zero model inference, then verified graceful desktop/engine shutdown ([report](../../.acceptance/native-windows-11-12a413d5977b401dab06af8a5b247567/run/report.json)). The installer itself remains verified on a hosted Windows runner; it was not installed into the existing local profile. Host product-version metadata conflicts, so this evidence is tied to build 26200 rather than a claimed Windows release label.
+
 ## Verify current unsigned Windows package and recovery (2026-11-24)
 
 Exact-current manual installer workflow [45516971937](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45516971937) passed on `d438b947213c1592a6188e114a42995bad5d1f68`: 55 steps succeeded and three setup/cache steps were skipped. The unsigned 0.1.1 package acceptance includes the frozen engine, native desktop onboarding and recovery, MCP OAuth, specialist/workspace recovery, browser cancellation, upgrade from 0.1.0, standard-user install, boot, uninstall, and explicit data removal. The package artifact is [14979007859](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45516971937/artifacts/14979007859). This strengthens the Windows packaging evidence; signing, live-model release acceptance, broader clean-machine coverage, and Hermes parity remain open.
