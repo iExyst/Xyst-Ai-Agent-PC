@@ -48,6 +48,19 @@ In the Windows user's OpenSSH config, define a host alias pointing to the Linux 
 
 For an update, build and transfer a new matching pair, run the installer again, and wait for it to report success. The manager refuses to update during an active execution or lease. The next readiness check verifies the newly installed manager against the updated Windows engine. If the application and target manager are on different releases, readiness fails closed.
 
+## Verify command recovery after an engine restart
+
+With the restricted host configured and the SSH grant ready in X.A.A., run the deterministic recovery acceptance from the source checkout:
+
+```powershell
+uv run python scripts/ssh_command_recovery_acceptance.py `
+  --alias xaa-e2e `
+  --identity "$env:USERPROFILE\.ssh\id_ed25519" `
+  --report .acceptance/ssh-command-recovery/report.json
+```
+
+The harness starts a separate Windows worker process. It executes one bounded command, persists the matching stdout and stderr artifacts, then exits at the journal-completion boundary. A fresh process reopens the SQLite store, obtains a replacement run lease, rediscovers the pinned SSH target and manager, and reconciles the saved receipt. The command cannot be relaunched by recovery. The report should show one unresolved call before reconciliation, a successful result with `result_reconciled=true`, and zero unresolved calls afterward.
+
 ## Verification boundary
 
-Local Windows OpenSSH to Ubuntu 24.04 WSL acceptance exercises package installation, a manager upgrade, remote profile mismatch rejection, restoration to the matching release, sandbox readiness, and cleanup. This does not yet establish acceptance on an independently administered Linux host, reconnect after a Windows app restart, signed manager artifacts, or Hermes SSH adapter parity. See [`progress.md`](../progress.md) and the [Hermes parity matrix](../parity/hermes-matrix.md).
+Local Windows OpenSSH to Ubuntu 24.04 WSL acceptance exercises package installation, manager upgrade, remote profile mismatch rejection, restoration, sandbox readiness, and cleanup. A separate Windows process acceptance verifies reconciliation after an engine worker exits at the journal commit boundary. This does not yet establish acceptance on an independently administered Linux host, reconnection of the full desktop after a Windows app restart, signed manager artifacts, or Hermes SSH adapter parity. See [`progress.md`](../progress.md) and the [Hermes parity matrix](../parity/hermes-matrix.md).
