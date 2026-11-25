@@ -626,7 +626,9 @@ class LMStudioProvider:
             except ProviderError:
                 # Keep the server-side admission path when model discovery is unavailable.
                 return
-        elif catalog is None or now - catalog[0] >= 30:
+        elif catalog is None:
+            return
+        elif now - catalog[0] >= 30:
             try:
                 available = await self.models()
                 catalog = (time.monotonic(), {item.id: item for item in available})

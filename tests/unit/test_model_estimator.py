@@ -362,10 +362,7 @@ async def test_resource_warning_prevents_chat_and_loaded_model_skips_estimate(mo
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("catalog_state", ["missing", "stale"])
-async def test_chat_refreshes_missing_or_stale_catalog_and_resource_estimate(
-    monkeypatch, catalog_state
-):
+async def test_chat_refreshes_stale_catalog_and_resource_estimate(monkeypatch):
     models_calls = 0
     estimates: list[str] = []
     requests: list[str] = []
@@ -394,13 +391,10 @@ async def test_chat_refreshes_missing_or_stale_catalog_and_resource_estimate(
     try:
         first = await provider.estimate_model_load("fixture/model", context_length=4096)
         assert first.guardrail == "may_load"
-        if catalog_state == "missing":
-            provider._model_catalog = None
-        else:
-            provider._model_catalog = (
-                time.monotonic() - 31,
-                {"fixture/model": ModelInfo(id="fixture/model", loaded=False, context_length=8192)},
-            )
+        provider._model_catalog = (
+            time.monotonic() - 31,
+            {"fixture/model": ModelInfo(id="fixture/model", loaded=False, context_length=8192)},
+        )
 
         with pytest.raises(ProviderError, match="resource estimate warns"):
             await provider.chat(model="fixture/model", messages=[])
@@ -410,6 +404,31 @@ async def test_chat_refreshes_missing_or_stale_catalog_and_resource_estimate(
     assert models_calls == 2
     assert estimates == ["fixture/model", "fixture/model"]
     assert requests == []
+
+
+@pytest.mark.asyncio
+async def test_chat_with_no_catalog_keeps_lm_studio_server_side_admission(monkeypatch):
+    requests: list[str] = []
+
+    class Provider(LMStudioProvider):
+        async def models(self):
+            raise AssertionError("first-use chat should not force model discovery")
+
+        async def _chat(self, *, model: str, **kwargs):
+            requests.append(model)
+            return {"choices": []}
+
+    async def estimate(model: str, *, host: str, context_length: int | None = None):
+        raise AssertionError("resource estimator should not run without a cached catalog")
+
+    monkeypatch.setattr("xaa.providers.lm_studio.estimate_model_resources", estimate)
+    provider = Provider()
+    try:
+        await provider.chat(model="fixture/model", messages=[])
+    finally:
+        await provider.close()
+
+    assert requests == ["fixture/model"]
 
 
 @pytest.mark.asyncio
