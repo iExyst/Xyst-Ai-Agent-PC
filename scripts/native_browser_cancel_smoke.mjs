@@ -28,6 +28,8 @@ let browser;
 let page;
 let connection;
 let runId;
+let providerModelEstimate;
+let providerModelEstimateNoLoad = false;
 let cancelledBrowserRunId;
 let browserCallId;
 let browserSubmissionRunId;
@@ -87,7 +89,7 @@ server = createServer(async (request, response) => {
     return;
   }
   if (request.method === 'GET' && request.url === '/api/v1/models') {
-    sendJson(response, 200, { models: [{ key: fakeModel, max_context_length: 8192, capabilities: { trained_for_tool_use: true } }] });
+    sendJson(response, 200, { models: [{ key: fakeModel, max_context_length: 8192, size_bytes: 2_500_000_000, loaded_instances: [], capabilities: { trained_for_tool_use: true } }] });
     return;
   }
   if (request.method !== 'POST' || request.url !== '/v1/chat/completions') {
@@ -332,7 +334,33 @@ try {
   await page.getByRole('button', { name: 'Save address and connect' }).click();
   await expect(providerStatus).toHaveText('Connected. Found 1 model.', { timeout: 15000 });
   await expect(page.locator('#local-model').locator('option', { hasText: fakeModel })).toHaveCount(1, { timeout: 15000 });
+  const modelSelectionResponsePromise = page.waitForResponse(response =>
+    response.request().method() === 'PUT' && new URL(response.url()).pathname === '/providers/lm-studio/selection', { timeout: 15000 });
   await page.locator('#local-model').selectOption(fakeModel);
+  const modelSelectionResponse = await modelSelectionResponsePromise;
+  if (!modelSelectionResponse.ok()) throw new Error(`Installed LM Studio model selection failed: ${await modelSelectionResponse.text()}`);
+  const modelLoadRequests = [];
+  page.on('request', request => {
+    try {
+      if (new URL(request.url()).pathname === '/models/load') modelLoadRequests.push(request.url());
+    } catch {}
+  });
+  const estimateButton = page.getByRole('button', { name: 'Estimate model memory' });
+  await expect(estimateButton).toBeEnabled({ timeout: 30000 });
+  const [estimateResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/providers/lm-studio/model-estimate', { timeout: 30000 }),
+    estimateButton.click(),
+  ]);
+  if (!estimateResponse.ok()) throw new Error(`Installed LM Studio estimate request failed: ${await estimateResponse.text()}`);
+  providerModelEstimate = await estimateResponse.json();
+  if (providerModelEstimate.status !== 'unavailable'
+    || !String(providerModelEstimate.message).includes('command-line estimator was not found')) {
+    throw new Error(`Installed estimator did not show the expected unavailable state: ${JSON.stringify(providerModelEstimate)}`);
+  }
+  await expect(page.getByRole('status').filter({ hasText: 'The LM Studio command-line estimator was not found.' }))
+    .toContainText('No model was loaded or downloaded.');
+  providerModelEstimateNoLoad = modelLoadRequests.length === 0;
+  if (!providerModelEstimateNoLoad) throw new Error('Estimating model memory unexpectedly requested a model load.');
   const diagnosticResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/providers/diagnostics', { timeout: 15000 });
   await page.getByRole('button', { name: 'Run harmless tool-use diagnostic' }).click();
   const diagnosticResult = await diagnosticResponse;
@@ -543,6 +571,12 @@ try {
       model_inference_requested: false,
     },
     provider: 'deterministic loopback OpenAI-compatible fixture',
+    provider_model_estimate: {
+      passed: providerModelEstimate?.status === 'unavailable' && providerModelEstimateNoLoad,
+      status: providerModelEstimate?.status,
+      message: providerModelEstimate?.message,
+      no_model_load_requested: providerModelEstimateNoLoad,
+    },
     user_action: 'cancel browser navigation, submit the approved HTTPBin form, then owner-review the form and workspace results in the native desktop',
     cancel_request_observed: cancelRequestSeen,
     run_id: cancelledBrowserRunId,
