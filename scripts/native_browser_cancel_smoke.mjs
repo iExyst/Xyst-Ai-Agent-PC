@@ -24,7 +24,7 @@ const workspace = path.join(root, 'workspace');
 const logs = path.join(localAppData, 'dev.xyst.xaa', 'logs');
 const engineLog = path.join(logs, 'engine.log');
 const fakeModel = 'xaa-native-browser-cancel-fixture';
-const fakeState = { requests: 0, diagnostics: 0, browserProposals: 0, browserResultFollowups: 0, browserSubmissionProposals: 0, browserSubmissionResultFollowups: 0, workspaceReadProposals: 0, workspaceReadFollowups: 0 };
+const fakeState = { requests: 0, diagnostics: 0, browserProposals: 0, browserResultFollowups: 0, browserSubmissionProposals: 0, browserSubmissionResultFollowups: 0, workspaceReadProposals: 0, workspaceReadFollowups: 0, voiceTranscriptRequests: 0, voiceWavPayloadVerified: false };
 const workspaceMarker = `XAA_WORKSPACE_FIXTURE_${randomUUID().replaceAll('-', '')}`;
 const browserSubmissionMarker = `XAA_BROWSER_SUBMIT_FIXTURE_${randomUUID().replaceAll('-', '')}`;
 const launchCredentials = [];
@@ -45,6 +45,8 @@ let workspaceRunId;
 let workspaceCallId;
 let microphoneCapturePassed = false;
 let microphoneSelectionPassed = false;
+let voiceTranscriptionPassed = false;
+let voiceTranscriptionRequestCount = 0;
 let stdout = '';
 let stderr = '';
 let report;
@@ -96,6 +98,20 @@ server = createServer(async (request, response) => {
   }
   if (request.method === 'GET' && request.url === '/api/v1/models') {
     sendJson(response, 200, { models: [{ key: fakeModel, max_context_length: 8192, size_bytes: 2_500_000_000, loaded_instances: [], capabilities: { trained_for_tool_use: true } }] });
+    return;
+  }
+  if (request.method === 'POST' && request.url === '/v1/audio/transcriptions') {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
+    const valid = request.headers['content-type']?.includes('multipart/form-data')
+      && body.includes(Buffer.from('filename="audio.wav"'))
+      && body.includes(Buffer.from('WAVEfmt '));
+    fakeState.voiceTranscriptRequests += 1;
+    fakeState.voiceWavPayloadVerified = valid;
+    sendJson(response, valid ? 200 : 400, valid
+      ? { text: 'Installed microphone transcript fixture.' }
+      : { error: 'expected a multipart PCM WAV recording' });
     return;
   }
   if (request.method !== 'POST' || request.url !== '/v1/chat/completions') {
@@ -152,6 +168,8 @@ server = createServer(async (request, response) => {
         }],
       };
     }
+  } else if (userText.includes('Summarize this installed voice recording')) {
+    message = { role: 'assistant', content: 'Voice transcript fixture confirmed.' };
   } else if (userText.includes('Submit synthetic values to the approved HTTPBin echo form')) {
     const tool = (body.tools ?? []).find(item => item.function?.name === 'browser_submit_form');
     if (!tool) { sendJson(response, 409, { error: 'browser_submit_form was not authorized for this run' }); return; }
@@ -437,10 +455,40 @@ try {
     const tracks = window.__xaaAcceptanceMicrophoneStream?.getTracks() ?? [];
     return tracks.length > 0 && tracks.every(track => track.readyState === 'ended');
   }), { timeout: 10000 }).toBe(true);
-  await page.locator('#run-audio').setInputFiles([]);
-  await expect(page.getByText(/Attached: Microphone recording\.wav/)).not.toBeVisible();
+  await page.getByLabel('Workspace path').fill(workspace);
+  await page.locator('#run-objective').fill('Summarize this installed voice recording');
+  await page.getByLabel('Local speech service URL').fill(`${providerEndpoint}/v1/audio/transcriptions`);
+  const voiceRunCreated = page.waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === '/runs', { timeout: 15000 });
+  await page.getByRole('button', { name: 'Start objective', exact: true }).click();
+  const voiceRunResponse = await voiceRunCreated;
+  if (!voiceRunResponse.ok()) throw new Error(`The installed app could not submit captured WAV audio: ${await voiceRunResponse.text()}`);
+  const voiceRun = await voiceRunResponse.json();
+  await expect(page.getByRole('region', { name: 'Final run review' })).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText('Voice transcript fixture confirmed.', { exact: true })).toBeVisible({ timeout: 15000 });
+  if (fakeState.voiceTranscriptRequests !== 1 || !fakeState.voiceWavPayloadVerified) {
+    throw new Error('The selected loopback transcription service did not receive the captured WAV as multipart audio.');
+  }
+  voiceTranscriptionRequestCount = fakeState.voiceTranscriptRequests;
+  voiceTranscriptionPassed = true;
+  const voiceArtifactsResponse = await fetch(`${connection.base_url}/runs/${encodeURIComponent(voiceRun.id)}/artifacts`, { headers });
+  if (!voiceArtifactsResponse.ok) throw new Error(`Could not inspect the persisted voice artifacts: ${voiceArtifactsResponse.status}`);
+  const voiceArtifacts = await voiceArtifactsResponse.json();
+  const transcriptArtifact = voiceArtifacts.find(item => item.media_type === 'text/plain');
+  if (!transcriptArtifact) throw new Error('The installed voice run did not persist its transcript artifact.');
+  const transcriptResponse = await fetch(`${connection.base_url}/artifacts/${encodeURIComponent(transcriptArtifact.id)}`, { headers });
+  if (!transcriptResponse.ok || await transcriptResponse.text() !== 'Installed microphone transcript fixture.') {
+    throw new Error('The persisted voice transcript did not match the selected local transcription service response.');
+  }
+  const voiceReview = page.getByRole('region', { name: 'Final run review' });
+  await voiceReview.getByLabel('I reviewed the objective, result, and available evidence', { exact: true }).check();
+  await voiceReview.getByLabel('Final review rationale').fill('The installed app persisted the exact transcript returned by the selected loopback service.');
+  await expect(voiceReview.getByRole('button', { name: 'Accept and complete run', exact: true })).toBeEnabled({ timeout: 15000 });
+  await voiceReview.getByRole('button', { name: 'Accept and complete run', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Active run completed' })).toBeVisible({ timeout: 15000 });
   microphoneCapturePassed = true;
 
+  await page.getByRole('link', { name: /New objective/ }).click();
   await page.locator('#approved-web-hosts').fill('httpbin.org');
   await page.getByLabel('Allow managed browser reads for this next run').check();
   await page.getByLabel('Workspace path').fill(workspace);
@@ -598,7 +646,13 @@ try {
       fake_device: true,
       local_wav_attachment_created: true,
       microphone_tracks_ended_after_capture: true,
-      submitted_for_transcription: false,
+      submitted_for_transcription: voiceTranscriptionPassed,
+      transcription_requests_for_voice_run: voiceTranscriptionRequestCount,
+      transcription_payload_verified: fakeState.voiceWavPayloadVerified,
+      transcript_artifact_persisted: true,
+      transcript_artifact_matches_service_response: true,
+      deterministic_transcription_service: true,
+      deterministic_provider_response: true,
       model_inference_requested: false,
     },
     provider: 'deterministic loopback OpenAI-compatible fixture',

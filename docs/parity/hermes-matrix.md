@@ -1,3 +1,7 @@
+## Verify the Windows voice capture and local transcription path (2026-11-25)
+
+The native Windows desktop acceptance now covers selected-device microphone capture through the configured loopback transcription service and back: one multipart WAV request, exact transcript artifact persistence and retrieval, and owner-reviewed run completion. It used deterministic service/provider fixtures without live model inference; physical-microphone and real-ASR acceptance remain open ([report](../../.acceptance/native-browser-ui-cancel-0ea067af-cec1-4f14-84e0-ac32d5e55fb3/report.json)). See [`progress.md`](../progress.md#verify-voice-capture-through-local-transcription-in-the-windows-desktop-2026-11-25).
+
 ## Verify the Phase 3 coding slice in Windows AppContainer (2026-11-25)
 
 The deterministic workspace vertical-slice diagnostic passed through X.A.A.'s normal coordinator and actual Windows AppContainer execution readiness. It repaired `answer.py`, ran the restricted project check (`1 passed`), and separately verified fresh validation evidence against the current final tree. The report confirms network denial, sandbox cleanup, no unresolved calls, and no model inference ([report](../../.acceptance/workspace-vertical-slice-windows-20261125/report.json)). This demonstrates the bounded Phase 3 gate on Windows alongside the previously hosted WSL case. The broad browser/search/file/terminal/coding Hermes inventory remains partial. See [`progress.md`](../progress.md#verify-the-phase-3-coding-slice-in-windows-appcontainer-2026-11-25).
