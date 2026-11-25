@@ -25,12 +25,16 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [modelDetails,setModelDetails]=useState<ModelInfo[]>([]);
   const [contextLength,setContextLength]=useState('');
   const [resourceEstimate,setResourceEstimate]=useState<ModelResourceEstimate|null>(null);
+  const [gpuResources,setGpuResources]=useState<components['schemas']['GPUResourceSnapshot'][]|null>(null);
   const [compatibleEndpoint,setCompatibleEndpoint]=useState('');
   const [compatibleCredential,setCompatibleCredential]=useState('');
   const [compatibleCredentialConfigured,setCompatibleCredentialConfigured]=useState(false);
   const [compatibleCredentialDiagnostic,setCompatibleCredentialDiagnostic]=useState('');
   const selectedDetails=modelDetails.find(item=>item.id===model);
   const loadedInstances=selectedDetails?.loaded_instances??[];
+  const reportedGpuFreeBytes=gpuResources&&gpuResources.length>0&&gpuResources.every(gpu=>gpu.memory_free_bytes!==null)
+    ? gpuResources.reduce((total,gpu)=>total+(gpu.memory_free_bytes??0),0)
+    : null;
 
   useEffect(()=>{
     let live=true;
@@ -198,10 +202,14 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     if(requested!==undefined&&selectedDetails?.context_length&&requested>selectedDetails.context_length){
       setError(`Context length exceeds the discovered model maximum of ${selectedDetails.context_length.toLocaleString()} tokens.`);return;
     }
-    setBusy(true);setError('');setResourceEstimate(null);
+    setBusy(true);setError('');setResourceEstimate(null);setGpuResources(null);
     try {
-      const estimate=await client.estimateModelResources(model,requested);
+      const [estimate,resources]=await Promise.all([
+        client.estimateModelResources(model,requested),
+        client.systemResources().catch(()=>null),
+      ]);
       setResourceEstimate(estimate);
+      setGpuResources(resources?.gpu_devices??[]);
     } catch(failure) {
       setError(failure instanceof Error?failure.message:'Could not estimate model memory.');
     } finally {setBusy(false);}
@@ -267,6 +275,19 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
               {resourceEstimate.status==='estimated'?<>
                 <strong>LM Studio estimate · advisory only</strong>
                 <p>GPU memory: {formatMemory(resourceEstimate.estimated_gpu_memory_bytes)} · Total memory: {formatMemory(resourceEstimate.estimated_total_memory_bytes)}</p>
+                {gpuResources===null
+                  ? <p>Current GPU memory telemetry is unavailable.</p>
+                  : gpuResources.length>0
+                    ? <ul aria-label="Current GPU memory">
+                      {gpuResources.map((gpu,index)=><li key={`${gpu.name}-${index}`}>{gpu.name}: {formatMemory(gpu.memory_free_bytes)} free of {formatMemory(gpu.memory_total_bytes)} · utilization {gpu.utilization_percent===null?'not reported':`${gpu.utilization_percent}%`}</li>)}
+                    </ul>
+                    : <p>No compatible GPU memory telemetry is available on this device.</p>}
+                {resourceEstimate.estimated_gpu_memory_bytes!==null&&resourceEstimate.estimated_gpu_memory_bytes!==undefined&&reportedGpuFreeBytes!==null&&(
+                  <p>{resourceEstimate.estimated_gpu_memory_bytes<=reportedGpuFreeBytes
+                    ? `The estimate is below the combined free memory reported by these GPUs (${formatMemory(reportedGpuFreeBytes)}).`
+                    : `The estimate exceeds the combined free memory reported by these GPUs (${formatMemory(reportedGpuFreeBytes)}); LM Studio may offload work to system memory or fail to load.`}</p>
+                )}
+                <p>GPU readings are a live host snapshot and can change before loading. They do not guarantee the model will fit or show memory used by unreported accelerators.</p>
                 <p>{resourceEstimate.guardrail==='may_load'?'LM Studio reports this may load within its resource guardrails.':resourceEstimate.guardrail==='warning'?'LM Studio reports this may exceed resource guardrails.':'LM Studio did not report a guardrail result.'}</p>
               </>:<p>{resourceEstimate.message}</p>}
               <p>This estimate is not a guarantee. No model was loaded or downloaded.</p>

@@ -22,6 +22,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path==='/system/resources')return route.fulfill({json:{sampled_at:'2026-11-25T12:00:00Z',platform:'win32',logical_processors:32,cpu_percent:20,memory_total_bytes:64000000000,memory_available_bytes:32000000000,memory_used_percent:50,disk_total_bytes:1000000000000,disk_free_bytes:500000000000,queue_active:false,queue_waiting:0,queue_reserved_tokens:0,queue_max_reserved_tokens:2000000,queue_max_pending:16,gpu_devices:[{name:'NVIDIA GeForce RTX 5080',memory_total_bytes:16000000000,memory_free_bytes:12000000000,utilization_percent:43}],accelerator_telemetry_available:true},headers});
     if(path==='/models')return route.fulfill({json:[{id:'fixture/model',context_length:32768,size_bytes:2500000000,loaded:loadedInstances.length>0,loaded_instances:loadedInstances,capabilities:{vision:false,trained_for_tool_use:true}},...(compatibleEndpoint?[{id:'openai-compatible::remote-model',capabilities:{vision:false,trained_for_tool_use:false}}]:[])],headers});
     if(path==='/models/load'&&req.method()==='POST'){
       const data=req.postDataJSON();modelLoads.push(data);loadedInstances=[{id:'fixture-instance-1',context_length:data.context_length??4096}];
@@ -113,6 +114,9 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await page.getByRole('button',{name:'Estimate model memory'}).click();
   await expect.poll(()=>modelEstimates).toEqual([{model:'fixture/model'}]);
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('GPU memory: 2.5 GB · Total memory: 4.0 GB');
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('NVIDIA GeForce RTX 5080: 12.0 GB free of 16.0 GB · utilization 43%');
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('The estimate is below the combined free memory reported by these GPUs (12.0 GB).');
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('They do not guarantee the model will fit');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('No model was loaded or downloaded.');
   expect(modelLoads).toEqual([]);
   await page.getByLabel('Context length for new instance (optional)').fill('65536');
