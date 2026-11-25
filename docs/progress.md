@@ -1,3 +1,7 @@
+## Preserve legacy tool visibility and internal-call privacy in final review (2026-11-24)
+
+The changed-file projection now treats older completion events with no `internal` field as public, while also honoring an internal marker on the corresponding intent event. A regression exercises both legacy cases: the public file appears, the internal file stays hidden, and neither file's contents are returned. The focused projection test passes, along with Ruff and Pyright. This preserves historical review evidence without weakening internal-call privacy; the full coordinator and hosted checks are pending.
+
 ## Verify selected specialist scripts in local restricted WSL (2026-11-24)
 
 The current Ubuntu-24.04 WSL distribution passed `scripts/selected_skill_specialist_diagnostic.py` for selected Python, shell, Node, and PowerShell resources in a private specialist snapshot. All four commands printed the fixture marker; PowerShell 7.6.6 observed only the synthetic sandbox identity. Command evidence matched the augmented snapshot, the original project stayed unchanged, and zero commands remained unresolved. The report is [`.acceptance/selected-skill-specialist-current/2f73001a-0105-4eaa-8252-4f93e104eae5/report.json`](../.acceptance/selected-skill-specialist-current/2f73001a-0105-4eaa-8252-4f93e104eae5/report.json). This uses explicit saved WSL and specialist command grants; it does not install npm dependencies or use live model inference.

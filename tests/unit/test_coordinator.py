@@ -539,6 +539,12 @@ def test_workspace_change_projection_records_direct_create_and_delete_without_co
             {"path": "src/internal.py", "sha256": "f" * 64},
             True,
         ),
+        (
+            "legacy-1",
+            "workspace.create_file",
+            {"path": "src/legacy.py", "sha256": "c" * 64, "content": "legacy private"},
+            False,
+        ),
     ):
         store.record_tool_intent(
             run_id,
@@ -551,6 +557,13 @@ def test_workspace_change_projection_records_direct_create_and_delete_without_co
             internal=internal,
         )
         store.record_tool_result(run_id, token, call_id, result, internal=internal)
+    with store.connection() as connection:
+        for call_id in ("internal-1", "legacy-1"):
+            connection.execute(
+                "UPDATE run_events SET payload=? WHERE run_id=? "
+                "AND event_type='tool.completed' AND json_extract(payload,'$.call_id')=?",
+                (json.dumps({"call_id": call_id}), run_id, call_id),
+            )
     store.record_tool_intent(
         run_id,
         token,
@@ -574,16 +587,18 @@ def test_workspace_change_projection_records_direct_create_and_delete_without_co
 
     assert response.status_code == 200, response.text
     data = response.json()
-    assert data["total"] == 2
+    assert data["total"] == 3
     assert [
         (item["call_id"], item["operation"], item["path"], item["sha256"]) for item in data["items"]
     ] == [
         ("create-1", "created", "src/new.py", created_sha),
         ("delete-1", "deleted", "src/old.py", deleted_sha),
+        ("legacy-1", "created", "src/legacy.py", "c" * 64),
     ]
     assert "private" not in response.text
     assert "internal.py" not in response.text
     assert "not-deleted.py" not in response.text
+    assert "legacy private" not in response.text
 
 
 async def test_coordinator_executes_journaled_read_and_stops_for_verification(workspace_tmp_path):

@@ -2349,7 +2349,11 @@ class RunStore:
                 "AND calls.state='completed' "
                 "AND calls.tool_name IN ('workspace.create_file','workspace.write_file',"
                 "'workspace.replace_text','workspace.apply_patch','workspace.delete_file') "
-                "AND json_extract(completed.payload,'$.internal')=0 "
+                "AND COALESCE(json_extract(completed.payload,'$.internal'),0)=0 "
+                "AND NOT EXISTS (SELECT 1 FROM run_events AS intended "
+                "WHERE intended.run_id=calls.run_id AND intended.event_type='tool.intended' "
+                "AND json_extract(intended.payload,'$.call_id')=calls.provider_call_id "
+                "AND json_extract(intended.payload,'$.internal')=1) "
                 "ORDER BY completed.sequence",
                 (run_id,),
             ).fetchall()
