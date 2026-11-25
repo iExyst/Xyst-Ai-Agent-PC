@@ -22,6 +22,7 @@ import tempfile
 import threading
 from ctypes import wintypes
 from pathlib import Path
+from types import CodeType
 from typing import Any, cast
 from uuid import uuid4
 
@@ -1529,9 +1530,16 @@ def run_stdio_bounded_shim() -> int:
 def appcontainer_shim_fingerprint() -> str:
     """Return a stable digest for the sandbox launcher in source and frozen builds."""
     source = Path(__file__)
-    if source.is_file():
+    if source.is_file() and not getattr(sys, "frozen", False):
         return hashlib.sha256(source.read_bytes()).hexdigest()
-    code_objects = (
+    code_objects = _appcontainer_shim_code_objects()
+    return hashlib.sha256(
+        b"".join(_stable_marshaled_code(code) for code in code_objects)
+    ).hexdigest()
+
+
+def _appcontainer_shim_code_objects() -> tuple[CodeType, ...]:
+    return (
         _process_identity.__code__,
         _create_mcp_child.__code__,
         _verify_command_job_limits.__code__,
@@ -1539,7 +1547,30 @@ def appcontainer_shim_fingerprint() -> str:
         run_stdio_bounded_shim.__code__,
         *AppContainerAccess.fingerprint_code(),
     )
-    return hashlib.sha256(b"".join(marshal.dumps(code) for code in code_objects)).hexdigest()
+
+
+def _stable_code_constant(value: object) -> object:
+    if isinstance(value, CodeType):
+        return value.replace(
+            co_code=value.co_code,
+            co_consts=tuple(
+                _stable_code_constant(item) for item in cast(tuple[object, ...], value.co_consts)
+            ),
+        )
+    if isinstance(value, tuple):
+        return tuple(_stable_code_constant(item) for item in cast(tuple[object, ...], value))
+    return value
+
+
+def _stable_marshaled_code(code: CodeType) -> bytes:
+    """Serialize code without adaptive state that differs after specialization."""
+    stable = code.replace(
+        co_code=code.co_code,
+        co_consts=tuple(
+            _stable_code_constant(value) for value in cast(tuple[object, ...], code.co_consts)
+        ),
+    )
+    return marshal.dumps(stable)
 
 
 if __name__ == "__main__" and sys.argv[1:] == ["--shim"]:

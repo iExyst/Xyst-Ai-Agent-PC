@@ -25,6 +25,7 @@ from frozen_api_restart_diagnostic import (
     wait_for_api,
 )
 from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE, CredentialStore
+from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.execution_readiness import WINDOWS_LOCAL_CHECKS
 from xaa.runtime.states import RunState
 from xaa.runtime.windows_local_probe import command_argv as probe_command_argv
@@ -186,12 +187,12 @@ def main() -> None:
             raise RuntimeError(
                 "Frozen Windows AppContainer readiness failed: " + json.dumps(readiness)
             )
-        grant = {
-            "backend": "windows-appcontainer-v1",
-            "distribution": "Windows-Local",
-            "profile_sha256": readiness["profile_sha256"],
-            "max_seconds": APPCONTAINER_COMMAND_MAX_SECONDS,
-        }
+        grant = CommandGrant(
+            backend="windows-appcontainer-v1",
+            distribution="Windows-Local",
+            profile_sha256=readiness["profile_sha256"],
+            max_seconds=APPCONTAINER_COMMAND_MAX_SECONDS,
+        ).model_dump()
         created = client.post(
             "/runs",
             json={

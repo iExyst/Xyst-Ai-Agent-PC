@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from xaa.runtime import mcp_appcontainer
 from xaa.runtime import windows_local_transport as transport
 
 
@@ -51,6 +52,42 @@ def test_stable_code_fingerprint_ignores_nested_runtime_specialization() -> None
     after = hashlib.sha256(transport._stable_marshaled_code(code)).hexdigest()  # pyright: ignore[reportPrivateUsage]
 
     assert after == before
+
+
+def test_appcontainer_stable_fingerprint_ignores_nested_runtime_specialization() -> None:
+    def outer():
+        def inner(value: int) -> int:
+            return value + 1
+
+        return inner
+
+    code = outer.__code__
+    before = hashlib.sha256(
+        mcp_appcontainer._stable_marshaled_code(code)  # pyright: ignore[reportPrivateUsage]
+    ).hexdigest()
+    inner = outer()
+    for value in range(1000):
+        inner(value)
+    after = hashlib.sha256(
+        mcp_appcontainer._stable_marshaled_code(code)  # pyright: ignore[reportPrivateUsage]
+    ).hexdigest()
+
+    assert after == before
+
+
+def test_frozen_appcontainer_fingerprint_uses_stable_code_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp_appcontainer.sys, "frozen", True, raising=False)
+    code_objects = mcp_appcontainer._appcontainer_shim_code_objects()  # pyright: ignore[reportPrivateUsage]
+    expected = hashlib.sha256(
+        b"".join(
+            mcp_appcontainer._stable_marshaled_code(code)  # pyright: ignore[reportPrivateUsage]
+            for code in code_objects
+        )
+    ).hexdigest()
+
+    assert mcp_appcontainer.appcontainer_shim_fingerprint() == expected
 
 
 def test_frozen_engine_children_get_independent_pyinstaller_runtime_state(tmp_path: Path) -> None:

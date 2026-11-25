@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import re
 import tarfile
 import time
 
@@ -42,6 +43,8 @@ def test_docker_readiness_probe_checks_effective_cgroup_limits() -> None:
     ):
         assert limit in PROBE_CODE
     assert "{'cpu','memory','pids'} <= controllers" in PROBE_CODE
+    assert "/proc/self/mountinfo" in PROBE_CODE
+    assert "mount['fstype']=='tmpfs'" in PROBE_CODE
 
 
 def intent(**overrides: object) -> CommandIntent:
@@ -203,6 +206,12 @@ def test_docker_container_inspect_must_confirm_requested_isolation() -> None:
         ],
     }
     _require_container_policy(container)
+
+    # Docker Engine may omit tmpfs entries from Mounts; HostConfig plus the
+    # actual in-container fixed probe establishes the effective scratch mounts.
+    inspect_without_tmpfs_entries = json.loads(json.dumps(container))
+    inspect_without_tmpfs_entries["Mounts"] = []
+    _require_container_policy(inspect_without_tmpfs_entries)
 
     unsafe = json.loads(json.dumps(container))
     unsafe["HostConfig"]["NetworkMode"] = "bridge"
@@ -369,7 +378,13 @@ async def test_docker_output_overflow_returns_a_bounded_output_limit_receipt(
         spawned.append(process)
         return process
 
-    async def run_cli(*_args: object, **_kwargs: object) -> bytes:
+    async def run_cli(arguments: tuple[str, ...], **_kwargs: object) -> bytes:
+        code = arguments[-1] if arguments else ""
+        match = re.search(r"write_text\('([0-9a-f]{32})'", code)
+        if match is not None:
+            return json.dumps(
+                {"nonce": match.group(1), "checks": True, "network_denied": True}
+            ).encode()
         return b""
 
     async def inspect(*_args: object, **_kwargs: object) -> dict[str, object]:

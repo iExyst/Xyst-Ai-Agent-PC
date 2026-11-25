@@ -335,7 +335,8 @@ async def test_live_docker_recovery_removes_orphaned_container_after_manager_res
             endpoint=launcher.endpoint,
             windows=os.name == "nt",
         )
-        raw_id = await docker_request(create_argv[1:])
+        # This helper adds the endpoint itself; pass the subcommand once.
+        raw_id = await docker_request(create_argv[3:])
         container_id = raw_id.decode("ascii", errors="strict").strip()
         assert len(container_id) == 64
         created = True

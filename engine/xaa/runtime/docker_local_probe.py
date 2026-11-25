@@ -40,10 +40,24 @@ else:
     assert read_limit(('/sys/fs/cgroup/pids/pids.max',))=='32'
 
 assert os.statvfs('/').f_flag & os.ST_RDONLY
+mounts={}
+for line in pathlib.Path('/proc/self/mountinfo').read_text(encoding='ascii').splitlines():
+    fields=line.split()
+    if '-' not in fields:
+        continue
+    separator=fields.index('-')
+    if separator<6 or len(fields)<separator+4:
+        continue
+    mounts[fields[4]]={'fstype':fields[separator+1],'options':set(fields[5].split(','))}
 for path in ('/tmp','/workspace'):
+    mount=mounts.get(path)
+    assert mount is not None and mount['fstype']=='tmpfs'
+    assert {'rw','nosuid','nodev','noexec'} <= mount['options']
     stats=os.statvfs(path)
     assert not stats.f_flag & os.ST_RDONLY
     assert 0 < stats.f_blocks*stats.f_frsize <= 33554432
+shm_mount=mounts.get('/dev/shm')
+assert shm_mount is not None and shm_mount['fstype']=='tmpfs'
 shm=os.statvfs('/dev/shm')
 assert not shm.f_flag & os.ST_RDONLY
 assert 0 < shm.f_blocks*shm.f_frsize <= 33554432

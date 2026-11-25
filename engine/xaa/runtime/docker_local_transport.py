@@ -201,13 +201,9 @@ def _require_container_policy(container: dict[str, Any]) -> None:
 
     if not all(allowed_mount(mount) for mount in mounts):
         raise PermissionError("Docker command container has an unexpected host or volume mount.")
-    observed = {
-        cast(str, cast(dict[str, Any], mount).get("Destination"))
-        for mount in mounts
-        if isinstance(mount, dict)
-    }
-    if not {"/tmp", "/workspace"}.issubset(observed):
-        raise PermissionError("Docker command container is missing a private tmpfs mount.")
+    # Docker Engine versions differ in whether tmpfs mounts appear in the
+    # inspect Mounts array. HostConfig.Tmpfs binds the requested configuration;
+    # the fixed in-container readiness probe verifies the effective mounts.
 
 
 @dataclass
@@ -440,6 +436,64 @@ class DockerLocalTransport:
             raise TransportError("Local Docker operation failed.")
         return stdout
 
+    async def _verify_command_container_profile(
+        self, intent: CommandIntent, *, deadline: float
+    ) -> None:
+        """Verify the actual command container with the fixed, application-owned probe."""
+        nonce = os.urandom(16).hex()
+        bootstrap = (
+            "from pathlib import Path; "
+            f"Path('/workspace/probe.txt').write_text({nonce!r}, encoding='ascii'); "
+            f"exec({PROBE_CODE!r})"
+        )
+        output = await self._run_cli(
+            (
+                "exec",
+                "--user",
+                "65534:65534",
+                docker_container_name(intent.execution_id),
+                "python3",
+                "-I",
+                "-c",
+                bootstrap,
+            ),
+            deadline=deadline,
+            output_limit=16 * 1024,
+        )
+        try:
+            decoded: object = json.loads(output)
+        except (ValueError, UnicodeError) as exc:
+            raise PermissionError("Docker command container failed its isolation probe.") from exc
+        if not isinstance(decoded, dict):
+            raise PermissionError("Docker command container failed its isolation probe.")
+        probe_result = cast(dict[str, Any], decoded)
+        if (
+            set(probe_result) != {"nonce", "checks", "network_denied"}
+            or probe_result.get("nonce") != nonce
+            or probe_result.get("checks") is not True
+            or probe_result.get("network_denied") is not True
+        ):
+            raise PermissionError("Docker command container failed its isolation probe.")
+        cleanup = (
+            "from pathlib import Path; "
+            "Path('/workspace/probe.txt').unlink(missing_ok=True); "
+            "Path('/workspace/probe-write.txt').unlink(missing_ok=True)"
+        )
+        await self._run_cli(
+            (
+                "exec",
+                "--user",
+                "65534:65534",
+                docker_container_name(intent.execution_id),
+                "python3",
+                "-I",
+                "-c",
+                cleanup,
+            ),
+            deadline=deadline,
+            output_limit=1024,
+        )
+
     async def _inspect_container(
         self, intent: CommandIntent, *, deadline: float
     ) -> dict[str, Any] | None:
@@ -543,6 +597,7 @@ class DockerLocalTransport:
             if inspected is None:
                 raise TransportError("Docker command container disappeared before policy review.")
             _require_container_policy(inspected)
+            await self._verify_command_container_profile(intent, deadline=deadline)
             copy = docker_copy_argv(
                 intent,
                 endpoint=self.endpoint,
