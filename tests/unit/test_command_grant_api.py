@@ -91,10 +91,15 @@ def test_api_grants_only_authenticated_checked_workspace_runs(workspace_tmp_path
         response = client.post("/runs", headers=headers, json=payload)
         assert response.status_code == 201
         saved = response.json()
-        assert saved["command_grant"] == {**grant, "image_reference": None}
+        assert saved["command_grant"] == {
+            **grant,
+            "image_reference": None,
+            "ssh_identity_file": None,
+        }
         assert client.get("/runs/" + saved["id"], headers=headers).json()["command_grant"] == {
             **grant,
             "image_reference": None,
+            "ssh_identity_file": None,
         }
         events = store.list_events(saved["id"])
         record = next(
@@ -160,7 +165,7 @@ def test_api_persists_only_server_checked_docker_image_grant(workspace_tmp_path,
         )
         assert response.status_code == 201
         run = response.json()
-        assert run["command_grant"] == grant
+        assert run["command_grant"] == {**grant, "ssh_identity_file": None}
         event = next(
             item["payload"]
             for item in store.list_events(run["id"])
