@@ -28,6 +28,10 @@ The native Windows restart acceptance downloads saved plain-text, Markdown, DOCX
 
 # Hermes capability reference matrix
 
+## Verify current unsigned Windows package and recovery (2026-11-24)
+
+Exact-current manual installer workflow [45516971937](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45516971937) passed on `d438b947213c1592a6188e114a42995bad5d1f68`: 55 steps succeeded and three setup/cache steps were skipped. The unsigned 0.1.1 package acceptance includes the frozen engine, native desktop onboarding and recovery, MCP OAuth, specialist/workspace recovery, browser cancellation, upgrade from 0.1.0, standard-user install, boot, uninstall, and explicit data removal. The package artifact is [14979007859](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45516971937/artifacts/14979007859). This strengthens the Windows packaging evidence; signing, live-model release acceptance, broader clean-machine coverage, and Hermes parity remain open.
+
 ## Hosted verification for final-review path validation (2026-11-24)
 
 Exact-source Windows workflow [45515335121](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45515335121) passed on `4a23fca7e262386653bcb8e3b66a5a6b001d11a6` with 1,705 Python tests passed and 29 skipped, plus configured browser, pinned-Hermes inventory, static-analysis, API-contract, desktop, and recovery checks. It validates the final-review projection change for legacy public completion events, internal intent privacy, and malformed paths. Full Windows installer acceptance for the current source remains in progress; this row remains partial pending broader workspace/reviewer parity.
