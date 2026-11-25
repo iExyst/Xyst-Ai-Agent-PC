@@ -740,7 +740,7 @@ jobs:
           XAA_UPGRADE_BASELINE_TAG: ${{ vars.XAA_UPGRADE_BASELINE_TAG }}
       - name: Install, boot and uninstall unsigned package
         run: ./scripts/installer_ci_smoke.ps1
-        timeout-minutes: 5
+        timeout-minutes: 10
       - name: Verify per-user install as a standard Windows account
         run: ./scripts/installer_standard_user_smoke.ps1
         timeout-minutes: 5

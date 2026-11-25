@@ -222,6 +222,30 @@ try {
             throw 'Installed desktop provider-estimate, browser cancellation/form-submission, or workspace evidence was incomplete.'
         }
         $xaaReport.installed_desktop_browser_cancellation = $xaaCancelAcceptance
+        $xaaEstimatorFixtureProfile = Join-Path $xaaAcceptanceRoot 'lms-estimator-fixture-profile'
+        $xaaEstimatorFixtureBin = Join-Path $xaaEstimatorFixtureProfile '.lmstudio\bin'
+        New-Item -ItemType Directory -Path $xaaEstimatorFixtureBin -Force | Out-Null
+        & rustc tests/fixtures/lms_estimator_stub.rs --edition 2021 -D warnings -o (Join-Path $xaaEstimatorFixtureBin 'lms.exe')
+        if ($LASTEXITCODE -ne 0) { throw 'Could not build the estimate-only LM Studio CLI fixture.' }
+        $env:XAA_NATIVE_ESTIMATOR_FIXTURE_PROFILE = $xaaEstimatorFixtureProfile
+        $env:XAA_NATIVE_BROWSER_CANCEL_DEBUG_PORT = '19223'
+        $xaaEstimateUiOutput = & node scripts/native_browser_cancel_smoke.mjs $xaaDesktop
+        $xaaEstimateUiExitCode = $LASTEXITCODE
+        if ($xaaEstimateUiExitCode -ne 0) { throw 'Installed desktop successful provider-estimate acceptance failed.' }
+        $xaaEstimateUiAcceptance = ($xaaEstimateUiOutput | Out-String | ConvertFrom-Json)
+        $xaaExpectedEstimateInvocation = @('load', '--estimate-only', 'xaa-native-browser-cancel-fixture', '--host', '127.0.0.1', '--port')
+        if (-not $xaaEstimateUiAcceptance.passed -or -not $xaaEstimateUiAcceptance.provider_model_estimate.passed -or $xaaEstimateUiAcceptance.provider_model_estimate.status -ne 'estimated' -or -not $xaaEstimateUiAcceptance.provider_model_estimate.no_model_load_requested -or -not $xaaEstimateUiAcceptance.launch_credentials_clean -or $xaaEstimateUiAcceptance.model_inference_requested -or ($xaaEstimateUiAcceptance.provider_model_estimate.cli_invocation.Count -ne 7)) {
+            throw 'Installed desktop did not display and verify the successful estimate-only CLI response.'
+        }
+        for ($xaaArgumentIndex = 0; $xaaArgumentIndex -lt $xaaExpectedEstimateInvocation.Count; $xaaArgumentIndex++) {
+            if ($xaaEstimateUiAcceptance.provider_model_estimate.cli_invocation[$xaaArgumentIndex] -ne $xaaExpectedEstimateInvocation[$xaaArgumentIndex]) {
+                throw 'Installed desktop called the estimate CLI with unexpected arguments.'
+            }
+        }
+        if ($xaaEstimateUiAcceptance.provider_model_estimate.cli_invocation[6] -notmatch '^\d+$') { throw 'Installed desktop did not pass the fixture server port separately.' }
+        $xaaReport.installed_desktop_successful_provider_estimate = $xaaEstimateUiAcceptance.provider_model_estimate
+        Remove-Item Env:XAA_NATIVE_ESTIMATOR_FIXTURE_PROFILE -ErrorAction SilentlyContinue
+        $env:XAA_NATIVE_BROWSER_CANCEL_DEBUG_PORT = '19222'
         & node scripts/native_boot_smoke.mjs $xaaDesktop
         $xaaBootExitCode = $LASTEXITCODE
         if ($xaaBootExitCode -ne 0) { throw 'Installed application boot/shutdown test failed.' }

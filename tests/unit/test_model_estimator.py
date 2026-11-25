@@ -38,6 +38,17 @@ def test_parse_estimate_rejects_unrecognized_output():
     assert model_estimator._parse_estimate("fixture/model", None, "done") is None
 
 
+@pytest.mark.skipif(model_estimator.os.name != "nt", reason="Windows LM Studio install path")
+def test_find_lms_from_default_windows_install_when_path_is_restricted(monkeypatch, tmp_path):
+    binary = tmp_path / ".lmstudio" / "bin" / "lms.exe"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"fixture")
+    monkeypatch.setattr(model_estimator.shutil, "which", lambda _candidate: None)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    assert model_estimator._find_lms_executable() == str(binary)
+
+
 @pytest.mark.asyncio
 async def test_estimator_reports_unavailable_without_lms(monkeypatch):
     monkeypatch.setattr(model_estimator, "_find_lms_executable", lambda: None)

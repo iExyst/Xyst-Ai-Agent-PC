@@ -82,6 +82,12 @@ def _find_lms_executable() -> str | None:
         found = shutil.which(candidate)
         if found and Path(found).suffix.casefold() not in {".bat", ".cmd"}:
             return found
+    if os.name == "nt":
+        user_profile = os.environ.get("USERPROFILE")
+        if user_profile:
+            bundled_cli = Path(user_profile) / ".lmstudio" / "bin" / "lms.exe"
+            if bundled_cli.is_file():
+                return str(bundled_cli)
     return None
 
 

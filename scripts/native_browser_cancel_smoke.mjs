@@ -8,6 +8,12 @@ import path from 'node:path';
 if (process.platform !== 'win32') throw new Error('Installed desktop cancellation acceptance requires Windows.');
 
 const desktopExecutable = path.resolve(process.argv[2] ?? 'build/native-release/xaa-desktop.exe');
+const estimatorFixtureProfile = process.env.XAA_NATIVE_ESTIMATOR_FIXTURE_PROFILE
+  ? path.resolve(process.env.XAA_NATIVE_ESTIMATOR_FIXTURE_PROFILE)
+  : null;
+const estimatorFixtureBin = estimatorFixtureProfile
+  ? path.join(estimatorFixtureProfile, '.lmstudio', 'bin')
+  : null;
 const root = path.resolve('.acceptance', `native-browser-ui-cancel-${randomUUID()}`);
 const profile = path.join(root, 'profile');
 const localAppData = path.join(profile, 'localappdata');
@@ -284,6 +290,7 @@ try {
     PATH: path.join(process.env.SystemRoot, 'System32'),
     APPDATA: roamingAppData,
     LOCALAPPDATA: localAppData,
+    ...(estimatorFixtureProfile ? { USERPROFILE: estimatorFixtureProfile } : {}),
     LM_STUDIO_URL: providerEndpoint,
     XAA_DATA_DIR: dataDirectory,
     XAA_TEST_CONFIG_DIR: configDirectory,
@@ -353,12 +360,35 @@ try {
   ]);
   if (!estimateResponse.ok()) throw new Error(`Installed LM Studio estimate request failed: ${await estimateResponse.text()}`);
   providerModelEstimate = await estimateResponse.json();
-  if (providerModelEstimate.status !== 'unavailable'
-    || !String(providerModelEstimate.message).includes('command-line estimator was not found')) {
-    throw new Error(`Installed estimator did not show the expected unavailable state: ${JSON.stringify(providerModelEstimate)}`);
+  if (estimatorFixtureBin) {
+    if (providerModelEstimate.status !== 'estimated'
+      || providerModelEstimate.estimated_gpu_memory_bytes !== 2 * 1024 ** 3
+      || providerModelEstimate.estimated_total_memory_bytes !== 3 * 1024 ** 3
+      || providerModelEstimate.guardrail !== 'may_load') {
+      throw new Error(`Installed estimator did not parse the fixture estimate: ${JSON.stringify(providerModelEstimate)}`);
+    }
+    const invocationPath = path.join(estimatorFixtureBin, 'invocation.json');
+    const invocation = JSON.parse(await readFile(invocationPath, 'utf8'));
+    if (JSON.stringify(invocation.slice(0, 6)) !== JSON.stringify([
+      'load', '--estimate-only', fakeModel, '--host', '127.0.0.1', '--port',
+    ]) || !/^\d+$/.test(invocation[6] ?? '') || invocation.length !== 7
+      || invocation[1] !== '--estimate-only') {
+      throw new Error(`Installed estimator CLI arguments did not match the no-load contract: ${JSON.stringify(invocation)}`);
+    }
+    await expect(page.getByRole('status').filter({ hasText: 'LM Studio estimate · advisory only' }))
+      .toContainText('GPU memory: 2.1 GB · Total memory: 3.2 GB');
+    await expect(page.getByRole('status').filter({ hasText: 'LM Studio estimate · advisory only' }))
+      .toContainText('LM Studio reports this may load within its resource guardrails.');
+    providerModelEstimate.invocation = invocation;
+  } else {
+    if (providerModelEstimate.status !== 'unavailable'
+      || !String(providerModelEstimate.message).includes('command-line estimator was not found')) {
+      throw new Error(`Installed estimator did not show the expected unavailable state: ${JSON.stringify(providerModelEstimate)}`);
+    }
+    await expect(page.getByRole('status').filter({ hasText: 'The LM Studio command-line estimator was not found.' }))
+      .toContainText('No model was loaded or downloaded.');
   }
-  await expect(page.getByRole('status').filter({ hasText: 'The LM Studio command-line estimator was not found.' }))
-    .toContainText('No model was loaded or downloaded.');
+  await expect(page.locator('.model-resource-estimate')).toContainText('No model was loaded or downloaded.');
   providerModelEstimateNoLoad = modelLoadRequests.length === 0;
   if (!providerModelEstimateNoLoad) throw new Error('Estimating model memory unexpectedly requested a model load.');
   const diagnosticResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/providers/diagnostics', { timeout: 15000 });
@@ -572,9 +602,10 @@ try {
     },
     provider: 'deterministic loopback OpenAI-compatible fixture',
     provider_model_estimate: {
-      passed: providerModelEstimate?.status === 'unavailable' && providerModelEstimateNoLoad,
+      passed: ['unavailable', 'estimated'].includes(providerModelEstimate?.status) && providerModelEstimateNoLoad,
       status: providerModelEstimate?.status,
       message: providerModelEstimate?.message,
+      cli_invocation: providerModelEstimate?.invocation,
       no_model_load_requested: providerModelEstimateNoLoad,
     },
     user_action: 'cancel browser navigation, submit the approved HTTPBin form, then owner-review the form and workspace results in the native desktop',
