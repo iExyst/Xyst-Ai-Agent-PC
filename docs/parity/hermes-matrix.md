@@ -16,7 +16,7 @@ The pinned inventory checks pass on this revision: 186/186 skill import compatib
 
 ## Check accessible names in channel controls (2026-11-25)
 
-The messaging-channel panel now checks that each visible interactive control has a programmatic name and that the section heading is exposed. Existing flow coverage verifies focus in and back out of identity and delivery confirmation groups. The browser test and TypeScript check pass locally. This adds a targeted desktop accessibility check; it does not complete screen-reader or whole-app dynamic-state review. See [`progress.md`](../progress.md#check-accessible-names-in-messaging-channel-controls-2026-11-25).
+The messaging-channel panel now checks that each visible interactive control has a programmatic name and that the section heading is exposed. Existing flow coverage verifies focus in and back out of identity and delivery confirmation groups. The browser test and TypeScript check pass locally; exact-source Windows CI [45670108586](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45670108586) passed the hosted channel test and configured Windows checks (the Python suite was skipped by input scope). This adds a targeted desktop accessibility check; it does not complete screen-reader or whole-app dynamic-state review. See [`progress.md`](../progress.md#check-accessible-names-in-messaging-channel-controls-2026-11-25).
 
 ## Compare the pinned Hermes Docker and SSH adapters with X.A.A. (2026-11-25)
 
