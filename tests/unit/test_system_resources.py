@@ -43,6 +43,44 @@ def test_parse_nvidia_smi_csv_supports_multiple_and_unavailable_metrics() -> Non
     ]
 
 
+def test_gpu_devices_merge_dxgi_memory_with_nvidia_utilization() -> None:
+    nvidia_devices = system_resources.parse_nvidia_smi_csv(
+        "NVIDIA GeForce RTX 5080, 16384, 8192, 50\n"
+    )
+    devices = system_resources.merge_gpu_devices(
+        [
+            {
+                "name": "NVIDIA GeForce RTX 5080",
+                "memory_total_bytes": 16_000,
+                "memory_free_bytes": 9_000,
+                "utilization_percent": None,
+            },
+            {
+                "name": "AMD Radeon(TM) Graphics",
+                "memory_total_bytes": 2_000,
+                "memory_free_bytes": 1_500,
+                "utilization_percent": None,
+            },
+        ],
+        nvidia_devices,
+    )
+
+    assert devices == [
+        {
+            "name": "NVIDIA GeForce RTX 5080",
+            "memory_total_bytes": 16_384 * 1024 * 1024,
+            "memory_free_bytes": 8192 * 1024 * 1024,
+            "utilization_percent": 50,
+        },
+        {
+            "name": "AMD Radeon(TM) Graphics",
+            "memory_total_bytes": 2_000,
+            "memory_free_bytes": 1_500,
+            "utilization_percent": None,
+        },
+    ]
+
+
 def test_monitor_reports_cpu_memory_disk_queue_and_missing_gpu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

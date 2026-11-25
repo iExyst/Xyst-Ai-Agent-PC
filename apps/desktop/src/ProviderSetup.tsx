@@ -281,15 +281,15 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
                   ? <p>Current GPU memory telemetry is unavailable.</p>
                   : gpuResources.length>0
                     ? <ul aria-label="Current GPU memory">
-                      {gpuResources.map((gpu,index)=><li key={`${gpu.name}-${index}`}>{gpu.name}: {formatMemory(gpu.memory_free_bytes)} free of {formatMemory(gpu.memory_total_bytes)} · utilization {gpu.utilization_percent===null?'not reported':`${gpu.utilization_percent}%`}</li>)}
+                      {gpuResources.map((gpu,index)=><li key={`${gpu.name}-${index}`}>{gpu.name}: {formatMemory(gpu.memory_free_bytes)} free of {formatMemory(gpu.memory_total_bytes)} GPU memory · utilization {gpu.utilization_percent===null?'not reported':`${gpu.utilization_percent}%`}</li>)}
                     </ul>
-                    : <p>No NVIDIA GPU memory telemetry is available on this device.</p>}
+                    : <p>No GPU memory telemetry is available on this device.</p>}
                 {resourceEstimate.estimated_gpu_memory_bytes!==null&&resourceEstimate.estimated_gpu_memory_bytes!==undefined&&reportedGpuFreeBytes!==null&&(
                   <p>{resourceEstimate.estimated_gpu_memory_bytes<=reportedGpuFreeBytes
                     ? `The estimate is below the combined free memory reported by these GPUs (${formatMemory(reportedGpuFreeBytes)}).`
                     : `The estimate exceeds the combined free memory reported by these GPUs (${formatMemory(reportedGpuFreeBytes)}); LM Studio may offload work to system memory or fail to load.`}</p>
                 )}
-                <p>GPU readings are a live host snapshot and can change before loading. They do not guarantee the model will fit or show memory used by unreported accelerators.</p>
+                <p>GPU readings are a live host snapshot and can change before loading. They do not guarantee the model will fit or show memory used by unreported accelerators. Available device telemetry depends on the GPU and driver.</p>
                 <p>Currently available system memory: {hostMemoryAvailableBytes===null?'not reported':formatMemory(hostMemoryAvailableBytes)}.</p>
                 {resourceEstimate.estimated_total_memory_bytes!==null&&resourceEstimate.estimated_total_memory_bytes!==undefined&&hostMemoryAvailableBytes!==null&&(
                   <p>{resourceEstimate.estimated_total_memory_bytes<=hostMemoryAvailableBytes

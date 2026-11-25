@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import ctypes
+import ctypes.wintypes
 import os
 import shutil
 import subprocess
@@ -172,26 +173,218 @@ def _nvidia_smi_path() -> Path | None:
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
-def _gpu_devices() -> list[dict[str, Any]]:
-    executable = _nvidia_smi_path()
-    if executable is None:
+def _com_method(instance: ctypes.c_void_p, index: int, restype: Any, argtypes: list[Any]) -> Any:
+    """Resolve one method from a COM interface vtable."""
+    table = ctypes.cast(instance, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+    function_type = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+        restype, ctypes.c_void_p, *argtypes
+    )
+    return function_type(table[index])
+
+
+def _dxgi_gpu_devices() -> list[dict[str, Any]]:
+    """Read Windows GPU adapter identities and system-wide dedicated-memory usage."""
+    if sys.platform != "win32":
         return []
+
+    class AdapterDesc1(ctypes.Structure):
+        _fields_ = [
+            ("Description", ctypes.c_wchar * 128),
+            ("VendorId", ctypes.wintypes.UINT),
+            ("DeviceId", ctypes.wintypes.UINT),
+            ("SubSysId", ctypes.wintypes.UINT),
+            ("Revision", ctypes.wintypes.UINT),
+            ("DedicatedVideoMemory", ctypes.c_size_t),
+            ("DedicatedSystemMemory", ctypes.c_size_t),
+            ("SharedSystemMemory", ctypes.c_size_t),
+            ("AdapterLuid", ctypes.c_longlong),
+            ("Flags", ctypes.wintypes.UINT),
+        ]
+
+    class PdhValueUnion(ctypes.Union):
+        _fields_ = [
+            ("long_value", ctypes.c_long),
+            ("double_value", ctypes.c_double),
+            ("large_value", ctypes.c_longlong),
+            ("ansi_string", ctypes.c_char_p),
+            ("wide_string", ctypes.c_wchar_p),
+        ]
+
+    class PdhFormattedValue(ctypes.Structure):
+        _fields_ = [("status", ctypes.wintypes.DWORD), ("value", PdhValueUnion)]
+
+    factory = ctypes.c_void_p()
+    pdh_query = ctypes.c_void_p()
+    adapters: list[ctypes.c_void_p] = []
+    pdh = None
     try:
-        result = subprocess.run(
-            [
-                str(executable),
-                "--query-gpu=name,memory.total,memory.free,utilization.gpu",
-                "--format=csv,noheader,nounits",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=1.0,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        dxgi = ctypes.WinDLL("dxgi.dll", use_last_error=True)
+        create_factory = dxgi.CreateDXGIFactory1
+        create_factory.argtypes = [ctypes.POINTER(ctypes.c_byte), ctypes.POINTER(ctypes.c_void_p)]
+        create_factory.restype = ctypes.c_long
+        factory_iid = (ctypes.c_byte * 16)(
+            0x78,
+            0xAE,
+            0x0A,
+            0x77,
+            0x6F,
+            0xF2,
+            0xBA,
+            0x4D,
+            0xA8,
+            0x29,
+            0x25,
+            0x3C,
+            0x83,
+            0xD1,
+            0xB3,
+            0x87,
+        )  # IDXGIFactory1
+        if (
+            create_factory(
+                ctypes.cast(factory_iid, ctypes.POINTER(ctypes.c_byte)), ctypes.byref(factory)
+            )
+            < 0
+            or not factory.value
+        ):
+            return []
+
+        enum_adapters = _com_method(
+            factory, 12, ctypes.c_long, [ctypes.wintypes.UINT, ctypes.POINTER(ctypes.c_void_p)]
         )
-    except (OSError, subprocess.SubprocessError):
+        devices: list[dict[str, Any]] = []
+        pdh = ctypes.WinDLL("pdh.dll", use_last_error=True)
+        open_query = pdh.PdhOpenQueryW
+        open_query.argtypes = [ctypes.c_wchar_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_void_p)]
+        open_query.restype = ctypes.wintypes.DWORD
+        add_counter = pdh.PdhAddEnglishCounterW
+        add_counter.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        add_counter.restype = ctypes.wintypes.DWORD
+        collect_query = pdh.PdhCollectQueryData
+        collect_query.argtypes = [ctypes.c_void_p]
+        collect_query.restype = ctypes.wintypes.DWORD
+        get_formatted = pdh.PdhGetFormattedCounterValue
+        get_formatted.argtypes = [
+            ctypes.c_void_p,
+            ctypes.wintypes.DWORD,
+            ctypes.POINTER(ctypes.wintypes.DWORD),
+            ctypes.POINTER(PdhFormattedValue),
+        ]
+        get_formatted.restype = ctypes.wintypes.DWORD
+        if open_query(None, 0, ctypes.byref(pdh_query)) != 0:
+            pdh_query = ctypes.c_void_p()
+        pdh_counters: list[tuple[ctypes.c_void_p, int]] = []
+        not_found = ctypes.c_long(0x887A0002).value
+        for index in range(16):
+            adapter = ctypes.c_void_p()
+            result = enum_adapters(factory, index, ctypes.byref(adapter))
+            if result == not_found or result < 0 or not adapter.value:
+                break
+            adapters.append(adapter)
+            desc = AdapterDesc1()
+            get_desc = _com_method(adapter, 10, ctypes.c_long, [ctypes.POINTER(AdapterDesc1)])
+            if get_desc(adapter, ctypes.byref(desc)) < 0 or desc.Flags & 2:
+                continue  # Skip software/WARP adapters.
+
+            total = int(desc.DedicatedVideoMemory)
+            name = desc.Description.strip()[:128]
+            if not name or total <= 0:
+                continue  # Integrated/shared memory is represented by host RAM.
+            luid = ctypes.c_uint64(desc.AdapterLuid).value
+            high, low = luid >> 32, luid & 0xFFFFFFFF
+            counter = ctypes.c_void_p()
+            if pdh_query.value:
+                path = (
+                    f"\\GPU Adapter Memory(luid_0x{high:08x}_0x{low:08x}_phys_0)\\Dedicated Usage"
+                )
+                if add_counter(pdh_query, path, 0, ctypes.byref(counter)) == 0 and counter.value:
+                    pdh_counters.append((counter, len(devices)))
+            devices.append(
+                {
+                    "name": name,
+                    "memory_total_bytes": total,
+                    "memory_free_bytes": None,
+                    "utilization_percent": None,
+                }
+            )
+
+        # Unlike DXGI's QueryVideoMemoryInfo usage, these performance counters
+        # represent device usage across processes, including LM Studio.
+        if pdh_query.value and collect_query(pdh_query) == 0:
+            for counter, device_index in pdh_counters:
+                counter_type = ctypes.wintypes.DWORD()
+                value = PdhFormattedValue()
+                if (
+                    get_formatted(
+                        counter, 0x00000400, ctypes.byref(counter_type), ctypes.byref(value)
+                    )
+                    != 0
+                ):
+                    continue
+                if value.status != 0 or value.value.large_value < 0:
+                    continue
+                device = devices[device_index]
+                total = device["memory_total_bytes"]
+                if isinstance(total, int):
+                    device["memory_free_bytes"] = max(0, total - value.value.large_value)
+        return devices[:8]
+    except (AttributeError, OSError, TypeError, ValueError):
         return []
-    return parse_nvidia_smi_csv(result.stdout[:8192])
+    finally:
+        for adapter in adapters:
+            if adapter.value:
+                _com_method(adapter, 2, ctypes.c_ulong, [])(adapter)
+        if factory.value:
+            _com_method(factory, 2, ctypes.c_ulong, [])(factory)
+        if pdh_query.value and pdh is not None:
+            close_query = pdh.PdhCloseQuery
+            close_query.argtypes = [ctypes.c_void_p]
+            close_query.restype = ctypes.wintypes.DWORD
+            close_query(pdh_query)
+
+
+def _gpu_devices() -> list[dict[str, Any]]:
+    devices = _dxgi_gpu_devices()
+    executable = _nvidia_smi_path()
+    if executable is not None:
+        try:
+            result = subprocess.run(
+                [
+                    str(executable),
+                    "--query-gpu=name,memory.total,memory.free,utilization.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=1.0,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            devices = merge_gpu_devices(devices, parse_nvidia_smi_csv(result.stdout[:8192]))
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return devices[:8]
+
+
+def merge_gpu_devices(
+    host_devices: list[dict[str, Any]], driver_devices: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Keep host-wide devices while preferring matching vendor-driver metrics."""
+    devices = list(host_devices)
+    by_name = {device["name"].casefold(): index for index, device in enumerate(devices)}
+    for device in driver_devices:
+        match = by_name.get(device["name"].casefold())
+        if match is None:
+            by_name[device["name"].casefold()] = len(devices)
+            devices.append(device)
+        else:
+            devices[match] = device
+    return devices[:8]
 
 
 class SystemResourceMonitor:

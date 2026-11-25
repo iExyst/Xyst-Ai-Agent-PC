@@ -119,7 +119,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await page.getByRole('button',{name:'Estimate model memory'}).click();
   await expect.poll(()=>modelEstimates).toEqual([{model:'fixture/model'}]);
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('GPU memory: 2.5 GB · Total memory: 4.0 GB');
-  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('NVIDIA GeForce RTX 5080: 12.0 GB free of 16.0 GB · utilization 43%');
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('NVIDIA GeForce RTX 5080: 12.0 GB free of 16.0 GB GPU memory · utilization 43%');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('The estimate is below the combined free memory reported by these GPUs (12.0 GB).');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('Currently available system memory: 32.0 GB.');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('The estimate is below the current available system memory (32.0 GB).');
@@ -131,7 +131,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await expect.poll(()=>modelEstimates).toHaveLength(2);
   await expect.poll(()=>resourceSnapshots).toBe(2);
   const unavailableGpuEstimate=page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'});
-  await expect(unavailableGpuEstimate).toContainText('No NVIDIA GPU memory telemetry is available on this device.');
+  await expect(unavailableGpuEstimate).toContainText('No GPU memory telemetry is available on this device.');
   await expect(unavailableGpuEstimate).not.toContainText('combined free memory');
   await expect(unavailableGpuEstimate).toContainText('The estimate is below the current available system memory (32.0 GB).');
   await expect(unavailableGpuEstimate).toContainText('No model was loaded or downloaded.');

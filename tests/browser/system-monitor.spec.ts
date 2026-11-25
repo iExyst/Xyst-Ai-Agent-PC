@@ -27,8 +27,8 @@ test('system monitor shows local capacity and inference queue without exposing r
   await expect(page.getByRole('region',{name:'Profile drive'})).toContainText('75.0% used');
   await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('2 waiting');
   await expect(page.getByRole('region',{name:'NVIDIA GeForce RTX 5080'})).toContainText('24% active');
-  await expect(page.getByRole('region',{name:'NVIDIA GeForce RTX 5080'})).toContainText('VRAM free');
-  await expect(page.getByText(/GPU readings are reported when NVIDIA driver telemetry is available/)).toBeVisible();
+  await expect(page.getByRole('region',{name:'NVIDIA GeForce RTX 5080'})).toContainText('GPU memory free');
+  await expect(page.getByText(/GPU readings are reported when Windows adapter or NVIDIA driver telemetry is available/)).toBeVisible();
   await expect(page.locator('.system-monitor-updated')).toHaveCount(0);
   await page.getByRole('button',{name:'Refresh now'}).click();
   await expect(page.locator('.system-monitor-updated')).toContainText('System monitor updated');
