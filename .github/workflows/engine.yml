@@ -236,6 +236,7 @@ jobs:
       - run: npm run contracts:check
       - run: npm run typecheck
       - run: npm run test:client
+      - run: node --check scripts/native_ssh_active_restart_smoke.mjs
       - name: Verify changed workspace files in final review UI
         run: npm run test:browser -- tests/browser/run-review.spec.ts
         timeout-minutes: 3

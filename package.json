@@ -15,6 +15,7 @@
     "test:native:skill-readiness": "node scripts/native_skill_readiness_smoke.mjs",
     "test:native:restart": "node scripts/native_restart_smoke.mjs",
     "test:native:ssh-recovery": "node scripts/native_ssh_recovery_smoke.mjs",
+    "test:native:ssh-active-restart": "node scripts/native_ssh_active_restart_smoke.mjs",
     "dev:desktop": "vite apps/desktop --host 127.0.0.1",
     "build:desktop": "npm run typecheck && vite build apps/desktop",
     "contracts": "node scripts/generate-types.mjs",
