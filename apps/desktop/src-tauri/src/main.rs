@@ -471,14 +471,14 @@ fn selected_settings_path(
     hidden_acceptance: bool,
     requested: Option<PathBuf>,
     data_directory: Option<PathBuf>,
-    default: PathBuf,
-) -> PathBuf {
-    let directory = if hidden_acceptance {
-        requested.or(data_directory).unwrap_or(default)
+) -> Option<PathBuf> {
+    if hidden_acceptance {
+        requested
+            .or(data_directory)
+            .map(|directory| directory.join("desktop-settings.json"))
     } else {
-        default
-    };
-    directory.join("desktop-settings.json")
+        None
+    }
 }
 
 #[cfg(test)]
@@ -609,28 +609,17 @@ mod tests {
     fn acceptance_settings_use_isolated_paths_and_ignore_overrides_in_visible_app() {
         let requested = std::path::PathBuf::from("acceptance-config");
         let data = std::path::PathBuf::from("acceptance-data");
-        let default = std::path::PathBuf::from("user-config");
         assert_eq!(
-            selected_settings_path(
-                false,
-                Some(requested.clone()),
-                Some(data.clone()),
-                default.clone()
-            ),
-            default.join("desktop-settings.json")
+            selected_settings_path(false, Some(requested.clone()), Some(data.clone())),
+            None
         );
         assert_eq!(
-            selected_settings_path(
-                true,
-                Some(requested.clone()),
-                Some(data.clone()),
-                default.clone()
-            ),
-            requested.join("desktop-settings.json")
+            selected_settings_path(true, Some(requested.clone()), Some(data.clone())),
+            Some(requested.join("desktop-settings.json"))
         );
         assert_eq!(
-            selected_settings_path(true, None, Some(data.clone()), default),
-            data.join("desktop-settings.json")
+            selected_settings_path(true, None, Some(data.clone())),
+            Some(data.join("desktop-settings.json"))
         );
     }
 
@@ -720,8 +709,11 @@ fn main() {
                 acceptance_mode,
                 std::env::var_os("XAA_TEST_CONFIG_DIR").map(PathBuf::from),
                 std::env::var_os("XAA_DATA_DIR").map(PathBuf::from),
-                app.path().app_config_dir()?,
             );
+            let settings_path = match settings_path {
+                Some(path) => path,
+                None => app.path().app_config_dir()?.join("desktop-settings.json"),
+            };
             let settings = load_desktop_settings(&settings_path);
             let active_data_root = settings.active_data_root.clone();
             app.manage(CloseBehaviorState {

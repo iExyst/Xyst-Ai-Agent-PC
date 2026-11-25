@@ -291,6 +291,7 @@ try {
     APPDATA: roamingAppData,
     LOCALAPPDATA: localAppData,
     ...(estimatorFixtureProfile ? { USERPROFILE: estimatorFixtureProfile } : {}),
+    ...(estimatorFixtureProfile ? { XAA_TEST_ACCEPTANCE: '1' } : {}),
     LM_STUDIO_URL: providerEndpoint,
     XAA_DATA_DIR: dataDirectory,
     XAA_TEST_CONFIG_DIR: configDirectory,
