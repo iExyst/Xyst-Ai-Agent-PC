@@ -43,6 +43,41 @@ def test_parse_nvidia_smi_csv_supports_multiple_and_unavailable_metrics() -> Non
     ]
 
 
+def test_nvidia_smi_path_includes_wsl_driver_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(system_resources.sys, "platform", "linux")
+    wsl_nvidia_smi = Path("/usr/lib/wsl/lib/nvidia-smi")
+    monkeypatch.setattr(Path, "is_file", lambda path: path == wsl_nvidia_smi)
+
+    assert system_resources._nvidia_smi_path() == wsl_nvidia_smi
+
+
+def test_linux_gpu_devices_use_nvidia_smi_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(system_resources.sys, "platform", "linux")
+    monkeypatch.setattr(system_resources, "_dxgi_gpu_devices", list)
+    monkeypatch.setattr(system_resources, "linux_amd_gpu_devices", list)
+    monkeypatch.setattr(
+        system_resources, "_nvidia_smi_path", lambda: Path("/usr/lib/wsl/lib/nvidia-smi")
+    )
+    monkeypatch.setattr(
+        system_resources.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout="NVIDIA GeForce RTX 5080, 16303, 11873, 27\n"
+        ),
+    )
+
+    assert system_resources._gpu_devices() == [
+        {
+            "name": "NVIDIA GeForce RTX 5080",
+            "memory_total_bytes": 16303 * 1024 * 1024,
+            "memory_free_bytes": 11873 * 1024 * 1024,
+            "utilization_percent": 27,
+        }
+    ]
+
+
 def test_gpu_devices_merge_dxgi_memory_with_nvidia_utilization() -> None:
     nvidia_devices = system_resources.parse_nvidia_smi_csv(
         "NVIDIA GeForce RTX 5080, 16384, 8192, 50\n"

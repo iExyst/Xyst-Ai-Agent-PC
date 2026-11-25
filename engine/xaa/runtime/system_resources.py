@@ -170,7 +170,11 @@ def _nvidia_smi_path() -> Path | None:
             return None
         candidates = [Path(system_directory.value) / "nvidia-smi.exe"]
     else:
-        candidates = [Path("/usr/bin/nvidia-smi"), Path("/usr/local/bin/nvidia-smi")]
+        candidates = [
+            Path("/usr/bin/nvidia-smi"),
+            Path("/usr/local/bin/nvidia-smi"),
+            Path("/usr/lib/wsl/lib/nvidia-smi"),
+        ]
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
