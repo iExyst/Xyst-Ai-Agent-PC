@@ -9,7 +9,7 @@ test('system monitor shows local capacity and inference queue without exposing r
     if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
     if(path==='/system/resources'){
       samples++;
-      return route.fulfill({headers,json:{sampled_at:'2026-11-14T17:00:00Z',platform:'win32',logical_processors:16,cpu_percent:42.5,memory_total_bytes:32*1024**3,memory_available_bytes:8*1024**3,memory_used_percent:75,disk_total_bytes:2*1024**4,disk_free_bytes:512*1024**3,queue_active:true,queue_waiting:2,queue_reserved_tokens:640,queue_max_reserved_tokens:2_000_000,queue_max_pending:16,gpu_devices:[{name:'NVIDIA GeForce RTX 5080',memory_total_bytes:16*1024**3,memory_free_bytes:6*1024**3,utilization_percent:24}],accelerator_telemetry_available:true}});
+      return route.fulfill({headers,json:{sampled_at:'2026-11-14T17:00:00Z',platform:'win32',logical_processors:16,cpu_percent:42.5,memory_total_bytes:32*1024**3,memory_available_bytes:8*1024**3,memory_used_percent:75,disk_total_bytes:2*1024**4,disk_free_bytes:512*1024**3,queue_active:true,queue_waiting:2,queue_reserved_tokens:640,queue_max_reserved_tokens:2_000_000,queue_max_pending:16,gpu_devices:[{name:'NVIDIA GeForce RTX 5080',memory_total_bytes:16*1024**3,memory_free_bytes:6*1024**3,utilization_percent:24},{name:'AMD Radeon(TM) Graphics',memory_total_bytes:2*1024**3,memory_free_bytes:1536*1024**2,utilization_percent:0},{name:'Intel Arc Graphics',memory_total_bytes:8*1024**3,memory_free_bytes:7*1024**3,utilization_percent:null}],accelerator_telemetry_available:true}});
     }
     if(path==='/runs/latest-unfinished')return route.fulfill({headers,json:null});
     if(path==='/runs')return route.fulfill({headers,json:{items:[],next_cursor:null}});
@@ -28,6 +28,10 @@ test('system monitor shows local capacity and inference queue without exposing r
   await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('2 waiting');
   await expect(page.getByRole('region',{name:'NVIDIA GeForce RTX 5080'})).toContainText('24% active');
   await expect(page.getByRole('region',{name:'NVIDIA GeForce RTX 5080'})).toContainText('GPU memory free');
+  await expect(page.getByRole('region',{name:'AMD Radeon(TM) Graphics'})).toContainText('0% active');
+  await expect(page.getByRole('region',{name:'AMD Radeon(TM) Graphics'})).toContainText('GPU memory free');
+  await expect(page.getByRole('region',{name:'Intel Arc Graphics'})).toContainText('Unavailable');
+  await expect(page.getByRole('region',{name:'Intel Arc Graphics'})).toContainText('GPU memory free');
   await expect(page.getByText(/GPU readings are reported when Windows adapter or NVIDIA driver telemetry is available/)).toBeVisible();
   await expect(page.locator('.system-monitor-updated')).toHaveCount(0);
   await page.getByRole('button',{name:'Refresh now'}).click();
@@ -36,5 +40,7 @@ test('system monitor shows local capacity and inference queue without exposing r
   await expect(page.getByRole('img',{name:'Memory trend across 2 recent local samples'})).toBeVisible();
   await expect(page.getByRole('img',{name:'Profile drive trend across 2 recent local samples'})).toBeVisible();
   await expect(page.getByRole('img',{name:'NVIDIA GeForce RTX 5080 trend across 2 recent local samples'})).toBeVisible();
+  await expect(page.getByRole('img',{name:'AMD Radeon(TM) Graphics trend across 2 recent local samples'})).toBeVisible();
+  await expect(page.getByRole('img',{name:'Intel Arc Graphics trend across 2 recent local samples'})).toHaveCount(0);
   expect(samples).toBe(2);
 });
