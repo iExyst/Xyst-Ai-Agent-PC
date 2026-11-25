@@ -228,7 +228,7 @@ try {
         & rustc tests/fixtures/lms_estimator_stub.rs --edition 2021 -D warnings -o (Join-Path $xaaEstimatorFixtureBin 'lms.exe')
         if ($LASTEXITCODE -ne 0) { throw 'Could not build the estimate-only LM Studio CLI fixture.' }
         $env:XAA_NATIVE_ESTIMATOR_FIXTURE_PROFILE = $xaaEstimatorFixtureProfile
-        $env:XAA_NATIVE_BROWSER_CANCEL_DEBUG_PORT = '19223'
+        $env:XAA_NATIVE_BROWSER_CANCEL_DEBUG_PORT = '19222'
         $xaaEstimateUiOutput = & node scripts/native_browser_cancel_smoke.mjs $xaaDesktop
         $xaaEstimateUiExitCode = $LASTEXITCODE
         if ($xaaEstimateUiExitCode -ne 0) { throw 'Installed desktop successful provider-estimate acceptance failed.' }
