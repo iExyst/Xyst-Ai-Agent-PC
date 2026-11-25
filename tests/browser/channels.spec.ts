@@ -1,6 +1,22 @@
 import {expect,test} from '@playwright/test';
 import {navigateMainSection} from './navigation';
 
+async function visibleUnnamedControls(panel:import('@playwright/test').Locator){
+  return panel.evaluate(root=>Array.from(root.querySelectorAll<HTMLElement>('a[href],button,input:not([type="hidden"]),select,textarea,summary,[role="button"],[role="link"]'))
+    .filter(element=>{
+      if(!element.getClientRects().length||element.closest('[aria-hidden="true"]'))return false;
+      const style=getComputedStyle(element);
+      return style.display!=='none'&&style.visibility!=='hidden'&&Number(style.opacity)!==0;
+    })
+    .map(element=>{
+      const labelledBy=element.getAttribute('aria-labelledby')?.split(/\s+/).map(id=>document.getElementById(id)?.textContent?.trim()??'').filter(Boolean).join(' ');
+      const ariaLabel=element.getAttribute('aria-label')?.trim();
+      const labels='labels' in element?Array.from((element as HTMLInputElement).labels??[]).map(label=>label.textContent?.trim()??'').filter(Boolean).join(' '):'';
+      return {tag:element.tagName,text:(labelledBy||ariaLabel||labels||element.textContent?.trim()||element.getAttribute('title')?.trim()||'').slice(0,100)};
+    })
+    .filter(control=>!control.text));
+}
+
 test('save Telegram token securely, pair an account and clear the credential',async({page})=>{
   const errors:string[]=[];const requests:any[]=[];
   let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{},unknown_deliveries:[]};
@@ -107,6 +123,8 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await navigateMainSection(page,'Tools & integrations');
   await page.locator('summary').filter({hasText:'Messaging channels'}).click();
   const panel=page.getByRole('region',{name:'Messaging channels',exact:true});
+  await expect.poll(()=>visibleUnnamedControls(panel)).toEqual([]);
+  await expect(panel.getByRole('heading',{level:2})).toBeVisible();
   await expect(panel.getByText('Discord (private DMs)',{exact:true})).toHaveCount(0);
   await panel.getByLabel('First authorized account').selectOption('telegram-binding');
   await panel.getByLabel('Second account from another channel').selectOption('email-binding');

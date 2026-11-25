@@ -2309,6 +2309,10 @@ Hosted Windows workflow [45667310577](https://github.com/iExyst/Xyst-Ai-Agent-PC
 
 All four pinned-source audits pass on the current branch: skill import compatibility `186/186`; channel audit `27` manifests, `28` platform names, and `3` core transports; execution audit `6` built-in backend families, `8` external declarations, and `25` reviewed candidates; catalog audit `975` plugin manifests across `976` YAML files with one catalog-control file. Commands: `uv run python scripts/audit_skill_import_compatibility.py --check`, `uv run python scripts/audit_channel_inventory.py --check`, `uv run python scripts/audit_execution_inventory.py --check`, and `uv run python scripts/audit_catalog_inventory.py --check`. Inventory consistency does not establish behavior parity, exhaustive runtime compatibility, or live integrations; those remain open in the matrix.
 
+## Check accessible names in messaging-channel controls (2026-11-25)
+
+The Tools & integrations messaging-channel panel now has a browser regression that audits accessible names for every visible link, button, form control, disclosure, and button/link role, and confirms its section heading is exposed. The existing channel workflow additionally checks focus entry and return for identity merge/unlink and Telegram/Email delivery confirmation groups. `npm run test:browser -- tests/browser/channels.spec.ts` passes (1 test), as does `npm run typecheck`. This extends accessible-name coverage to the channel panel; whole-app screen-reader review remains open.
+
 This snapshot records verified gate scope, not an overall release-readiness percentage. The latest installer is unsigned; selected package acceptance does not close Phase 9 or the remaining legal, signing and live-model criteria.
 
 ## Owner-reviewed workspace write recovery (2026-11-08)
