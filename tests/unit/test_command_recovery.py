@@ -1,5 +1,9 @@
+import asyncio
 import hashlib
 import json
+import sys
+import time
+from pathlib import Path
 
 import pytest
 from xaa.providers.lm_studio import LMStudioProvider
@@ -81,6 +85,121 @@ def test_launched_command_is_dispatched_for_journal_reconciliation(workspace_tmp
 
     assert store.get_run(run_id)["state"] == "queued"
     assert store.unresolved_tool_calls(run_id)[0]["id"] == "command"
+
+
+async def test_worker_process_death_during_active_command_recovers_without_replay(
+    workspace_tmp_path, monkeypatch
+):
+    project = workspace_tmp_path / "active-project"
+    project.mkdir()
+    store = RunStore(workspace_tmp_path / "active-data" / "db.sqlite3")
+    run = store.create_run(
+        objective="Recover an active command after worker death",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model=None,
+        command_grant={
+            "backend": "wsl-bubblewrap-v1",
+            "distribution": "Ubuntu",
+            "profile_sha256": "a" * 64,
+        },
+    )
+    run_id = str(run["id"])
+    worker_source = """
+import asyncio
+import sys
+import time
+from pathlib import Path
+from xaa.runtime.command_controller import CommandController
+from xaa.runtime.states import RunState
+from xaa.storage.runs import RunStore
+
+class BlockingTransport:
+    def require_intent(self, intent):
+        assert intent.distribution == "Ubuntu"
+
+    async def run(self, intent, snapshot, *, deadline, on_output=None):
+        print("transport-active", flush=True)
+        await asyncio.Event().wait()
+
+    async def control(self, action, intent, *, deadline):
+        return {"execution_id": intent.execution_id, "cleanup_confirmed": True,
+                "closed": True, "manager_alive": False, "outcome": None}
+
+async def main():
+    store = RunStore(Path(sys.argv[1]))
+    run_id = sys.argv[2]
+    owner = store.acquire_lease(run_id, "active-command-worker", seconds=180)
+    assert owner is not None
+    store.transition(run_id, RunState.PLANNING, owner=owner)
+    store.transition(run_id, RunState.RUNNING, owner=owner)
+    await CommandController(store, BlockingTransport()).execute(
+        run_id, owner, "active-command", {"argv": ["fixture"]},
+        idempotency_key="active-command", deadline=time.monotonic() + 300)
+
+asyncio.run(main())
+"""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        worker_source,
+        str(store.path),
+        run_id,
+        cwd=str(Path(__file__).resolve().parents[2]),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        deadline = time.monotonic() + 20
+        launched = False
+        while time.monotonic() < deadline:
+            if process.returncode is not None:
+                stdout, stderr = await process.communicate()
+                raise AssertionError(
+                    f"Worker exited before the command became active: {stdout!r} {stderr!r}"
+                )
+            launched = any(
+                event["event_type"] == "tool.executing"
+                and event["payload"].get("call_id") == "active-command"
+                for event in store.list_events(run_id)
+            )
+            if launched:
+                break
+            await asyncio.sleep(0.025)
+        assert launched, "Worker never journaled its active command launch."
+    finally:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE runs SET lease_expires_at='2000-01-01T00:00:00+00:00' WHERE id=?", (run_id,)
+        )
+    assert store.recover_abandoned_runs() == [run_id]
+    recovery_transport = Backend()
+
+    async def discover(_intent, *, deadline):
+        assert deadline > time.monotonic()
+        return recovery_transport
+
+    monkeypatch.setattr("xaa.runtime.coordinator.discover_command_transport", discover)
+
+    class NoInference:
+        async def chat(self, **_kwargs):
+            raise AssertionError("Model-free command recovery must not request inference.")
+
+    await Coordinator(store, NoInference()).execute(run_id)
+
+    events = store.list_events(run_id)
+    assert store.get_run(run_id)["state"] == "paused"
+    assert store.unresolved_tool_calls(run_id) == []
+    assert recovery_transport.calls == ["cleanup", "status", "status"]
+    assert sum(event["event_type"] == "tool.executing" for event in events) == 1
+    failure = next(event for event in events if event["event_type"] == "tool.failed")
+    assert failure["payload"]["code"] == "command_result_unavailable_locally"
+    assert not any(event["event_type"] == "execution.completed" for event in events)
 
 
 async def test_model_free_recovery_stops_before_inference(workspace_tmp_path, monkeypatch):

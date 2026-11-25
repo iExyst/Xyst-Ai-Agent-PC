@@ -4590,6 +4590,10 @@ This closes the SSH recovery gap for a worker that exits after remote completion
 
 Added a controller regression that blocks inside an active command transport, cancels the owning task, and verifies cleanup is confirmed, the unknown result is durably reconciled as unverified, no success event is written, and the command is not relaunched. The focused controller suite passes (14 tests); Ruff, formatting, and `git diff --check` pass. This is deterministic transport-level coverage. It does not simulate Tauri process death or exercise a live SSH host, so active SSH crash recovery remains open.
 
+## Recover after worker death during an active command (2026-11-25)
+
+Added a Windows subprocess regression that waits until a command launch is durably journaled, kills the worker while its transport is blocked, expires the dead worker's lease, and runs the normal coordinator recovery path. Recovery confirms cleanup, records the result as `not_verified`, clears the unresolved command slot, emits no completion, and never invokes the execution transport a second time; no model inference is requested. The focused regression passes locally (1 test), with Ruff, formatting, and diff checks clean. It uses a deterministic transport, so Tauri process-tree death during a live SSH invocation and independent-host acceptance remain open.
+
 ## Recheck release notice coverage (2026-11-25)
 
 `uv run python scripts/verify_release_notice_coverage.py` passes and finds notice references for all currently scoped locked dependencies: 79 Python packages, 5 npm packages, and 247 Windows-target Cargo packages. This verifier checks inventory references and populated license metadata, but does not validate reproduced license text, copyright completeness, or legal suitability. `docs/releases/THIRD_PARTY_NOTICES.md` remains provisional pending that review.
