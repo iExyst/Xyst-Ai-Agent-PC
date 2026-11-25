@@ -2293,6 +2293,10 @@ The last broad-spec estimate was about **56%** on 2026-11-11. That figure is his
 | 9 — Remaining parity | Incomplete | Audited channels, execution backends, media capabilities and advanced integrations remain partial or planned. Static source inventory is not implementation parity. |
 | 10 — Package/release | Partial | The current unsigned 0.1.1 package passed install, boot, upgrade, recovery, standard-user install and uninstall acceptance in [45382015556](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45382015556). Production signing, independent customer-machine coverage and complete legal/copyright review remain open. |
 
+## Verify hosted Windows installer acceptance after GPU telemetry (2026-11-25)
+
+Manual hosted installer workflow [45662420884](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45662420884) completed successfully for the current branch. It built the Windows NSIS installer and passed frozen and installed Windows AppContainer execution, installed MCP OAuth/credential clearing, native desktop recovery and onboarding, preference and knowledge controls, specialist recovery/delegation/conflict review, owner-reviewed workspace write/edit/delete, ACP/version metadata, frozen snapshot resources, browser cancellation, task-scoped filesystem and command workers, upgrade from 0.1.0, standard-user per-user installation, and the explicit data-removal choice. The Docker and WSL jobs were skipped by this run's Windows-focused acceptance selection. This is deterministic packaged Windows evidence, not independent-machine coverage or live model inference; no installer was published. Signing, legal review, broad clean-machine coverage, Docker/WSL acceptance, and the deferred live-model release pass remain open.
+
 This snapshot records verified gate scope, not an overall release-readiness percentage. The latest installer is unsigned; selected package acceptance does not close Phase 9 or the remaining legal, signing and live-model criteria.
 
 ## Owner-reviewed workspace write recovery (2026-11-08)
