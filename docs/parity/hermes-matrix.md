@@ -34,7 +34,7 @@ Exact-current manual installer workflow [45516971937](https://github.com/iExyst/
 
 ## Hosted verification for final-review path validation (2026-11-24)
 
-Exact-source Windows workflow [45515335121](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45515335121) passed on `4a23fca7e262386653bcb8e3b66a5a6b001d11a6` with 1,705 Python tests passed and 29 skipped, plus configured browser, pinned-Hermes inventory, static-analysis, API-contract, desktop, and recovery checks. It validates the final-review projection change for legacy public completion events, internal intent privacy, and malformed paths. Full Windows installer acceptance for the current source remains in progress; this row remains partial pending broader workspace/reviewer parity.
+Exact-source Windows workflow [45515335121](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45515335121) passed on `4a23fca7e262386653bcb8e3b66a5a6b001d11a6` with 1,705 Python tests passed and 29 skipped, plus configured browser, pinned-Hermes inventory, static-analysis, API-contract, desktop, and recovery checks. It validates the final-review projection change for legacy public completion events, internal intent privacy, and malformed paths. Exact-current installer acceptance passed on `d438b947` in [run 45516971937](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45516971937); this capability remains partial pending broader workspace/reviewer parity.
 
 ## Verify saved document and audio downloads in the native desktop (2026-11-24)
 

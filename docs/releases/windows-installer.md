@@ -1,6 +1,6 @@
 # Unsigned Windows installer development build
 
-## Exact-current hosted installer and lifecycle acceptance (2026-11-25)
+## Exact-current hosted installer and lifecycle acceptance (2026-11-24)
 
 Manual installer workflow [45516971937](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45516971937) passed on product commit `d438b947213c1592a6188e114a42995bad5d1f68`. The unsigned 0.1.1 installer and acceptance reports are in [artifact 14979007859](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45516971937/artifacts/14979007859); the ZIP contains `Xyst AI Agent_0.1.1_x64-setup.exe` and its manifest. The Windows installer job completed 55 successful steps with three setup/cache steps skipped. Acceptance covered frozen and installed AppContainer execution, fresh-profile onboarding, MCP OAuth and credential clearing, native desktop/recovery flows, specialist conflict and delegation, owner-reviewed workspace write/edit/delete recovery, frozen browser cancellation, upgrade from 0.1.0, standard-user installation, boot, uninstall, and the explicit data-removal choice. This deterministic fixture run did not use live LM Studio inference and does not establish code signing or broad clean-machine compatibility.
 
