@@ -28,6 +28,10 @@ The native Windows restart acceptance downloads saved plain-text, Markdown, DOCX
 
 # Hermes capability reference matrix
 
+## Verify the current Windows installer and provider setup check (2026-11-25)
+
+Manual installer run [45615503290](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45615503290) passed for product commit `b8e4c079`. The unsigned 0.1.1 installer passed release-notice coverage, frozen and installed execution, native desktop recovery and onboarding, specialist/workspace recovery, upgrade from 0.1.0, standard-user install, boot, uninstall, and data-preservation checks. Its SHA-256 is `f3668f3c13dd9dbd425ccf2fbc244dc67df381e78bf9b01a84a2bbe07971634a`; the downloaded executable and installed binary match the manifest. Exact-source Windows workflow [45615503296](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45615503296) passed 1,740 tests (36 skipped), including the provider setup browser test. These fixture checks do not verify live LM Studio inference, code signing, or installation on an independent Windows computer. See the [installer evidence](../releases/windows-installer.md) and [`progress.md`](../progress.md#compare-model-estimate-with-available-system-memory-2026-11-25).
+
 ## Verify the native desktop on the development Windows host (2026-11-24)
 
 The freshly built native desktop and bundled engine passed isolated boot/shutdown acceptance on Windows OS build 26200. The test used a unique `.acceptance` bundle and profile, confirmed authenticated engine readiness, tray hide/restore, settings persistence, system monitor, zero runs and zero model inference, then verified graceful desktop/engine shutdown ([report](../../.acceptance/native-windows-11-12a413d5977b401dab06af8a5b247567/run/report.json)). The installer itself remains verified on a hosted Windows runner; it was not installed into the existing local profile. Host product-version metadata conflicts, so this evidence is tied to build 26200 rather than a claimed Windows release label.
