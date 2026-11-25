@@ -281,7 +281,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
                     ? <ul aria-label="Current GPU memory">
                       {gpuResources.map((gpu,index)=><li key={`${gpu.name}-${index}`}>{gpu.name}: {formatMemory(gpu.memory_free_bytes)} free of {formatMemory(gpu.memory_total_bytes)} · utilization {gpu.utilization_percent===null?'not reported':`${gpu.utilization_percent}%`}</li>)}
                     </ul>
-                    : <p>No compatible GPU memory telemetry is available on this device.</p>}
+                    : <p>No NVIDIA GPU memory telemetry is available on this device.</p>}
                 {resourceEstimate.estimated_gpu_memory_bytes!==null&&resourceEstimate.estimated_gpu_memory_bytes!==undefined&&reportedGpuFreeBytes!==null&&(
                   <p>{resourceEstimate.estimated_gpu_memory_bytes<=reportedGpuFreeBytes
                     ? `The estimate is below the combined free memory reported by these GPUs (${formatMemory(reportedGpuFreeBytes)}).`
