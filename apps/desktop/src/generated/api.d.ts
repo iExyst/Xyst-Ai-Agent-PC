@@ -2618,7 +2618,7 @@ export interface components {
              * @default wsl-bubblewrap-v1
              * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1" | "ssh-wsl-bubblewrap-v1";
             /** Distribution */
             distribution: string;
             /** Image Reference */
@@ -2630,6 +2630,8 @@ export interface components {
             max_seconds: number;
             /** Profile Sha256 */
             profile_sha256: string;
+            /** Ssh Identity File */
+            ssh_identity_file?: string | null;
         };
         /** CompatibleProviderConfigRecord */
         CompatibleProviderConfigRecord: {
@@ -4011,11 +4013,13 @@ export interface components {
              * @default wsl-bubblewrap-v1
              * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1" | "ssh-wsl-bubblewrap-v1";
             /** Distribution */
             distribution: string;
             /** Image Reference */
             image_reference?: string | null;
+            /** Ssh Identity File */
+            ssh_identity_file?: string | null;
         };
         /** ReadinessResult */
         ReadinessResult: {
@@ -4024,7 +4028,7 @@ export interface components {
              * @default wsl-bubblewrap-v1
              * @enum {string}
              */
-            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1";
+            backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1" | "ssh-wsl-bubblewrap-v1";
             /**
              * Checked At
              * Format: date-time
@@ -4046,6 +4050,8 @@ export interface components {
             policy?: components["schemas"]["ExecutionPolicy"];
             /** Profile Sha256 */
             profile_sha256: string | null;
+            /** Ssh Identity File */
+            ssh_identity_file?: string | null;
             /**
              * State
              * @enum {string}

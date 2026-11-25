@@ -531,7 +531,8 @@
             "enum": [
               "wsl-bubblewrap-v1",
               "windows-appcontainer-v1",
-              "docker-local-v1"
+              "docker-local-v1",
+              "ssh-wsl-bubblewrap-v1"
             ],
             "title": "Backend",
             "type": "string"
@@ -564,6 +565,19 @@
             "pattern": "^[a-f0-9]{64}$",
             "title": "Profile Sha256",
             "type": "string"
+          },
+          "ssh_identity_file": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Identity File"
           }
         },
         "required": [
@@ -4615,7 +4629,8 @@
             "enum": [
               "wsl-bubblewrap-v1",
               "windows-appcontainer-v1",
-              "docker-local-v1"
+              "docker-local-v1",
+              "ssh-wsl-bubblewrap-v1"
             ],
             "title": "Backend",
             "type": "string"
@@ -4636,6 +4651,19 @@
               }
             ],
             "title": "Image Reference"
+          },
+          "ssh_identity_file": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Identity File"
           }
         },
         "required": [
@@ -4652,7 +4680,8 @@
             "enum": [
               "wsl-bubblewrap-v1",
               "windows-appcontainer-v1",
-              "docker-local-v1"
+              "docker-local-v1",
+              "ssh-wsl-bubblewrap-v1"
             ],
             "title": "Backend",
             "type": "string"
@@ -4720,6 +4749,17 @@
               }
             ],
             "title": "Profile Sha256"
+          },
+          "ssh_identity_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Identity File"
           },
           "state": {
             "enum": [

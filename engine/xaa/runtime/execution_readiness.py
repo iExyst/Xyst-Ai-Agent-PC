@@ -25,6 +25,7 @@ from xaa.runtime.command_contracts import CommandGrant, CommandIntent
 from xaa.runtime.docker_execution_policy import validate_image_reference
 from xaa.runtime.docker_local_probe import DOCKER_LOCAL_CHECKS
 from xaa.runtime.docker_local_transport import DockerLocalTransport
+from xaa.runtime.ssh_transport import SSH_BACKEND, SSHTransport
 from xaa.runtime.windows_local_probe import (
     PROBE_CODE as WINDOWS_LOCAL_PROBE_CODE,
 )
@@ -68,6 +69,7 @@ WINDOWS_LOCAL_CHECKS = (
     "bounded_child_process_tree",
     "cleanup_confirmed",
 )
+SSH_CHECKS = (*CHECKS, "pinned_host_key", "restricted_remote_manager")
 SUPPORTED = os.name == "nt"
 PROBE = """
 import ctypes,errno,json,os,pathlib,socket
@@ -190,11 +192,12 @@ print(json.dumps({'nonce':request['nonce'],'node_version':node_version,
 
 class ReadinessRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1", "docker-local-v1"] = (
-        "wsl-bubblewrap-v1"
-    )
+    backend: Literal[
+        "wsl-bubblewrap-v1", "windows-appcontainer-v1", "docker-local-v1", "ssh-wsl-bubblewrap-v1"
+    ] = "wsl-bubblewrap-v1"
     distribution: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
     image_reference: str | None = Field(default=None, max_length=320)
+    ssh_identity_file: str | None = Field(default=None, min_length=1, max_length=1024)
 
     @field_validator("image_reference")
     @classmethod
@@ -211,6 +214,10 @@ class ReadinessRequest(BaseModel):
             raise ValueError("Docker readiness requires an immutable image digest.")
         if self.backend != "docker-local-v1" and self.image_reference is not None:
             raise ValueError("A Docker image can be selected only for the Docker backend.")
+        if self.backend == SSH_BACKEND and self.ssh_identity_file is None:
+            raise ValueError("SSH readiness requires an identity file.")
+        if self.backend != SSH_BACKEND and self.ssh_identity_file is not None:
+            raise ValueError("An identity file can be selected only for SSH readiness.")
         return self
 
 
@@ -229,11 +236,12 @@ class ExecutionPolicy(BaseModel):
 
 class ReadinessResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    backend: Literal["wsl-bubblewrap-v1", "windows-appcontainer-v1", "docker-local-v1"] = (
-        "wsl-bubblewrap-v1"
-    )
+    backend: Literal[
+        "wsl-bubblewrap-v1", "windows-appcontainer-v1", "docker-local-v1", "ssh-wsl-bubblewrap-v1"
+    ] = "wsl-bubblewrap-v1"
     distribution: str
     image_reference: str | None = None
+    ssh_identity_file: str | None = None
     profile_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
     state: Literal["ready", "unavailable", "unsupported", "busy"]
     checked_at: datetime
@@ -349,6 +357,25 @@ class ExecutionReadiness:
             ):
                 raise PermissionError(
                     "A current successful local Docker isolation check is required for this grant."
+                )
+            return
+        if grant.backend == SSH_BACKEND:
+            cache_key = (grant.backend, grant.distribution, grant.ssh_identity_file or "")
+            cached = self.cache.get(cache_key)
+            if (
+                not SUPPORTED
+                or grant.ssh_identity_file is None
+                or cached is None
+                or cached[0] <= time.monotonic()
+                or cached[1].expires_at <= datetime.now(UTC)
+                or cached[1].state != "ready"
+                or cached[1].backend != grant.backend
+                or cached[1].profile_sha256 != grant.profile_sha256
+                or cached[1].ssh_identity_file != grant.ssh_identity_file
+                or tuple(cached[1].checks) != SSH_CHECKS
+            ):
+                raise PermissionError(
+                    "A current successful pinned-host SSH sandbox check is required for this grant."
                 )
             return
         if grant.backend == "windows-appcontainer-v1":
@@ -840,6 +867,8 @@ class ExecutionReadiness:
             return await self._check_docker_local(request)
         if request.backend == "windows-appcontainer-v1":
             return await self._check_windows_local(request.distribution)
+        if request.backend == SSH_BACKEND:
+            return await self._check_ssh(request)
         distribution = request.distribution
         now = datetime.now(UTC)
         digest: str | None = None
@@ -975,6 +1004,144 @@ class ExecutionReadiness:
                 self.cache.pop(next(iter(self.cache)))
             self.cache[cache_key] = (time.monotonic() + ttl, answer)
             return answer
+
+    async def _check_ssh(self, request: ReadinessRequest) -> ReadinessResult:
+        now = datetime.now(UTC)
+        alias = request.distribution
+        identity_file = request.ssh_identity_file
+        assert identity_file is not None
+        cache_key = (SSH_BACKEND, alias, identity_file)
+        if not SUPPORTED:
+            return ReadinessResult(
+                backend=SSH_BACKEND,
+                distribution=alias,
+                ssh_identity_file=identity_file,
+                profile_sha256=None,
+                state="unsupported",
+                checked_at=now,
+                expires_at=now,
+                checks=[],
+                error_code="unsupported_platform",
+            )
+        if self.lock.locked():
+            return ReadinessResult(
+                backend=SSH_BACKEND,
+                distribution=alias,
+                ssh_identity_file=identity_file,
+                profile_sha256=None,
+                state="busy",
+                checked_at=now,
+                expires_at=now,
+                checks=[],
+                error_code="probe_busy",
+            )
+        async with self.lock:
+            transport: SSHTransport | None
+            try:
+                transport = await SSHTransport.discover(
+                    alias, identity_file, deadline=time.monotonic() + 15
+                )
+            except (OSError, RuntimeError, ValueError, TypeError, TimeoutError):
+                transport = None
+            digest = transport.profile_sha256 if transport is not None else None
+            cached = self.cache.get(cache_key)
+            if (
+                cached is not None
+                and cached[0] > time.monotonic()
+                and cached[1].profile_sha256 == digest
+                and cached[1].state == "ready"
+            ):
+                return cached[1]
+            ready = False
+            if transport is not None:
+                nonce = uuid4().hex
+                snapshot = WorkspaceSnapshot((SnapshotFile("probe.txt", nonce.encode()),), (), ())
+                intent = CommandIntent(
+                    argv=["/usr/bin/python3", "-I", "-c", PROBE],
+                    max_seconds=5,
+                    execution_id=uuid4().hex,
+                    backend=SSH_BACKEND,
+                    distribution=alias,
+                    profile_sha256=transport.profile_sha256,
+                    ssh_identity_file=identity_file,
+                    workspace="application-owned-ssh-readiness-fixture",
+                )
+                try:
+                    result = await transport.run(intent, snapshot, deadline=time.monotonic() + 30)
+                    encoded = result.get("stdout_b64")
+                    expected_limits = {
+                        "max_active_executions": 2,
+                        "memory_bytes": 134217728,
+                        "cpu_percent": 50,
+                        "tasks": 32,
+                        "scratch_bytes": 33554432,
+                        "workspace_bytes": 33554432,
+                        "output_bytes": 1048576,
+                        "seconds": 5,
+                        "network": "none",
+                    }
+                    if (
+                        result.get("succeeded") is True
+                        and result.get("cleanup_confirmed") is True
+                        and result.get("exit_code") == 0
+                        and result.get("snapshot_sha256") == snapshot.sha256
+                        and result.get("backend") == SSH_BACKEND
+                        and result.get("output_complete") is True
+                        and result.get("workspace_changes_persisted") is False
+                        and result.get("limits") == expected_limits
+                        and isinstance(encoded, str)
+                        and len(encoded) <= 16384
+                    ):
+                        answer = response_object(base64.b64decode(encoded, validate=True))
+                        ready = (
+                            set(answer) == {"nonce", "checks"}
+                            and answer["nonce"] == nonce
+                            and answer["checks"] is True
+                        )
+                except (OSError, RuntimeError, ValueError, TypeError, TimeoutError):
+                    ready = False
+                finally:
+
+                    async def cleanup() -> None:
+                        acknowledgement = await transport.control(
+                            "cleanup", intent, deadline=time.monotonic() + 20
+                        )
+                        if acknowledgement.get("cleanup_confirmed") is not True:
+                            raise RuntimeError("Remote SSH readiness cleanup is unconfirmed.")
+                        deadline = time.monotonic() + 20
+                        while True:
+                            status = await transport.control("status", intent, deadline=deadline)
+                            if (
+                                status.get("closed") is True
+                                and status.get("manager_alive") is False
+                            ):
+                                return
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("Remote SSH manager remains active.")
+                            await asyncio.sleep(0.05)
+
+                    try:
+                        await finish_cleanup(cleanup())
+                    except (OSError, RuntimeError, TimeoutError):
+                        ready = False
+            observed = datetime.now(UTC)
+            ttl = 60 if ready else 10
+            result = ReadinessResult(
+                backend=SSH_BACKEND,
+                distribution=alias,
+                ssh_identity_file=identity_file,
+                profile_sha256=digest,
+                state="ready" if ready else "unavailable",
+                checked_at=observed,
+                expires_at=observed + timedelta(seconds=ttl),
+                checks=list(SSH_CHECKS) if ready else [],
+                error_code=None if ready else "backend_probe_failed",
+            )
+            self.cache = {
+                key: value for key, value in self.cache.items() if value[0] > time.monotonic()
+            }
+            self.cache[cache_key] = (time.monotonic() + ttl, result)
+            return result
 
     async def _check_docker_local(self, request: ReadinessRequest) -> ReadinessResult:
         now = datetime.now(UTC)

@@ -249,12 +249,14 @@ class CommandJournal:
                 intent.distribution,
                 intent.profile_sha256,
                 intent.image_reference,
+                intent.ssh_identity_file,
                 intent.workspace,
             ) != (
                 grant.backend,
                 grant.distribution,
                 grant.profile_sha256,
                 grant.image_reference,
+                grant.ssh_identity_file,
                 workspace,
             ):
                 raise PermissionError("Stopped command recovery authority changed.")
@@ -518,6 +520,7 @@ class CommandJournal:
                 distribution=grant.distribution,
                 profile_sha256=grant.profile_sha256,
                 image_reference=grant.image_reference,
+                ssh_identity_file=grant.ssh_identity_file,
                 workspace=workspace,
                 procedure_environment_digest=(
                     procedure_environment["environment_digest"]
@@ -648,12 +651,14 @@ class CommandJournal:
                 intent.profile_sha256,
                 intent.distribution,
                 intent.image_reference,
+                intent.ssh_identity_file,
                 intent.workspace,
             ) != (
                 grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
                 grant.image_reference,
+                grant.ssh_identity_file,
                 workspace,
             ):
                 raise PermissionError("Saved command recovery authority changed.")
@@ -673,12 +678,14 @@ class CommandJournal:
                 intent.profile_sha256,
                 intent.distribution,
                 intent.image_reference,
+                intent.ssh_identity_file,
                 intent.workspace,
             ) != (
                 grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
                 grant.image_reference,
+                grant.ssh_identity_file,
                 workspace,
             ):
                 raise PermissionError("Saved snapshot authority changed.")
@@ -745,12 +752,14 @@ class CommandJournal:
                 intent.profile_sha256,
                 intent.distribution,
                 intent.image_reference,
+                intent.ssh_identity_file,
                 intent.workspace,
             ) != (
                 grant.backend,
                 grant.profile_sha256,
                 grant.distribution,
                 grant.image_reference,
+                grant.ssh_identity_file,
                 workspace,
             ):
                 raise PermissionError("Saved command authority changed.")

@@ -305,8 +305,8 @@ export class EngineClient {
     return this.#request('/execution/distributions', {signal});
   }
 
-  executionReadiness(distribution: string, signal?: AbortSignal, backend: 'wsl-bubblewrap-v1'|'windows-appcontainer-v1'|'docker-local-v1'='wsl-bubblewrap-v1', imageReference?: string): Promise<components['schemas']['ReadinessResult']> {
-    return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({backend,distribution,...(imageReference?{image_reference:imageReference}:{})}),signal});
+  executionReadiness(distribution: string, signal?: AbortSignal, backend: 'wsl-bubblewrap-v1'|'windows-appcontainer-v1'|'docker-local-v1'|'ssh-wsl-bubblewrap-v1'='wsl-bubblewrap-v1', imageReference?: string, sshIdentityFile?: string): Promise<components['schemas']['ReadinessResult']> {
+    return this.#request('/execution/readiness', {method:'POST',body:JSON.stringify({backend,distribution,...(imageReference?{image_reference:imageReference}:{}),...(sshIdentityFile?{ssh_identity_file:sshIdentityFile}:{})}),signal});
   }
 
   schedules(): Promise<Schedule[]> { return this.#request('/schedules'); }

@@ -89,3 +89,32 @@ test('Docker setup requires a pinned local image and sends it for server isolati
   await expect(page.getByText('Sandbox check passed.',{exact:true})).toBeVisible();
   expect(checks).toBe(1);expect(runCreates).toBe(0);
 });
+
+test('SSH setup sends the selected Windows alias and identity for pinned-host checks',async({page})=>{
+  const identityFile='C:\\Users\\fixture\\.ssh\\id_ed25519';let checks=0;let runCreates=0;
+  await page.route('http://127.0.0.1:8765/**',async route=>{
+    const req=route.request();const path=new URL(req.url()).pathname;
+    const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,OPTIONS'};
+    if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
+    if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
+    if(path==='/models')return route.fulfill({status:503,headers});
+    if(path==='/runs'&&req.method()==='POST')runCreates++;
+    if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
+    if(path==='/memory'||path==='/skills')return route.fulfill({json:[],headers});
+    if(path==='/execution/readiness'){
+      checks++;expect(req.postDataJSON()).toEqual({backend:'ssh-wsl-bubblewrap-v1',distribution:'xaa-builder',ssh_identity_file:identityFile});
+      return route.fulfill({json:{backend:'ssh-wsl-bubblewrap-v1',distribution:'xaa-builder',ssh_identity_file:identityFile,profile_sha256:'d'.repeat(64),state:'ready',checked_at:new Date().toISOString(),expires_at:new Date(Date.now()+60000).toISOString(),checks:['pinned_host_key','restricted_remote_manager'],policy:{network:'denied',workspace_changes:'private_copy_only',max_seconds:30,memory_bytes:134217728,max_active_executions_per_distribution:2},error_code:null},headers});
+    }
+    return route.fulfill({status:404,headers});
+  });
+  await page.goto('/');await page.getByLabel('Engine token').fill('x'.repeat(32));await page.getByRole('button',{name:'Connect',exact:true}).click();
+  await navigateMainSection(page,'Tools & integrations');
+  await page.locator('details').filter({has:page.locator('summary').filter({hasText:'Command sandbox setup'})}).evaluate(element=>{(element as HTMLDetailsElement).open=true;});
+  await page.getByLabel('Execution backend').selectOption('ssh-wsl-bubblewrap-v1');
+  await page.getByLabel('SSH host alias').fill('xaa-builder');
+  await page.getByLabel('SSH private-key path').fill(identityFile);
+  await page.getByRole('button',{name:'Check sandbox',exact:true}).click();
+  await expect(page.getByText('Sandbox check passed.',{exact:true})).toBeVisible();
+  expect(checks).toBe(1);expect(runCreates).toBe(0);
+});
