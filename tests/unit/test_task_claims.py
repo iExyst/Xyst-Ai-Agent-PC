@@ -6,7 +6,7 @@ from threading import Barrier
 import pytest
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import RunStore, TokenBudgetExceeded
 from xaa.storage.tasks import TaskStore
 
 
@@ -193,6 +193,70 @@ def test_token_reservation_is_bound_to_its_started_specialist(workspace_tmp_path
         event for event in runs.list_events(run_id) if event["event_type"] == "tokens.reserved"
     )
     assert hold["payload"]["task_id"] == "a"
+
+
+def test_concurrent_specialist_reservations_cannot_overcommit_shared_tokens(workspace_tmp_path):
+    runs = RunStore(workspace_tmp_path / "concurrent-token-reservations.sqlite3")
+    run_id = runs.create_run(
+        objective="Admit concurrent specialists within one shared token ceiling",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        max_iterations=8,
+        max_total_tokens=80,
+        pre_inference_token_reservations=True,
+    )["id"]
+    parent = runs.acquire_lease(run_id, "parent")
+    tasks = TaskStore(runs)
+    tasks.save_plan(
+        run_id,
+        parent,
+        [
+            TaskDefinition(id="alpha", objective="Independent alpha"),
+            TaskDefinition(id="beta", objective="Independent beta"),
+        ],
+    )
+    claims = [tasks.claim_ready(run_id, parent), tasks.claim_ready(run_id, parent)]
+    assert all(claim is not None for claim in claims)
+    attempts = [
+        (
+            claim["task"]["local_id"],
+            claim["token"],
+            tasks.reserve_inference(run_id, parent, claim["task"]["local_id"], claim["token"]),
+        )
+        for claim in claims
+        if claim is not None
+    ]
+    barrier = Barrier(3)
+
+    def reserve(attempt):
+        local_id, task_token, inference_id = attempt
+        store = RunStore(runs.path)
+        barrier.wait(timeout=5)
+        try:
+            TaskStore(store).reserve_tokens(
+                run_id,
+                parent,
+                inference_id,
+                prompt_tokens=40,
+                output_tokens=10,
+                task_id=local_id,
+                task_token=task_token,
+            )
+            return "reserved"
+        except TokenBudgetExceeded:
+            return "rejected"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(reserve, attempt) for attempt in attempts]
+        barrier.wait(timeout=5)
+        outcomes = [future.result(timeout=10) for future in futures]
+
+    assert sorted(outcomes) == ["rejected", "reserved"]
+    usage = runs.usage_report(run_id)
+    assert usage["outstanding_reservations"] == 1
+    assert usage["outstanding_reserved_tokens"] == 50
 
 
 def test_lost_worker_journal_allows_only_safe_saved_result_resume(workspace_tmp_path):
