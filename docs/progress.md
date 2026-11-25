@@ -4586,6 +4586,10 @@ The isolated native acceptance passed on Windows against Ubuntu 24.04.5 WSL: the
 
 This closes the SSH recovery gap for a worker that exits after remote completion and durable local output but before journal completion. Tauri process death while the SSH transport call is active, independent-host SSH acceptance, a final installer run containing these changes, code signing, legal notice review, and final live-model acceptance remain open. Hermes SSH adapter parity remains partial. No model inference was used.
 
+## Cover an active command cancellation boundary (2026-11-25)
+
+Added a controller regression that blocks inside an active command transport, cancels the owning task, and verifies cleanup is confirmed, the unknown result is durably reconciled as unverified, no success event is written, and the command is not relaunched. The focused controller suite passes (14 tests); Ruff, formatting, and `git diff --check` pass. This is deterministic transport-level coverage. It does not simulate Tauri process death or exercise a live SSH host, so active SSH crash recovery remains open.
+
 ## Recheck release notice coverage (2026-11-25)
 
 `uv run python scripts/verify_release_notice_coverage.py` passes and finds notice references for all currently scoped locked dependencies: 79 Python packages, 5 npm packages, and 247 Windows-target Cargo packages. This verifier checks inventory references and populated license metadata, but does not validate reproduced license text, copyright completeness, or legal suitability. `docs/releases/THIRD_PARTY_NOTICES.md` remains provisional pending that review.

@@ -89,6 +89,45 @@ async def test_controller_commits_only_registered_matching_output(workspace_tmp_
     assert len(store.list_artifacts(run_id)) == 3
 
 
+async def test_active_command_cancellation_seals_unknown_outcome_without_replay(workspace_tmp_path):
+    entered_transport = asyncio.Event()
+
+    class ActiveTransport(FixtureTransport):
+        launches = 0
+
+        async def run(self, intent, snapshot, *, deadline, on_output=None):
+            self.launches += 1
+            entered_transport.set()
+            await asyncio.Event().wait()
+
+    transport = ActiveTransport()
+    controller, store, run_id, token, _ = setup(workspace_tmp_path, transport)
+    active = asyncio.create_task(
+        controller.execute(
+            run_id,
+            token,
+            "active-command",
+            {"argv": ["fixture"]},
+            idempotency_key="active-command",
+            deadline=time.monotonic() + 15,
+        )
+    )
+    await asyncio.wait_for(entered_transport.wait(), timeout=2)
+    active.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await active
+
+    events = store.list_events(run_id)
+    result = store.unresolved_tool_calls(run_id)
+    assert transport.launches == 1
+    assert transport.controls == ["cleanup", "status"]
+    assert result == []
+    failed = next(event for event in events if event["event_type"] == "tool.failed")
+    assert failed["payload"]["code"] == "command_result_unavailable_locally"
+    assert not any(event["event_type"] == "execution.completed" for event in events)
+    assert any(event["event_type"] == "execution.reconciled" for event in events)
+
+
 async def test_controller_reads_only_run_approved_procedure_credentials_and_saves_no_output(
     workspace_tmp_path,
 ):
