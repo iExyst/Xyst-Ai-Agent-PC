@@ -51,6 +51,22 @@ async def test_estimator_reports_unavailable_without_lms(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_estimator_rejects_non_loopback_endpoint(monkeypatch):
+    async def unexpected_process(*args, **kwargs):
+        raise AssertionError("invalid endpoint must not launch a process")
+
+    monkeypatch.setattr(model_estimator, "_find_lms_executable", lambda: "lms")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", unexpected_process)
+
+    result = await model_estimator.estimate_model_resources(
+        "fixture/model", host="http://example.com:1234"
+    )
+
+    assert result.status == "failed"
+    assert "valid HTTP server address" in result.message
+
+
+@pytest.mark.asyncio
 async def test_estimator_uses_estimate_only_without_loading(monkeypatch):
     calls: list[tuple[str, ...]] = []
 
@@ -58,7 +74,7 @@ async def test_estimator_uses_estimate_only_without_loading(monkeypatch):
         returncode = 0
 
         async def communicate(self):
-            return b"Estimated GPU Memory: 1.25 GB\nEstimated Total Memory: 2 GB", b""
+            return b"", b"Estimated GPU Memory: 1.25 GB\nEstimated Total Memory: 2 GB"
 
     async def create_subprocess_exec(*args, **kwargs):
         calls.append(args)
@@ -79,7 +95,9 @@ async def test_estimator_uses_estimate_only_without_loading(monkeypatch):
             "--estimate-only",
             "fixture/model",
             "--host",
-            "http://127.0.0.1:1234",
+            "127.0.0.1",
+            "--port",
+            "1234",
             "--context-length",
             "8192",
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import re
 import shutil
@@ -10,6 +11,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 EstimateStatus = Literal["estimated", "unavailable", "failed"]
 GuardrailStatus = Literal["may_load", "warning", "unknown"]
@@ -132,7 +134,37 @@ async def estimate_model_resources(
             ),
         )
 
-    arguments = [executable, "load", "--estimate-only", model, "--host", host]
+    try:
+        address = urlsplit(host)
+        address_port = address.port
+        ip_address = (
+            ipaddress.ip_address(address.hostname)
+            if address.hostname and address.hostname != "localhost"
+            else None
+        )
+    except ValueError:
+        address_port = None
+        ip_address = None
+        address = urlsplit("")
+    if (
+        address.scheme != "http"
+        or not address.hostname
+        or (address.hostname != "localhost" and (ip_address is None or not ip_address.is_loopback))
+        or address.username is not None
+        or address.password is not None
+        or address.path not in {"", "/"}
+        or address.query
+        or address.fragment
+    ):
+        return ModelResourceEstimate(
+            model=model,
+            context_length=context_length,
+            status="failed",
+            message="LM Studio's resource estimator requires a valid HTTP server address. No model was loaded.",
+        )
+
+    arguments = [executable, "load", "--estimate-only", model, "--host", address.hostname]
+    arguments.extend(("--port", str(address_port or 80)))
     if context_length is not None:
         arguments.extend(("--context-length", str(context_length)))
     process: asyncio.subprocess.Process | None = None
@@ -145,7 +177,7 @@ async def estimate_model_resources(
             env=_child_environment(),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout_seconds)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout_seconds)
     except TimeoutError:
         if process is not None:
             await _stop_process(process)
@@ -177,7 +209,8 @@ async def estimate_model_resources(
                 "the LM Studio CLI supports estimate-only mode. No model was loaded."
             ),
         )
-    parsed = _parse_estimate(model, context_length, stdout.decode("utf-8", errors="replace"))
+    output = "\n".join(part.decode("utf-8", errors="replace") for part in (stdout, stderr))
+    parsed = _parse_estimate(model, context_length, output)
     if parsed is None:
         return ModelResourceEstimate(
             model=model,
