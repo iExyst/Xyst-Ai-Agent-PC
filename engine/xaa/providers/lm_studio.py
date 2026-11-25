@@ -617,6 +617,7 @@ class LMStudioProvider:
             return
         now = time.monotonic()
         catalog = self._model_catalog
+        catalog_refreshed = refresh
         if refresh:
             try:
                 available = await self.models()
@@ -626,7 +627,14 @@ class LMStudioProvider:
                 # Keep the server-side admission path when model discovery is unavailable.
                 return
         elif catalog is None or now - catalog[0] >= 30:
-            return
+            try:
+                available = await self.models()
+                catalog = (time.monotonic(), {item.id: item for item in available})
+                self._model_catalog = catalog
+                catalog_refreshed = True
+            except ProviderError:
+                # Keep the server-side admission path when model discovery is unavailable.
+                return
         details = catalog[1].get(model)
         if details is None or details.loaded is True:
             return
@@ -634,7 +642,7 @@ class LMStudioProvider:
             model,
             context_length=context_length,
             details=details,
-            force_refresh=refresh,
+            force_refresh=catalog_refreshed,
         )
         if estimate.status == "estimated" and estimate.guardrail == "warning":
             raise ProviderError(
