@@ -121,6 +121,8 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('GPU memory: 2.5 GB · Total memory: 4.0 GB');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('NVIDIA GeForce RTX 5080: 12.0 GB free of 16.0 GB · utilization 43%');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('The estimate is below the combined free memory reported by these GPUs (12.0 GB).');
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('Currently available system memory: 32.0 GB.');
+  await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('The estimate is below the current available system memory (32.0 GB).');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('They do not guarantee the model will fit');
   await expect(page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'})).toContainText('No model was loaded or downloaded.');
   expect(modelLoads).toEqual([]);
@@ -131,6 +133,7 @@ test('LM Studio address, discovered model and tool diagnostic are configured bef
   const unavailableGpuEstimate=page.getByRole('status').filter({hasText:'LM Studio estimate · advisory only'});
   await expect(unavailableGpuEstimate).toContainText('No NVIDIA GPU memory telemetry is available on this device.');
   await expect(unavailableGpuEstimate).not.toContainText('combined free memory');
+  await expect(unavailableGpuEstimate).toContainText('The estimate is below the current available system memory (32.0 GB).');
   await expect(unavailableGpuEstimate).toContainText('No model was loaded or downloaded.');
   expect(modelLoads).toEqual([]);
   await page.getByLabel('Context length for new instance (optional)').fill('65536');

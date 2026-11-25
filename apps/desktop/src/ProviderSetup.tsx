@@ -26,6 +26,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
   const [contextLength,setContextLength]=useState('');
   const [resourceEstimate,setResourceEstimate]=useState<ModelResourceEstimate|null>(null);
   const [gpuResources,setGpuResources]=useState<components['schemas']['GPUResourceSnapshot'][]|null>(null);
+  const [hostMemoryAvailableBytes,setHostMemoryAvailableBytes]=useState<number|null>(null);
   const [compatibleEndpoint,setCompatibleEndpoint]=useState('');
   const [compatibleCredential,setCompatibleCredential]=useState('');
   const [compatibleCredentialConfigured,setCompatibleCredentialConfigured]=useState(false);
@@ -202,7 +203,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
     if(requested!==undefined&&selectedDetails?.context_length&&requested>selectedDetails.context_length){
       setError(`Context length exceeds the discovered model maximum of ${selectedDetails.context_length.toLocaleString()} tokens.`);return;
     }
-    setBusy(true);setError('');setResourceEstimate(null);setGpuResources(null);
+    setBusy(true);setError('');setResourceEstimate(null);setGpuResources(null);setHostMemoryAvailableBytes(null);
     try {
       const [estimate,resources]=await Promise.all([
         client.estimateModelResources(model,requested),
@@ -210,6 +211,7 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
       ]);
       setResourceEstimate(estimate);
       setGpuResources(resources?.gpu_devices??[]);
+      setHostMemoryAvailableBytes(resources?.memory_available_bytes??null);
     } catch(failure) {
       setError(failure instanceof Error?failure.message:'Could not estimate model memory.');
     } finally {setBusy(false);}
@@ -288,6 +290,13 @@ export function ProviderSetup({client,models,model,onModelsChanged,onModelChange
                     : `The estimate exceeds the combined free memory reported by these GPUs (${formatMemory(reportedGpuFreeBytes)}); LM Studio may offload work to system memory or fail to load.`}</p>
                 )}
                 <p>GPU readings are a live host snapshot and can change before loading. They do not guarantee the model will fit or show memory used by unreported accelerators.</p>
+                <p>Currently available system memory: {hostMemoryAvailableBytes===null?'not reported':formatMemory(hostMemoryAvailableBytes)}.</p>
+                {resourceEstimate.estimated_total_memory_bytes!==null&&resourceEstimate.estimated_total_memory_bytes!==undefined&&hostMemoryAvailableBytes!==null&&(
+                  <p>{resourceEstimate.estimated_total_memory_bytes<=hostMemoryAvailableBytes
+                    ? `The estimate is below the current available system memory (${formatMemory(hostMemoryAvailableBytes)}).`
+                    : `The estimate exceeds current available system memory (${formatMemory(hostMemoryAvailableBytes)}); loading may fail or increase memory pressure.`}</p>
+                )}
+                <p>System memory availability is also a changing snapshot; LM Studio may offload work between GPU and system memory.</p>
                 <p>{resourceEstimate.guardrail==='may_load'?'LM Studio reports this may load within its resource guardrails.':resourceEstimate.guardrail==='warning'?'LM Studio reports this may exceed resource guardrails.':'LM Studio did not report a guardrail result.'}</p>
               </>:<p>{resourceEstimate.message}</p>}
               <p>This estimate is not a guarantee. No model was loaded or downloaded.</p>
