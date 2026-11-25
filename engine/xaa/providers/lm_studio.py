@@ -569,6 +569,7 @@ class LMStudioProvider:
         *,
         context_length: int | None = None,
         details: ModelInfo | None = None,
+        force_refresh: bool = False,
     ) -> ModelResourceEstimate:
         """Estimate a discovered model while the caller owns the inference queue."""
         if details is None:
@@ -588,7 +589,7 @@ class LMStudioProvider:
         key = (model, context_length)
         cached = self._resource_estimate_cache.get(key)
         now = time.monotonic()
-        if cached is not None and now - cached[0] < 60:
+        if not force_refresh and cached is not None and now - cached[0] < 60:
             return cached[1]
         estimate = await estimate_model_resources(
             model, host=self.base_url, context_length=context_length
@@ -630,7 +631,10 @@ class LMStudioProvider:
         if details is None or details.loaded is True:
             return
         estimate = await self._estimate_model_load_unlocked(
-            model, context_length=context_length, details=details
+            model,
+            context_length=context_length,
+            details=details,
+            force_refresh=refresh,
         )
         if estimate.status == "estimated" and estimate.guardrail == "warning":
             raise ProviderError(

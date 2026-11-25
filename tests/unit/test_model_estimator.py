@@ -280,6 +280,42 @@ async def test_resource_warning_prevents_model_load(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_explicit_model_load_refreshes_a_cached_resource_guardrail(monkeypatch):
+    estimates: list[str] = []
+    loaded: list[str] = []
+
+    class Provider(LMStudioProvider):
+        async def models(self):
+            return [ModelInfo(id="fixture/model", loaded=False, context_length=8192)]
+
+        async def _load_model(self, model: str, *, context_length: int | None = None):
+            loaded.append(model)
+            return "instance"
+
+    async def estimate(model: str, *, host: str, context_length: int | None = None):
+        estimates.append(model)
+        return model_estimator.ModelResourceEstimate(
+            model=model,
+            context_length=context_length,
+            status="estimated",
+            guardrail="may_load" if len(estimates) == 1 else "warning",
+        )
+
+    monkeypatch.setattr("xaa.providers.lm_studio.estimate_model_resources", estimate)
+    provider = Provider()
+    try:
+        first = await provider.estimate_model_load("fixture/model", context_length=4096)
+        assert first.guardrail == "may_load"
+        with pytest.raises(ProviderError, match="resource estimate warns"):
+            await provider.load_model("fixture/model", context_length=4096)
+    finally:
+        await provider.close()
+
+    assert estimates == ["fixture/model", "fixture/model"]
+    assert loaded == []
+
+
+@pytest.mark.asyncio
 async def test_resource_warning_prevents_chat_and_loaded_model_skips_estimate(monkeypatch):
     estimates: list[str] = []
     requests: list[str] = []
