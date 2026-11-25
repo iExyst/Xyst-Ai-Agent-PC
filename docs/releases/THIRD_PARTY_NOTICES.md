@@ -3883,7 +3883,7 @@ THE SOFTWARE.
 
 ### 58. Python (locked development environment) — MIT License
 
-**Packages:** `pytest@8.4.2`
+**Packages:** `pytest@9.2.0`
 
 ```text
 The MIT License (MIT)
