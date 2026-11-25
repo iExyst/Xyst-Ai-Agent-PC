@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
 
 from xaa.providers.contracts import public_assistant_message, public_run_event
@@ -24,6 +24,23 @@ from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
 DATABASE_SCHEMA_VERSION = 42
+
+
+def _is_normalized_relative_workspace_path(path: str) -> bool:
+    """Reject corrupt journal paths that are absolute or escape a workspace."""
+    posix = PurePosixPath(path)
+    windows = PureWindowsPath(path)
+    return (
+        bool(path)
+        and len(path) <= 2048
+        and not posix.is_absolute()
+        and posix.as_posix() == path
+        and not windows.drive
+        and not windows.root
+        and "\\" not in path
+        and all(part not in {"", ".", ".."} for part in posix.parts)
+    )
+
 
 SAFE_READ_TOOL_VERSIONS: dict[str, str] = {
     "workspace.read_file": "1",
@@ -2372,7 +2389,7 @@ class RunStore:
                 continue
             result = cast(dict[str, Any], result)
             path = result.get("path")
-            if not isinstance(path, str) or not path or len(path) > 2048:
+            if not isinstance(path, str) or not _is_normalized_relative_workspace_path(path):
                 continue
             tool_name = row["tool_name"]
             if tool_name == "workspace.delete_file":
@@ -2426,7 +2443,7 @@ class RunStore:
                 path = item.get("path")
                 current_digest = item.get("current_sha256")
                 proposed_digest = item.get("proposed_sha256")
-                if not isinstance(path, str) or not path or len(path) > 2048:
+                if not isinstance(path, str) or not _is_normalized_relative_workspace_path(path):
                     continue
                 if current_digest is not None and not isinstance(current_digest, str):
                     continue

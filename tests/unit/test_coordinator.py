@@ -545,6 +545,24 @@ def test_workspace_change_projection_records_direct_create_and_delete_without_co
             {"path": "src/legacy.py", "sha256": "c" * 64, "content": "legacy private"},
             False,
         ),
+        (
+            "traversal-1",
+            "workspace.write_file",
+            {"path": "../outside.txt", "sha256": "d" * 64},
+            False,
+        ),
+        (
+            "drive-path-1",
+            "workspace.write_file",
+            {"path": "C:/private.txt", "sha256": "e" * 64},
+            False,
+        ),
+        (
+            "backslash-path-1",
+            "workspace.write_file",
+            {"path": "src\\..\\private.txt", "sha256": "9" * 64},
+            False,
+        ),
     ):
         store.record_tool_intent(
             run_id,
@@ -599,6 +617,9 @@ def test_workspace_change_projection_records_direct_create_and_delete_without_co
     assert "internal.py" not in response.text
     assert "not-deleted.py" not in response.text
     assert "legacy private" not in response.text
+    assert "outside.txt" not in response.text
+    assert "C:/private.txt" not in response.text
+    assert "src\\..\\private.txt" not in response.text
 
 
 async def test_coordinator_executes_journaled_read_and_stops_for_verification(workspace_tmp_path):

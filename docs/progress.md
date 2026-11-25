@@ -1,6 +1,6 @@
 ## Preserve legacy tool visibility and internal-call privacy in final review (2026-11-24)
 
-The changed-file projection now treats older completion events with no `internal` field as public, while also honoring an internal marker on the corresponding intent event. A regression exercises both legacy cases: the public file appears, the internal file stays hidden, and neither file's contents are returned. The focused projection test passes, along with Ruff and Pyright. This preserves historical review evidence without weakening internal-call privacy; the full coordinator and hosted checks are pending.
+The changed-file projection now treats older completion events with no `internal` field as public, while also honoring an internal marker on the corresponding intent event. It rejects journal paths that are absolute, drive-qualified, traversal-based, or use backslash separators before exposing them. A regression exercises both legacy privacy cases and malformed paths: the public file appears, internal and invalid paths stay hidden, and file contents are never returned. The focused projection test passes, along with Ruff and Pyright. This preserves historical review evidence without weakening internal-call privacy; exact-source hosted verification is pending.
 
 ## Verify selected specialist scripts in local restricted WSL (2026-11-24)
 
