@@ -249,6 +249,9 @@ jobs:
       - name: Verify labeled mobile navigation in the desktop UI
         run: npm run test:browser -- tests/browser/mobile-navigation.spec.ts
         timeout-minutes: 3
+      - name: Verify accessible channel controls and confirmation focus
+        run: npm run test:browser -- tests/browser/channels.spec.ts
+        timeout-minutes: 4
       - name: Verify LM Studio model estimate and GPU telemetry fallback
         run: npm run test:browser -- tests/browser/provider-setup.spec.ts
         timeout-minutes: 3
