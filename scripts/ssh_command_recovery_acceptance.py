@@ -8,6 +8,7 @@ import json
 import sys
 import tempfile
 import time
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -53,12 +54,23 @@ async def _accept(args: argparse.Namespace) -> dict[str, object]:
     transport = await SSHTransport.discover(
         args.alias, str(identity), deadline=time.monotonic() + 20
     )
-    with tempfile.TemporaryDirectory(prefix="xaa-ssh-recovery-") as temporary:
+    if args.data_root is not None:
+        data_root = args.data_root.resolve()
+        if data_root.exists() and any(data_root.iterdir()):
+            raise ValueError("The retained acceptance data directory must be empty.")
+        data_root.mkdir(parents=True, exist_ok=True)
+        temporary_context = nullcontext(str(data_root))
+    else:
+        temporary_context = tempfile.TemporaryDirectory(prefix="xaa-ssh-recovery-")
+    if args.defer_to_desktop and args.data_root is None:
+        raise ValueError("--defer-to-desktop requires a retained --data-root.")
+    with temporary_context as temporary:
         root = Path(temporary)
         workspace = root / "project"
         workspace.mkdir()
         (workspace / "fixture.txt").write_text("recovery fixture\n", encoding="utf-8")
-        database = root / "app-data" / "xaa.sqlite3"
+        app_data_root = root if args.data_root is not None else root / "app-data"
+        database = app_data_root / "XAA" / "xaa.sqlite3"
         store = RunStore(database)
         grant = CommandGrant(
             backend=SSH_BACKEND,
@@ -117,6 +129,24 @@ async def _accept(args: argparse.Namespace) -> dict[str, object]:
         ):
             raise RuntimeError("The interrupted command lacks its durable recovery record.")
 
+        if args.defer_to_desktop:
+            if not store.release_lease(run_id, owner):
+                raise RuntimeError("Could not release the interrupted run for desktop recovery.")
+            return {
+                "backend": SSH_BACKEND,
+                "distribution": args.alias,
+                "profile_sha256": transport.profile_sha256,
+                "remote_manager_sha256": transport.manager_profile_sha256,
+                "worker_exit_code": worker.returncode,
+                "unresolved_before_recovery": len(unresolved_before),
+                "durable_output_artifacts_before_recovery": len(artifacts_before),
+                "recovery_deferred_to_desktop": True,
+                "unresolved_after_recovery": len(unresolved_before),
+                "model_inference_requested": False,
+                "retained_data_root": str(app_data_root),
+                "run_id": run_id,
+            }
+
         if not store.release_lease(run_id, owner):
             raise RuntimeError("The exited worker lease could not be released for recovery.")
         recovered_store = RunStore(database)
@@ -147,6 +177,8 @@ async def _accept(args: argparse.Namespace) -> dict[str, object]:
         output_path = recovered_store.path.parent / "artifacts" / metadata["storage_key"]
         if output_path.read_text(encoding="utf-8") != "ssh-recovery-verified\n":
             raise RuntimeError("Recovered output does not match the remote command result.")
+        if not recovered_store.release_lease(run_id, recovery_owner):
+            raise RuntimeError("Could not release the recovered run for desktop reconnection.")
         return {
             "backend": SSH_BACKEND,
             "distribution": args.alias,
@@ -160,6 +192,11 @@ async def _accept(args: argparse.Namespace) -> dict[str, object]:
             "recovery_artifact_bytes": metadata["size_bytes"],
             "unresolved_after_recovery": 0,
             "model_inference_requested": False,
+            **(
+                {"retained_data_root": str(app_data_root), "run_id": run_id}
+                if args.data_root is not None
+                else {}
+            ),
         }
 
 
@@ -168,6 +205,16 @@ async def main() -> None:
     parser.add_argument("--alias", required=True, help="Saved OpenSSH alias in the current profile")
     parser.add_argument("--identity", required=True, help="Private key under the current .ssh")
     parser.add_argument("--report", type=Path, help="Optional path for the JSON acceptance report")
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        help="Retain the accepted SQLite profile and artifacts under this previously empty directory",
+    )
+    parser.add_argument(
+        "--defer-to-desktop",
+        action="store_true",
+        help="Leave the command unresolved for the bundled desktop engine to recover on startup",
+    )
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--database", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--run-id", help=argparse.SUPPRESS)

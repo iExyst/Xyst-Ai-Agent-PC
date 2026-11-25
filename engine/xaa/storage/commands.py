@@ -135,9 +135,20 @@ class CommandJournal:
         if purpose == "project_validation" and task_scope is not None:
             raise PermissionError("Final project validation cannot use a specialist scope.")
 
-    def require_state(self, connection: Any, run_id: str, call_id: str | None = None) -> None:
+    def require_state(
+        self,
+        connection: Any,
+        run_id: str,
+        call_id: str | None = None,
+        *,
+        allow_planning_recovery: bool = False,
+    ) -> None:
         state = connection.execute("SELECT state FROM runs WHERE id=?", (run_id,)).fetchone()[0]
-        if state != ("verifying" if self.purpose == "project_validation" else "running"):
+        expected = "verifying" if self.purpose == "project_validation" else "running"
+        allowed = {expected}
+        if allow_planning_recovery and self.purpose == "agent":
+            allowed.add("planning")
+        if state not in allowed:
             raise PermissionError("Command purpose does not match the current run state.")
         if (
             self.purpose == "project_validation"
@@ -796,7 +807,12 @@ class CommandJournal:
             self.store.require_lease(connection, run_id, owner)
             if not recovery:
                 self.require_task(connection, run_id, owner, call_id)
-            self.require_state(connection, run_id, call_id)
+            self.require_state(
+                connection,
+                run_id,
+                call_id,
+                allow_planning_recovery=recovery,
+            )
             intent = self._intent(connection, run_id, call_id)
             if outcome.execution_id != intent.execution_id:
                 raise ValueError("Result belongs to another execution identity.")

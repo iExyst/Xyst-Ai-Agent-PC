@@ -98,6 +98,7 @@ fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
             "WINDIR",
             "LOCALAPPDATA",
             "APPDATA",
+            "ProgramData",
             "USERPROFILE",
             "TEMP",
             "TMP",
@@ -108,10 +109,10 @@ fn configure_engine_environment(command: &mut Command, token: &str, port: u16) {
             }
         }
         let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
-        command.env(
-            "PATH",
-            std::path::PathBuf::from(system_root).join("System32"),
-        );
+        let system32 = std::path::PathBuf::from(system_root).join("System32");
+        let search_path = std::env::join_paths([system32.clone(), system32.join("OpenSSH")])
+            .expect("Windows system paths cannot contain PATH separators");
+        command.env("PATH", search_path);
     }
     command
         .env("XAA_API_TOKEN", token)
@@ -498,6 +499,41 @@ mod tests {
             .find(|(name, _)| *name == "XAA_STREAM_RESPONSES")
             .map(|(_, value)| value);
         assert!(matches!(streaming, Some(Some(value)) if value.to_string_lossy() == "1"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn packaged_engine_path_includes_the_windows_openssh_client() {
+        let mut command = Command::new("xaa-engine.exe");
+        configure_engine_environment(&mut command, "fixture-token", 8765);
+        let search_path = command
+            .get_envs()
+            .find(|(name, _)| *name == "PATH")
+            .and_then(|(_, value)| value)
+            .expect("engine PATH is configured");
+        let entries: Vec<_> = std::env::split_paths(search_path).collect();
+        let system_root = std::path::PathBuf::from(
+            std::env::var_os("SystemRoot").expect("Windows provides SystemRoot"),
+        );
+
+        assert!(entries.contains(&system_root.join("System32")));
+        assert!(entries.contains(&system_root.join("System32").join("OpenSSH")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn packaged_engine_environment_preserves_program_data_for_openssh() {
+        let Some(expected) = std::env::var_os("ProgramData") else {
+            return;
+        };
+        let mut command = Command::new("xaa-engine.exe");
+        configure_engine_environment(&mut command, "fixture-token", 8765);
+        let actual = command
+            .get_envs()
+            .find(|(name, _)| *name == "ProgramData")
+            .and_then(|(_, value)| value);
+
+        assert_eq!(actual, Some(expected.as_os_str()));
     }
 
     #[test]

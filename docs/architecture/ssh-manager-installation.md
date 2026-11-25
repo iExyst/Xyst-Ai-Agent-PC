@@ -61,6 +61,29 @@ uv run python scripts/ssh_command_recovery_acceptance.py `
 
 The harness starts a separate Windows worker process. It executes one bounded command, persists the matching stdout and stderr artifacts, then exits at the journal-completion boundary. A fresh process reopens the SQLite store, obtains a replacement run lease, rediscovers the pinned SSH target and manager, and reconciles the saved receipt. The command cannot be relaunched by recovery. The report should show one unresolved call before reconciliation, a successful result with `result_reconciled=true`, and zero unresolved calls afterward.
 
+To retain the unresolved profile for the bundled desktop engine to recover, pass an empty data directory and `--defer-to-desktop`:
+
+```powershell
+uv run python scripts/ssh_command_recovery_acceptance.py `
+  --alias xaa-e2e `
+  --identity "$env:USERPROFILE\.ssh\id_ed25519" `
+  --data-root .acceptance/ssh-native-recovery/data `
+  --defer-to-desktop `
+  --report .acceptance/ssh-native-recovery/engine-recovery.json
+```
+
+Then launch the Tauri desktop and verify that the saved remote output appears in the run view:
+
+```powershell
+npm run test:native:ssh-recovery -- `
+  build/native-dev/xaa-desktop.exe `
+  .acceptance/ssh-native-recovery/data `
+  <run-id-from-engine-recovery-report> `
+  ssh-recovery-verified
+```
+
+The worker exits after the remote command and its output artifacts are durable, before local journal completion. With `--defer-to-desktop`, the acceptance releases the old lease but leaves the command unresolved. The native check launches the real Tauri app and its bundled engine against that same profile. It requires the app engine to reconcile the remote receipt, exactly one command dispatch/completion and matching output event, and visible recovered stdout in the run view. No model is configured and the scenario makes no inference request. The retained data directory must be empty when the engine acceptance starts.
+
 ## Verification boundary
 
-Local Windows OpenSSH to Ubuntu 24.04 WSL acceptance exercises package installation, manager upgrade, remote profile mismatch rejection, restoration, sandbox readiness, and cleanup. A separate Windows process acceptance verifies reconciliation after an engine worker exits at the journal commit boundary. This does not yet establish acceptance on an independently administered Linux host, reconnection of the full desktop after a Windows app restart, signed manager artifacts, or Hermes SSH adapter parity. See [`progress.md`](../progress.md) and the [Hermes parity matrix](../parity/hermes-matrix.md).
+Local Windows OpenSSH to Ubuntu 24.04 WSL acceptance exercises package installation, manager upgrade, remote profile mismatch rejection, restoration, sandbox readiness, and cleanup. The native check starts the bundled Tauri engine with an unresolved SSH receipt from a worker that exited at the journal commit boundary; it verifies engine reconciliation and visible UI output without re-executing the command or requesting a model. With no model selected, the recovered run pauses after reconciliation. This does not simulate the Tauri process itself dying while the SSH transport call is active before the remote result is saved. Independent-host acceptance, signed manager artifacts, and Hermes SSH adapter parity also remain separate gaps. See [`progress.md`](../progress.md) and the [Hermes parity matrix](../parity/hermes-matrix.md).

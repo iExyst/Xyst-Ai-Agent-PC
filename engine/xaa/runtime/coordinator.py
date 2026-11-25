@@ -2685,8 +2685,13 @@ class Coordinator:
         run = self.store.get_run(run_id)
         if run is None:
             raise KeyError(run_id)
-        if run["state"] != "queued" or not run["model"]:
-            raise ValueError("Execution requires a queued run with an explicitly selected model.")
+        recovery_only = not run["model"] and any(
+            call["tool_name"] == COMMAND_TOOL for call in self.store.unresolved_tool_calls(run_id)
+        )
+        if run["state"] != "queued" or (not run["model"] and not recovery_only):
+            raise ValueError(
+                "Execution requires a queued run with a selected model or a saved command to reconcile."
+            )
         max_iterations = min(max_iterations or 100, run["limits"]["max_iterations"])
         starts = [
             event["created_at"]
@@ -2727,6 +2732,14 @@ class Coordinator:
             if self.store.unresolved_tool_calls(run_id):
                 self.store.transition(
                     run_id, RunState.BLOCKED, reason="tool_reconciliation_required", owner=token
+                )
+                return
+            if recovery_only:
+                self.store.transition(
+                    run_id,
+                    RunState.PAUSED,
+                    reason="command_recovery_complete_model_not_selected",
+                    owner=token,
                 )
                 return
             if time.monotonic() >= deadline:

@@ -157,6 +157,56 @@ def _is_reconcilable_workspace_write(tool_name: str, version: str, arguments: st
     return False
 
 
+def _has_reconcilable_command_launch(
+    connection: sqlite3.Connection, run_id: str, item: sqlite3.Row
+) -> bool:
+    """Only queue a command intent when its exact launch is durably journaled.
+
+    The coordinator can then inspect the saved backend receipt without replaying
+    the command. An intent that stopped before snapshot and launch stays blocked.
+    """
+    if (item["tool_name"], item["tool_version"]) != ("workspace.run_command", "1"):
+        return False
+    try:
+        intent = json.loads(item["arguments"])
+    except (TypeError, json.JSONDecodeError):
+        return False
+    if not isinstance(intent, dict):
+        return False
+    intent = cast(dict[str, Any], intent)
+    execution_id = intent.get("execution_id")
+    profile_sha256 = intent.get("profile_sha256")
+    if (
+        not isinstance(execution_id, str)
+        or re.fullmatch(r"[a-f0-9]{32}", execution_id) is None
+        or not isinstance(profile_sha256, str)
+        or re.fullmatch(r"[a-f0-9]{64}", profile_sha256) is None
+    ):
+        return False
+    call_id = item["provider_call_id"]
+    events = connection.execute(
+        "SELECT event_type,payload FROM run_events WHERE run_id=? AND event_type IN "
+        "('execution.reserved','execution.snapshot','tool.executing') "
+        "AND json_extract(payload,'$.call_id')=?",
+        (run_id, call_id),
+    ).fetchall()
+    by_type = {event["event_type"]: json.loads(event["payload"]) for event in events}
+    reservation = by_type.get("execution.reserved")
+    snapshot = by_type.get("execution.snapshot")
+    launch = by_type.get("tool.executing")
+    return bool(
+        reservation
+        and snapshot
+        and launch
+        and reservation.get("execution_id") == execution_id
+        and reservation.get("profile_sha256") == profile_sha256
+        and snapshot.get("execution_id") == execution_id
+        and isinstance(snapshot.get("sha256"), str)
+        and re.fullmatch(r"[a-f0-9]{64}", snapshot["sha256"]) is not None
+        and launch.get("execution_id") == execution_id
+    )
+
+
 def has_completed_workspace_read(
     connection: sqlite3.Connection,
     *,
@@ -3414,7 +3464,7 @@ class RunStore:
                     connection, run_id, "parent_worker_lost_reconciliation_required"
                 )
                 unresolved = connection.execute(
-                    "SELECT tool_name,tool_version,arguments FROM tool_calls "
+                    "SELECT provider_call_id,tool_name,tool_version,arguments FROM tool_calls "
                     "WHERE run_id = ? AND state = 'intended'",
                     (run_id,),
                 ).fetchall()
@@ -3430,6 +3480,7 @@ class RunStore:
                             item["tool_name"], item["tool_version"], item["arguments"]
                         )
                     )
+                    or _has_reconcilable_command_launch(connection, run_id, item)
                     for item in unresolved
                 )
                 has_unresolved = bool(unresolved)
@@ -3457,7 +3508,9 @@ class RunStore:
                     },
                 )
             rows = connection.execute(
-                "SELECT id FROM runs WHERE state = 'queued' AND model IS NOT NULL "
+                "SELECT id FROM runs WHERE state = 'queued' AND (model IS NOT NULL OR EXISTS ("
+                "SELECT 1 FROM tool_calls WHERE tool_calls.run_id=runs.id "
+                "AND tool_calls.tool_name='workspace.run_command' AND tool_calls.state='intended')) "
                 "AND (lease_owner IS NULL OR lease_expires_at <= ?)",
                 (now,),
             ).fetchall()
