@@ -1109,6 +1109,7 @@ def create_app(
         await schedule_service.close()
         await supervisor.close()
         await mcp_manager.close()
+        system_resource_monitor.close()
         await provider.close()
 
     app = FastAPI(title="X.A.A. Local API", version=APP_VERSION, lifespan=lifespan)

@@ -36,3 +36,7 @@ def test_system_resource_endpoint_requires_local_api_authentication(
         device["memory_free_bytes"] is None or device["memory_free_bytes"] >= 0
         for device in snapshot["gpu_devices"]
     )
+    assert all(
+        device["utilization_percent"] is None or 0 <= device["utilization_percent"] <= 100
+        for device in snapshot["gpu_devices"]
+    )

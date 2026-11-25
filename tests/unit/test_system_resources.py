@@ -43,6 +43,33 @@ def test_parse_nvidia_smi_csv_supports_multiple_and_unavailable_metrics() -> Non
     ]
 
 
+def test_windows_gpu_engine_counters_aggregate_processes_per_physical_engine() -> None:
+    counters = [
+        ("pid_10_luid_0x00000000_0x00016631_phys_0_eng_0_engtype_3D", 20.0),
+        ("pid_11_luid_0x00000000_0x00016631_phys_0_eng_0_engtype_3D", 25.0),
+        ("pid_12_luid_0x00000000_0x00016631_phys_0_eng_1_engtype_Compute_0", 63.0),
+        ("pid_13_luid_0x00000000_0x0001A4CB_phys_0_eng_0_engtype_3D", 41.0),
+        ("not-a-gpu-engine-instance", 99.0),
+        ("pid_14_luid_0x00000000_0x00016631_phys_0_eng_2_engtype_Copy", 101.0),
+    ]
+
+    assert system_resources.aggregate_windows_gpu_engine_counters(counters) == {
+        (0, 0x16631): 63,
+        (0, 0x1A4CB): 41,
+    }
+
+
+def test_windows_gpu_engine_counter_sum_is_bounded_at_one_hundred() -> None:
+    counters = [
+        ("pid_10_luid_0x00000001_0x00000002_phys_0_eng_4_engtype_3D", 75.0),
+        ("pid_11_luid_0x00000001_0x00000002_phys_0_eng_4_engtype_3D", 50.0),
+    ]
+
+    assert system_resources.aggregate_windows_gpu_engine_counters(counters) == {
+        (1, 2): 100,
+    }
+
+
 def test_nvidia_smi_path_includes_wsl_driver_location(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -163,11 +190,12 @@ def test_linux_amd_gpu_probe_is_disabled_on_other_hosts(
 def test_monitor_reports_cpu_memory_disk_queue_and_missing_gpu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(system_resources.sys, "platform", "linux")
     cpu_samples = iter([(1000, 200), (2000, 500)])
     clocks = iter([1.0, 3.0])
     monkeypatch.setattr(system_resources, "_cpu_times", lambda: next(cpu_samples))
     monkeypatch.setattr(system_resources, "_memory_bytes", lambda: (1_600, 400))
-    monkeypatch.setattr(system_resources, "_gpu_devices", list)
+    monkeypatch.setattr(system_resources, "_gpu_devices", lambda *_args: [])
     monkeypatch.setattr(system_resources.time, "monotonic", lambda: next(clocks))
 
     def disk_usage(_path: Path) -> SimpleNamespace:
@@ -194,4 +222,5 @@ def test_monitor_reports_cpu_memory_disk_queue_and_missing_gpu(
     assert second["queue_waiting"] == 2
     assert second["queue_reserved_tokens"] == 640
     assert second["accelerator_telemetry_available"] is False
+    monitor.close()
     assert not any("path" in key.lower() for key in second)

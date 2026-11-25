@@ -6,6 +6,7 @@ import csv
 import ctypes
 import ctypes.wintypes
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -159,6 +160,170 @@ def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
     return devices
 
 
+_GPU_ENGINE_INSTANCE = re.compile(
+    r"luid_(0x[0-9a-f]+)_(0x[0-9a-f]+)_phys_(\d+)_eng_(\d+)_engtype_",
+    re.IGNORECASE,
+)
+
+
+def aggregate_windows_gpu_engine_counters(
+    counters: list[tuple[str, float]],
+) -> dict[tuple[int, int], int]:
+    """Return the busiest physical engine per adapter across process instances."""
+    per_engine: dict[tuple[int, int, int, int], float] = {}
+    for instance, raw_value in counters[:8192]:
+        match = _GPU_ENGINE_INSTANCE.search(instance)
+        if match is None:
+            continue
+        try:
+            value = float(raw_value)
+            adapter = (int(match.group(1), 16), int(match.group(2), 16))
+            physical, engine = int(match.group(3)), int(match.group(4))
+        except (OverflowError, ValueError):
+            continue
+        if not 0 <= value <= 100:
+            continue
+        key = (*adapter, physical, engine)
+        per_engine[key] = min(100.0, per_engine.get(key, 0.0) + value)
+
+    busiest: dict[tuple[int, int], float] = {}
+    for (high, low, _physical, _engine), utilization in per_engine.items():
+        adapter = (high, low)
+        busiest[adapter] = max(busiest.get(adapter, 0.0), utilization)
+    return {adapter: round(value) for adapter, value in busiest.items()}
+
+
+class _PdhFormattedValueUnion(ctypes.Union):
+    _fields_ = [
+        ("long_value", ctypes.c_long),
+        ("double_value", ctypes.c_double),
+        ("large_value", ctypes.c_longlong),
+        ("ansi_string", ctypes.c_char_p),
+        ("wide_string", ctypes.c_wchar_p),
+    ]
+
+
+class _PdhFormattedValue(ctypes.Structure):
+    _fields_ = [("status", ctypes.wintypes.DWORD), ("value", _PdhFormattedValueUnion)]
+
+
+class _PdhFormattedCounterValueItem(ctypes.Structure):
+    _fields_ = [("name", ctypes.c_wchar_p), ("formatted", _PdhFormattedValue)]
+
+
+class _WindowsGpuEngineSampler:
+    """Keep one PDH wildcard query so utilization has successive samples."""
+
+    _PDH_MORE_DATA = 0x800007D2
+    _MAX_BUFFER_BYTES = 4 * 1024 * 1024
+    _MAX_COUNTERS = 8192
+
+    def __init__(self) -> None:
+        self._pdh: Any = None
+        self._query = ctypes.c_void_p()
+        self._counter = ctypes.c_void_p()
+        self._last_sample_at: float | None = None
+        self._last_values: dict[tuple[int, int], int] = {}
+        try:
+            self._pdh = ctypes.WinDLL("pdh.dll", use_last_error=True)
+            open_query = self._pdh.PdhOpenQueryW
+            open_query.argtypes = [
+                ctypes.c_wchar_p,
+                ctypes.c_size_t,
+                ctypes.POINTER(ctypes.c_void_p),
+            ]
+            open_query.restype = ctypes.wintypes.DWORD
+            add_counter = self._pdh.PdhAddEnglishCounterW
+            add_counter.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_wchar_p,
+                ctypes.c_size_t,
+                ctypes.POINTER(ctypes.c_void_p),
+            ]
+            add_counter.restype = ctypes.wintypes.DWORD
+            collect = self._pdh.PdhCollectQueryData
+            collect.argtypes = [ctypes.c_void_p]
+            collect.restype = ctypes.wintypes.DWORD
+            if open_query(None, 0, ctypes.byref(self._query)) != 0:
+                self.close()
+                return
+            if (
+                add_counter(
+                    self._query,
+                    r"\GPU Engine(*)\Utilization Percentage",
+                    0,
+                    ctypes.byref(self._counter),
+                )
+                != 0
+            ):
+                self.close()
+                return
+            # Prime rate counters; the next sample supplies a meaningful interval.
+            collect(self._query)
+        except (AttributeError, OSError, TypeError, ValueError):
+            self.close()
+
+    def close(self) -> None:
+        if self._query.value and self._pdh is not None:
+            close_query = self._pdh.PdhCloseQuery
+            close_query.argtypes = [ctypes.c_void_p]
+            close_query.restype = ctypes.wintypes.DWORD
+            close_query(self._query)
+        self._query = ctypes.c_void_p()
+        self._counter = ctypes.c_void_p()
+
+    def sample(self) -> dict[tuple[int, int], int]:
+        if not self._query.value or not self._counter.value or self._pdh is None:
+            return {}
+        now = time.monotonic()
+        if self._last_sample_at is not None and now - self._last_sample_at < 1.0:
+            return dict(self._last_values)
+        try:
+            if self._pdh.PdhCollectQueryData(self._query) != 0:
+                return {}
+            get_array = self._pdh.PdhGetFormattedCounterArrayW
+            get_array.argtypes = [
+                ctypes.c_void_p,
+                ctypes.wintypes.DWORD,
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+                ctypes.c_void_p,
+            ]
+            get_array.restype = ctypes.wintypes.DWORD
+            buffer_size = ctypes.wintypes.DWORD()
+            item_count = ctypes.wintypes.DWORD()
+            status = get_array(
+                self._counter,
+                0x00000200,
+                ctypes.byref(buffer_size),
+                ctypes.byref(item_count),
+                None,
+            )
+            if status != self._PDH_MORE_DATA or not 0 < buffer_size.value <= self._MAX_BUFFER_BYTES:
+                return {}
+            buffer = ctypes.create_string_buffer(buffer_size.value)
+            status = get_array(
+                self._counter,
+                0x00000200,
+                ctypes.byref(buffer_size),
+                ctypes.byref(item_count),
+                ctypes.cast(buffer, ctypes.c_void_p),
+            )
+            if status != 0 or item_count.value > self._MAX_COUNTERS:
+                return {}
+            items = ctypes.cast(buffer, ctypes.POINTER(_PdhFormattedCounterValueItem))
+            counters: list[tuple[str, float]] = []
+            for index in range(item_count.value):
+                item = items[index]
+                if item.name and item.formatted.status == 0:
+                    counters.append((item.name, item.formatted.value.double_value))
+            self._last_values = aggregate_windows_gpu_engine_counters(counters)
+            self._last_sample_at = now
+            return dict(self._last_values)
+        except (AttributeError, OSError, TypeError, ValueError):
+            return {}
+
+
 def _nvidia_smi_path() -> Path | None:
     if sys.platform == "win32":
         system_directory = ctypes.create_unicode_buffer(32768)
@@ -228,7 +393,9 @@ def _com_method(instance: ctypes.c_void_p, index: int, restype: Any, argtypes: l
     return function_type(table[index])
 
 
-def _dxgi_gpu_devices() -> list[dict[str, Any]]:
+def _dxgi_gpu_devices(
+    utilization_by_luid: dict[tuple[int, int], int] | None = None,
+) -> list[dict[str, Any]]:
     """Read Windows GPU adapter identities and system-wide dedicated-memory usage."""
     if sys.platform != "win32":
         return []
@@ -355,7 +522,7 @@ def _dxgi_gpu_devices() -> list[dict[str, Any]]:
                     "name": name,
                     "memory_total_bytes": total,
                     "memory_free_bytes": None,
-                    "utilization_percent": None,
+                    "utilization_percent": (utilization_by_luid or {}).get((high, low)),
                 }
             )
 
@@ -394,8 +561,14 @@ def _dxgi_gpu_devices() -> list[dict[str, Any]]:
             close_query(pdh_query)
 
 
-def _gpu_devices() -> list[dict[str, Any]]:
-    devices = _dxgi_gpu_devices()
+def _gpu_devices(
+    utilization_by_luid: dict[tuple[int, int], int] | None = None,
+) -> list[dict[str, Any]]:
+    devices = (
+        _dxgi_gpu_devices()
+        if utilization_by_luid is None
+        else _dxgi_gpu_devices(utilization_by_luid)
+    )
     if sys.platform.startswith("linux"):
         devices = merge_gpu_devices(devices, linux_amd_gpu_devices())
     executable = _nvidia_smi_path()
@@ -441,6 +614,14 @@ class SystemResourceMonitor:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._previous_cpu: tuple[float, tuple[int, int]] | None = None
+        self._gpu_engine_sampler: _WindowsGpuEngineSampler | None = None
+
+    def close(self) -> None:
+        """Release the persistent Windows performance-counter query, if opened."""
+        with self._lock:
+            if self._gpu_engine_sampler is not None:
+                self._gpu_engine_sampler.close()
+                self._gpu_engine_sampler = None
 
     @staticmethod
     def _cpu_percent(previous: tuple[int, int], current: tuple[int, int]) -> float | None:
@@ -454,12 +635,17 @@ class SystemResourceMonitor:
         now = time.monotonic()
         current_cpu = _cpu_times()
         cpu_percent: float | None = None
+        utilization_by_luid: dict[tuple[int, int], int] | None = None
         with self._lock:
             previous = self._previous_cpu
             if current_cpu is not None:
                 self._previous_cpu = (now, current_cpu)
             if previous is not None and current_cpu is not None and now > previous[0]:
                 cpu_percent = self._cpu_percent(previous[1], current_cpu)
+            if sys.platform == "win32":
+                if self._gpu_engine_sampler is None:
+                    self._gpu_engine_sampler = _WindowsGpuEngineSampler()
+                utilization_by_luid = self._gpu_engine_sampler.sample()
 
         memory = _memory_bytes()
         try:
@@ -468,7 +654,7 @@ class SystemResourceMonitor:
         except OSError:
             disk_total = disk_free = None
         memory_total, memory_available = memory if memory is not None else (None, None)
-        gpu_devices = _gpu_devices()
+        gpu_devices = _gpu_devices(utilization_by_luid)
         memory_used_percent = (
             round((memory_total - memory_available) * 100 / memory_total, 1)
             if memory_total and memory_available is not None

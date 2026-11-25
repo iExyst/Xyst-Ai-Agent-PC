@@ -1,0 +1,37 @@
+{
+  "acceptance": "Windows DXGI adapters matched by LUID to system-wide GPU Engine PDH counters",
+  "first_sample": [
+    {
+      "name": "NVIDIA GeForce RTX 5080",
+      "memory_total_bytes": 17094934528,
+      "memory_free_bytes": 12424577024,
+      "utilization_percent": 35
+    },
+    {
+      "name": "AMD Radeon(TM) Graphics",
+      "memory_total_bytes": 2119970816,
+      "memory_free_bytes": 1743687680,
+      "utilization_percent": 0
+    }
+  ],
+  "second_sample": [
+    {
+      "name": "NVIDIA GeForce RTX 5080",
+      "memory_total_bytes": 17094934528,
+      "memory_free_bytes": 12423528448,
+      "utilization_percent": 36
+    },
+    {
+      "name": "AMD Radeon(TM) Graphics",
+      "memory_total_bytes": 2119970816,
+      "memory_free_bytes": 1743687680,
+      "utilization_percent": 0
+    }
+  ],
+  "inference_used": false,
+  "notes": [
+    "GPU Engine utilization is aggregated per physical engine across process instances.",
+    "The reported adapter utilization is the busiest engine in that sample interval.",
+    "A null value means Windows supplied no valid matching GPU Engine counter."
+  ]
+}
