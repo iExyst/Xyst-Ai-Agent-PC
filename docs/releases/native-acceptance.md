@@ -1,5 +1,9 @@
 # Native development acceptance
 
+## Physical microphone capture
+
+Build the Windows native development app with `npm run build:native:dev`, then run `npm run test:native:physical-mic` (or pass a desktop executable path as the first argument). The smoke launches the actual Tauri/WebView2 app with an isolated profile, enumerates a real Windows audio input after permission, records locally for two seconds from the selected device, confirms the app creates a WAV attachment, and verifies all capture tracks stop. The report omits the microphone name and device ID. Audio is not submitted to transcription, and no model inference or external service is used. Passing host evidence: `.acceptance/physical-microphone-e01bda68-54b8-4c78-88ca-fce861aa9b24/report.json`. This does not verify speech recognition or transcription-service compatibility.
+
 ## Tauri desktop process-death recovery
 
 Build the Windows development app with `npm run build:native:dev`, then run `npm run test:native:restart` (or pass a desktop executable path as the first argument). The harness launches the real Tauri desktop and bundled engine with an isolated profile and a local deterministic OpenAI-compatible fixture. It performs the harmless tool diagnostic, starts a streamed run, kills the desktop and engine process tree during blocked inference, then restarts against the same profile/database. It checks recovery after lease expiry, one candidate, a recovery event, no tool effects and unchanged workspace bytes. It does not require LM Studio or contact an external provider. The harness removes its own API launch credentials after the run. Latest passing local report: `.acceptance/native-restart-275d3233-73fe-46ef-ae15-8fd7cdef7c4c/report.json`; packaged Windows CI passed in [run 42399357940](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/42399357940). This scenario does not cover reboot, specialist recovery or ambiguous external effects.
