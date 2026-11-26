@@ -349,6 +349,7 @@ class WindowsLocalTransport:
         deadline: float,
         on_output: Callable[[str, bytes], Awaitable[None]] | None = None,
         procedure_secrets: dict[str, str] | None = None,
+        on_session_container: Callable[[str], Awaitable[None]] | None = None,
         on_protocol_frame: Callable[[bytes], Awaitable[bytes | None]] | None = None,
         on_workspace_result: Callable[[Path], Awaitable[None]] | None = None,
         isolated_python_worker: bool = False,
@@ -358,6 +359,10 @@ class WindowsLocalTransport:
         streaming_protocol: bool = False,
         max_protocol_bytes: int = MAX_OUTPUT_BYTES,
     ) -> dict[str, Any]:
+        if on_session_container is not None:
+            raise PermissionError(
+                "Reusable Docker sessions are unavailable on Windows AppContainer."
+            )
         self.require_intent(intent)
         duration = intent.max_seconds if max_seconds is None else max_seconds
         if type(duration) is not int or not 1 <= duration <= 120:

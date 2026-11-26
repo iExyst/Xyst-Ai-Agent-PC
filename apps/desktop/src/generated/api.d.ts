@@ -2626,6 +2626,11 @@ export interface components {
              * @default false
              */
             docker_network_access: boolean;
+            /**
+             * Docker Session Reuse
+             * @default false
+             */
+            docker_session_reuse: boolean;
             /** Image Reference */
             image_reference?: string | null;
             /**

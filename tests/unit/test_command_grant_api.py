@@ -95,12 +95,14 @@ def test_api_grants_only_authenticated_checked_workspace_runs(workspace_tmp_path
             **grant,
             "image_reference": None,
             "docker_network_access": False,
+            "docker_session_reuse": False,
             "ssh_identity_file": None,
         }
         assert client.get("/runs/" + saved["id"], headers=headers).json()["command_grant"] == {
             **grant,
             "image_reference": None,
             "docker_network_access": False,
+            "docker_session_reuse": False,
             "ssh_identity_file": None,
         }
         events = store.list_events(saved["id"])
@@ -170,7 +172,11 @@ def test_api_persists_only_server_checked_docker_image_grant(workspace_tmp_path,
         )
         assert response.status_code == 201
         run = response.json()
-        assert run["command_grant"] == {**grant, "ssh_identity_file": None}
+        assert run["command_grant"] == {
+            **grant,
+            "docker_session_reuse": False,
+            "ssh_identity_file": None,
+        }
         assert discovered_network_permissions and not any(discovered_network_permissions)
         event = next(
             item["payload"]

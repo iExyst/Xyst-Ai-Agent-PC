@@ -113,7 +113,10 @@ class WSLTransport:
         deadline: float,
         on_output: Callable[[str, bytes], Awaitable[None]] | None = None,
         procedure_secrets: dict[str, str] | None = None,
+        on_session_container: Callable[[str], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
+        if on_session_container is not None:
+            raise PermissionError("Reusable Docker sessions are unavailable on the WSL backend.")
         self.require_intent(intent)
         remaining = deadline - time.monotonic()
         if remaining < intent.max_seconds:

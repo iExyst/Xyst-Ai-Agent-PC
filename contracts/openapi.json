@@ -547,6 +547,11 @@
             "title": "Docker Network Access",
             "type": "boolean"
           },
+          "docker_session_reuse": {
+            "default": false,
+            "title": "Docker Session Reuse",
+            "type": "boolean"
+          },
           "image_reference": {
             "anyOf": [
               {

@@ -98,17 +98,24 @@ test('Docker setup checks a pinned image and network access is a separate run gr
   await page.locator('details.advanced-options').evaluate(element=>{(element as HTMLDetailsElement).open=true;});
   const commandPermission=page.getByLabel('Allow isolated commands for this next run');
   const networkPermission=page.getByLabel("Allow this run's Docker commands to use the bridge network");
+  const sessionPermission=page.getByLabel('Reuse a private Docker session for this run');
   await expect(networkPermission).toBeDisabled();
+  await expect(sessionPermission).not.toBeChecked();
   await commandPermission.check();
   await expect(networkPermission).toBeEnabled();
+  await expect(sessionPermission).toBeEnabled();
   await page.getByLabel('Objective',{exact:true}).fill('Check the Docker network grant');
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
   await expect.poll(()=>grants.length).toBe(1);
-  expect(grants[0]).toMatchObject({backend:'docker-local-v1',docker_network_access:false});
+  expect(grants[0]).toMatchObject({backend:'docker-local-v1',docker_network_access:false,docker_session_reuse:false});
   await networkPermission.check();
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
   await expect.poll(()=>grants.length).toBe(2);
-  expect(grants[1]).toMatchObject({backend:'docker-local-v1',docker_network_access:true});
+  expect(grants[1]).toMatchObject({backend:'docker-local-v1',docker_network_access:true,docker_session_reuse:false});
+  await sessionPermission.check();
+  await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await expect.poll(()=>grants.length).toBe(3);
+  expect(grants[2]).toMatchObject({backend:'docker-local-v1',docker_network_access:true,docker_session_reuse:true});
 });
 
 test('SSH setup sends the selected Windows alias and identity for pinned-host checks',async({page})=>{

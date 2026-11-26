@@ -8,6 +8,8 @@ from xaa.runtime.command_contracts import CommandIntent
 
 _IMAGE_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}@sha256:[a-f0-9]{64}$")
 _EXECUTION_ID = re.compile(r"^[a-f0-9]{32}$")
+SESSION_LABEL = "com.xyst.xaa.session"
+PROFILE_LABEL = "com.xyst.xaa.profile"
 
 
 def validate_image_reference(value: str) -> str:
@@ -31,6 +33,20 @@ def docker_container_name(execution_id: str) -> str:
     return f"xaa-{execution_id}"
 
 
+def docker_session_container_name(session_id: str) -> str:
+    if not _EXECUTION_ID.fullmatch(session_id):
+        raise ValueError("Invalid Docker session identity.")
+    return f"xaa-session-{session_id}"
+
+
+def docker_container_target(intent: CommandIntent) -> str:
+    if intent.docker_session_reuse:
+        if intent.docker_session_id is None:
+            raise PermissionError("Reusable Docker command has no saved session identity.")
+        return docker_session_container_name(intent.docker_session_id)
+    return docker_container_name(intent.execution_id)
+
+
 def docker_create_argv(
     intent: CommandIntent,
     image_reference: str,
@@ -50,9 +66,16 @@ def docker_create_argv(
         "create",
         "--pull=never",
         "--name",
-        docker_container_name(intent.execution_id),
+        docker_container_target(intent),
         "--label",
         f"com.xyst.xaa.execution={intent.execution_id}",
+        *(
+            ("--label", f"{SESSION_LABEL}={intent.docker_session_id}")
+            if intent.docker_session_reuse
+            else ()
+        ),
+        "--label",
+        f"{PROFILE_LABEL}={intent.profile_sha256}",
         "--network",
         "bridge" if intent.docker_network_access else "none",
         "--ipc",
@@ -109,7 +132,7 @@ def docker_copy_argv(
         "65534:65534",
         "--workdir",
         "/workspace",
-        docker_container_name(intent.execution_id),
+        docker_container_target(intent),
         "tar",
         "-xf",
         "-",
@@ -134,6 +157,6 @@ def docker_exec_argv(
         "65534:65534",
         "--workdir",
         "/workspace",
-        docker_container_name(intent.execution_id),
+        docker_container_target(intent),
         *intent.argv,
     )

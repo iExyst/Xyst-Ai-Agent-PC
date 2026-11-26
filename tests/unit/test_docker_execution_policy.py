@@ -14,6 +14,7 @@ from xaa.runtime.docker_execution_policy import (
     docker_copy_argv,
     docker_create_argv,
     docker_exec_argv,
+    docker_session_container_name,
     validate_image_reference,
     validate_local_engine_endpoint,
 )
@@ -127,6 +128,38 @@ def test_docker_network_mode_is_bound_to_the_saved_intent() -> None:
             profile_sha256="c" * 64,
             docker_network_access=True,
             workspace="fixture",
+        )
+
+
+def test_reusable_docker_session_uses_stable_name_and_owner_labels() -> None:
+    session_id = "e" * 32
+    session_intent = intent(docker_session_reuse=True, docker_session_id=session_id)
+    command = docker_create_argv(session_intent, IMAGE, endpoint=LINUX_ENDPOINT, windows=False)
+    assert command[command.index("--name") + 1] == docker_session_container_name(session_id)
+    labels = [command[index + 1] for index, value in enumerate(command[:-1]) if value == "--label"]
+    assert f"com.xyst.xaa.session={session_id}" in labels
+    assert f"com.xyst.xaa.profile={session_intent.profile_sha256}" in labels
+    assert command[command.index("--network") + 1] == "none"
+    exec_command = docker_exec_argv(session_intent, endpoint=LINUX_ENDPOINT, windows=False)
+    assert exec_command[exec_command.index("--workdir") + 2] == docker_session_container_name(
+        session_id
+    )
+
+
+def test_reusable_docker_session_is_explicit_and_backend_scoped() -> None:
+    grant = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="c" * 64,
+        image_reference=IMAGE,
+        docker_session_reuse=True,
+    )
+    assert "persists across commands" in command_tool_description(grant)
+    with pytest.raises(ValueError, match="only for the Docker backend"):
+        CommandGrant(
+            distribution="Ubuntu-24.04",
+            profile_sha256="c" * 64,
+            docker_session_reuse=True,
         )
 
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from xaa.runtime.command_contracts import CommandIntent
 from xaa.storage.runs import RunStore, utc_now
 
 DockerSessionState = Literal[
@@ -207,14 +209,75 @@ class DockerSessionJournal:
             ).fetchone()
         return DockerSession.model_validate(dict(row)) if row is not None else None
 
+    def saved_intent(self, session_id: str) -> CommandIntent:
+        with self.store.connection() as connection:
+            row = connection.execute(
+                "SELECT arguments FROM tool_calls WHERE tool_name='workspace.run_command' "
+                "AND json_extract(arguments,'$.docker_session_id')=? "
+                "ORDER BY updated_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(session_id)
+        return CommandIntent.model_validate(json.loads(row["arguments"]))
+
+    def finish_cleanup(
+        self,
+        session_id: str,
+        *,
+        cleanup_confirmed: bool,
+        owner: str | None = None,
+        expected_execution_id: str | None = None,
+    ) -> DockerSession:
+        with self.store.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT s.*,r.state AS run_state,r.lease_owner FROM docker_sessions AS s "
+                "JOIN runs AS r ON r.id=s.run_id WHERE s.id=?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(session_id)
+            run_state = str(row["run_state"])
+            active_states = {"queued", "planning", "running", "verifying"}
+            if run_state in active_states:
+                if owner is None or row["lease_owner"] != owner:
+                    raise PermissionError("Docker session cleanup requires the live run owner.")
+                self.store.require_lease(connection, str(row["run_id"]), owner)
+            elif row["lease_owner"] is not None:
+                raise PermissionError("Stopped Docker session cleanup requires an unleased run.")
+            current = DockerSession.model_validate(
+                {key: row[key] for key in DockerSession.model_fields}
+            )
+            if (
+                expected_execution_id is not None
+                and current.active_execution_id is not None
+                and current.active_execution_id != expected_execution_id
+            ):
+                raise RuntimeError("Docker session cleanup does not match its active command.")
+            if current.state == "closed":
+                return current
+            destination: DockerSessionState = "closed" if cleanup_confirmed else "unknown"
+            active_execution_id = current.active_execution_id if destination == "unknown" else None
+            now = utc_now()
+            connection.execute(
+                "UPDATE docker_sessions SET state=?,active_execution_id=?,updated_at=? "
+                "WHERE id=? AND state!=?",
+                (destination, active_execution_id, now, session_id, "closed"),
+            )
+            saved = connection.execute(
+                "SELECT * FROM docker_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            return DockerSession.model_validate(dict(saved))
+
     def terminal(self, limit: int = 100) -> list[DockerSession]:
         if not 1 <= limit <= 1000:
             raise ValueError("Docker session cleanup query limit is invalid.")
         with self.store.connection() as connection:
             rows = connection.execute(
                 "SELECT s.* FROM docker_sessions AS s JOIN runs AS r ON r.id=s.run_id "
-                "WHERE r.state IN ('completed','cancelled','failed') "
-                "AND s.state NOT IN ('closed','unknown') ORDER BY s.updated_at LIMIT ?",
+                "WHERE r.state IN ('paused','blocked','waiting_for_approval','completed','cancelled','failed') "
+                "AND s.state IN ('stopping','unknown') ORDER BY s.updated_at LIMIT ?",
                 (limit,),
             ).fetchall()
         return [DockerSession.model_validate(dict(row)) for row in rows]

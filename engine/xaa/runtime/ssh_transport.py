@@ -320,7 +320,10 @@ class SSHTransport:
         deadline: float,
         on_output: Any = None,
         procedure_secrets: dict[str, str] | None = None,
+        on_session_container: Any = None,
     ) -> dict[str, Any]:
+        if on_session_container is not None:
+            raise PermissionError("Reusable Docker sessions are unavailable on the SSH backend.")
         self.require_intent(intent)
         await self._verify_current_profile(intent, deadline)
         result = await self._manager_transport().run(

@@ -20,6 +20,7 @@ from xaa.runtime.command_contracts import (
 from xaa.runtime.executor import ReconciliationRequired
 from xaa.runtime.file_handles import open_for_read, opened_file_path
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
+from xaa.storage.docker_sessions import DockerSessionJournal
 from xaa.storage.runs import RunStore, TaskReadScope, utc_now
 
 TOOL = "workspace.run_command"
@@ -524,6 +525,30 @@ class CommandJournal:
                 raise CommandCapacityError(
                     "Two commands are active or awaiting recovery; reconcile them first."
                 )
+            docker_session_id = None
+            if grant.docker_session_reuse:
+                session_profile = hashlib.sha256(
+                    json.dumps(
+                        {
+                            "grant_profile_sha256": grant.profile_sha256,
+                            "network_access": grant.docker_network_access,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                docker_session_id = (
+                    DockerSessionJournal(self.store)
+                    .reserve_in_transaction(
+                        connection,
+                        run_id,
+                        owner,
+                        task_id=task_key,
+                        profile_sha256=session_profile,
+                        image_reference=grant.image_reference or "",
+                    )
+                    .id
+                )
             intent = CommandIntent(
                 **parsed.model_dump(),
                 execution_id=uuid4().hex,
@@ -532,6 +557,8 @@ class CommandJournal:
                 profile_sha256=grant.profile_sha256,
                 image_reference=grant.image_reference,
                 docker_network_access=grant.docker_network_access,
+                docker_session_reuse=grant.docker_session_reuse,
+                docker_session_id=docker_session_id,
                 ssh_identity_file=grant.ssh_identity_file,
                 workspace=workspace,
                 procedure_environment_digest=(

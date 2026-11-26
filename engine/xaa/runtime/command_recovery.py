@@ -11,6 +11,7 @@ from xaa.runtime.command_controller import CommandController
 from xaa.runtime.command_transport import CommandTransport
 from xaa.runtime.command_transport_factory import discover_command_transport
 from xaa.storage.commands import CommandJournal
+from xaa.storage.docker_sessions import DockerSessionJournal
 from xaa.storage.runs import RunStore
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,9 @@ class StoppedCommandRecovery:
     async def run_once(self) -> int:
         journal = CommandJournal(self.store)
         candidates = journal.stopped_candidates()
+        sessions = DockerSessionJournal(self.store).terminal()
         keys = {(item["run_id"], item["call_id"], item["revision"]) for item in candidates}
+        keys.update((session.run_id, f"docker-session:{session.id}", 0) for session in sessions)
         self.retry_after = {key: value for key, value in self.retry_after.items() if key in keys}
         observed = 0
         for item in candidates:
@@ -54,6 +57,29 @@ class StoppedCommandRecovery:
                 self.retry_after[key] = time.monotonic() + 60
                 logger.warning(
                     "Command cleanup deferred for run %s (%s)", run_id, type(exc).__name__
+                )
+            else:
+                self.retry_after.pop(key, None)
+                observed += 1
+        for session in sessions:
+            key = (session.run_id, f"docker-session:{session.id}", 0)
+            if self.retry_after.get(key, 0) > time.monotonic():
+                continue
+            try:
+                intent = DockerSessionJournal(self.store).saved_intent(session.id)
+                transport = await self.discover(intent)
+                proof = await CommandController(self.store, transport).cleanup(intent)
+                DockerSessionJournal(self.store).finish_cleanup(
+                    session.id, cleanup_confirmed=proof.closed
+                )
+            except asyncio.CancelledError:
+                raise
+            except (OSError, RuntimeError, ValueError, KeyError, sqlite3.Error) as exc:
+                self.retry_after[key] = time.monotonic() + 60
+                logger.warning(
+                    "Docker session cleanup deferred for run %s (%s)",
+                    session.run_id,
+                    type(exc).__name__,
                 )
             else:
                 self.retry_after.pop(key, None)

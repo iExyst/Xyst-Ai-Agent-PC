@@ -23,6 +23,96 @@ def live_docker_required() -> None:
 
 
 @pytest.mark.asyncio
+async def test_live_docker_session_reuses_private_workspace_and_isolates_sessions() -> None:
+    live_docker_required()
+    grant = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+    )
+    transport = await DockerLocalTransport.discover(grant, deadline=time.monotonic() + 20)
+    first_session_id = uuid4().hex
+    second_session_id = uuid4().hex
+    first_intent = CommandIntent(
+        argv=[
+            "python3",
+            "-I",
+            "-c",
+            "from pathlib import Path; Path('session-marker.txt').write_text('private-session-state')",
+        ],
+        max_seconds=10,
+        execution_id=uuid4().hex,
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256=transport.profile_sha256,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+        docker_session_id=first_session_id,
+        workspace="docker-live-session-reuse",
+    )
+    second_intent = first_intent.model_copy(
+        update={
+            "argv": [
+                "python3",
+                "-I",
+                "-c",
+                "from pathlib import Path; print(Path('session-marker.txt').read_text())",
+            ],
+            "execution_id": uuid4().hex,
+        }
+    )
+    isolated_intent = first_intent.model_copy(
+        update={
+            "argv": [
+                "python3",
+                "-I",
+                "-c",
+                "from pathlib import Path; print(Path('session-marker.txt').exists())",
+            ],
+            "execution_id": uuid4().hex,
+            "docker_session_id": second_session_id,
+        }
+    )
+    snapshot = WorkspaceSnapshot((), (), ())
+    registered: list[str] = []
+
+    async def register(container_id: str) -> None:
+        registered.append(container_id)
+
+    try:
+        first = await transport.run(
+            first_intent,
+            snapshot,
+            deadline=time.monotonic() + 30,
+            on_session_container=register,
+        )
+        assert first["succeeded"] is True and first["docker_session_available"] is True
+        second = await transport.run(
+            second_intent,
+            snapshot,
+            deadline=time.monotonic() + 30,
+        )
+        assert second["succeeded"] is True and second["docker_session_available"] is True
+        text = base64.b64decode(second["stdout_b64"], validate=True).decode().strip()
+        assert text == "private-session-state"
+        isolated = await transport.run(
+            isolated_intent,
+            snapshot,
+            deadline=time.monotonic() + 30,
+            on_session_container=register,
+        )
+        assert isolated["succeeded"] is True and isolated["docker_session_available"] is True
+        isolated_text = base64.b64decode(isolated["stdout_b64"], validate=True).decode().strip()
+        assert isolated_text == "False"
+        assert len(registered) == 2 and all(len(value) == 64 for value in registered)
+    finally:
+        await transport.control("cleanup", first_intent, deadline=time.monotonic() + 15)
+        await transport.control("cleanup", isolated_intent, deadline=time.monotonic() + 15)
+
+
+@pytest.mark.asyncio
 async def test_live_docker_bridge_access_requires_the_explicit_grant() -> None:
     live_docker_required()
     grant = CommandGrant(

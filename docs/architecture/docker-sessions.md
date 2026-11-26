@@ -1,16 +1,18 @@
 # Reusable Docker session design
 
 Hermes' Docker backend reuses a mutable container for a task session. X.A.A.'s
-`docker-local-v1` deliberately creates one disposable container per command and
-records that the container was removed before the command is accepted. Reuse
-cannot be added by simply leaving the existing container running: the command
-journal, cleanup proof, task isolation, and restart recovery all currently rely
-on per-command ownership.
+`docker-local-v1` keeps its disposable-per-command default and now offers an
+explicit, default-off `docker_session_reuse` grant for a durable run/task
+session. The grant retains X.A.A.'s restricted container policy; it does not
+enable host mounts, arbitrary environment forwarding, or direct project writes.
+The implementation is present in the command journal, Docker transport,
+stopped-run recovery worker, and desktop consent control. This contract also
+records the acceptance needed before the behavior can be marked verified.
 
 ## Contract boundary
 
-Implement reusable sessions as a separate opt-in backend/profile. Keep
-`docker-local-v1` behavior and its existing grants unchanged. A session is
+Keep session reuse opt-in. Existing grants default to the prior disposable
+behavior. A session is
 private to one run and one specialist task (or the parent run when no specialist
 owns the command). It uses a cryptographically random, durable session ID which
 is not model supplied. Each command keeps its own execution ID, intent, output
@@ -34,23 +36,23 @@ owner review. It must never copy session changes directly into the project.
 Persist a session reservation before asking Docker to create a container. Store
 only the session identity, owning run/task, daemon and image profile digests,
 policy version, lifecycle state, timestamps, and container identity. Container
-labels must bind the daemon object to the saved session and execution identity.
-Use explicit states for reserved, creating, ready, busy, stopping, closed, and
+labels bind the daemon object to the saved session and profile. Each command
+retains its own execution identity in the durable intent. Use explicit states
+for reserved, creating, ready, busy, stopping, closed, and
 unknown; state transitions and active-command ownership must be transactional.
 
 On restart, inspect the saved container and labels before any action. Never
-replay an interrupted command because a container is still present. Reconcile a
-completed receipt only when its execution ID and output digests match the
-journal; otherwise mark the command outcome unknown, stop the session, and
-require the existing owner-review/recovery path. Do not make a session
-available to another run or specialist after an ambiguous result.
+replay an interrupted command because a container is still present. The current
+recovery path removes the saved session and preserves the existing command
+reconciliation behavior; it does not restore a session for reuse after an
+ambiguous result. Do not make a session available to another run or specialist
+after an ambiguous result.
 
-Close sessions on run completion, cancellation, failure, explicit stop, profile
-revocation, and application shutdown. Cleanup must be idempotent and observed;
-an unconfirmed container remains a durable cleanup obligation. Startup recovery
-must find orphaned session reservations and labeled containers without relying
-on in-memory state. Bound concurrent sessions and aggregate their resources
-against the owning run/task budgets.
+Run transitions durably mark sessions for cleanup; the stopped-run recovery
+worker removes labeled containers and closes records only after observing
+removal. An unconfirmed container remains a durable cleanup obligation. Current
+acceptance does not yet prove every crash point, app shutdown edge, or aggregate
+session resource budget.
 
 ## Acceptance gate
 

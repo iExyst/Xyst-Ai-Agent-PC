@@ -21,6 +21,7 @@ from xaa.storage.commands import (
     CommandOutcome,
     command_artifact_root,
 )
+from xaa.storage.docker_sessions import DockerSessionJournal
 from xaa.storage.runs import RunStore, TaskReadScope
 
 
@@ -78,6 +79,13 @@ class CommandController:
         self, run_id: str, owner: str, call_id: str, intent: CommandIntent
     ) -> dict[str, Any]:
         proof = await self.cleanup(intent)
+        if intent.docker_session_reuse and intent.docker_session_id is not None:
+            DockerSessionJournal(self.store).finish_cleanup(
+                intent.docker_session_id,
+                cleanup_confirmed=proof.closed,
+                owner=owner,
+                expected_execution_id=intent.execution_id,
+            )
         run = self.store.get_run(run_id)
         if run is not None and run["state"] in {"paused", "blocked", "failed", "cancelled"}:
             return self.journal.record_stopped_cleanup(run_id, run["revision"], call_id, proof)
@@ -90,6 +98,13 @@ class CommandController:
         """Seal a saved identity, then recover only matching durable local output."""
         intent = self.journal.recovery_intent(run_id, owner, call_id)
         proof = await self.cleanup(intent)
+        if intent.docker_session_reuse and intent.docker_session_id is not None:
+            DockerSessionJournal(self.store).finish_cleanup(
+                intent.docker_session_id,
+                cleanup_confirmed=proof.closed,
+                owner=owner,
+                expected_execution_id=intent.execution_id,
+            )
         status = await self.transport.control("status", intent, deadline=time.monotonic() + 10)
         receipt = status.get("outcome")
         if isinstance(receipt, dict) and cast(dict[str, Any], receipt).get("state") == "finished":
@@ -167,6 +182,34 @@ class CommandController:
             self.journal.snapshot_ready(run_id, owner, call_id, snapshot, manifest)
             intent = self.journal.authorize_launch(run_id, owner, call_id)
 
+            session_journal = None
+            session_first_command = False
+            if intent.docker_session_reuse:
+                if intent.docker_session_id is None:
+                    raise PermissionError("Reusable Docker command has no saved session identity.")
+                session_journal = DockerSessionJournal(self.store)
+                session = session_journal.get(intent.docker_session_id)
+                if session is None:
+                    raise PermissionError("Saved Docker session record is missing.")
+                if session.state == "reserved":
+                    session_journal.transition(
+                        session.id,
+                        owner,
+                        expected={"reserved"},
+                        destination="creating",
+                    )
+                    session_first_command = True
+                elif session.state == "ready":
+                    session_journal.transition(
+                        session.id,
+                        owner,
+                        expected={"ready"},
+                        destination="busy",
+                        execution_id=intent.execution_id,
+                    )
+                else:
+                    raise PermissionError("Docker session is not available for this command.")
+
             procedure_secrets: dict[str, str] = {}
             if intent.procedure_credential_names:
                 if self.credential_store is None or intent.procedure_skill_id is None:
@@ -210,18 +253,46 @@ class CommandController:
                     },
                 )
 
+            async def register_session_container(container_id: str) -> None:
+                if session_journal is None or intent.docker_session_id is None:
+                    raise PermissionError("A Docker session container has no durable owner record.")
+                ready = session_journal.transition(
+                    intent.docker_session_id,
+                    owner,
+                    expected={"creating"},
+                    destination="ready",
+                    container_id=container_id,
+                )
+                session_journal.transition(
+                    ready.id,
+                    owner,
+                    expected={"ready"},
+                    destination="busy",
+                    execution_id=intent.execution_id,
+                )
+
+            run_options: dict[str, Any] = {"deadline": deadline, "on_output": save_output}
             if procedure_secrets:
-                observed = await self.transport.run(
-                    intent,
-                    snapshot,
-                    deadline=deadline,
-                    on_output=save_output,
-                    procedure_secrets=procedure_secrets,
-                )
-            else:
-                observed = await self.transport.run(
-                    intent, snapshot, deadline=deadline, on_output=save_output
-                )
+                run_options["procedure_secrets"] = procedure_secrets
+            if session_first_command:
+                run_options["on_session_container"] = register_session_container
+            observed = await self.transport.run(intent, snapshot, **run_options)
+            if session_journal is not None and intent.docker_session_id is not None:
+                if observed.get("docker_session_available") is True:
+                    session_journal.transition(
+                        intent.docker_session_id,
+                        owner,
+                        expected={"busy"},
+                        destination="ready",
+                        execution_id=intent.execution_id,
+                    )
+                else:
+                    session_journal.finish_cleanup(
+                        intent.docker_session_id,
+                        cleanup_confirmed=observed.get("cleanup_confirmed") is True,
+                        owner=owner,
+                        expected_execution_id=intent.execution_id,
+                    )
             output_ids: dict[str, str] = {}
             combined = 0
             for stream in ("stdout", "stderr"):

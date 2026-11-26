@@ -7,7 +7,7 @@ IMAGE = f"registry.example/xaa@sha256:{'b' * 64}"
 PROFILE = "a" * 64
 
 
-def setup_run(root):
+def setup_run(root, *, docker_session_reuse=False):
     project = root / "project"
     project.mkdir()
     store = RunStore(root / "data" / "runs.sqlite3")
@@ -22,12 +22,31 @@ def setup_run(root):
             "distribution": "Docker-local",
             "profile_sha256": PROFILE,
             "image_reference": IMAGE,
+            "docker_session_reuse": docker_session_reuse,
         },
     )
     owner = store.acquire_lease(run["id"], "test", seconds=3600)
     store.transition(run["id"], RunState.PLANNING, owner=owner)
     store.transition(run["id"], RunState.RUNNING, owner=owner)
     return store, run["id"], owner
+
+
+def test_command_reservation_persists_the_generated_session_identity(workspace_tmp_path):
+    from xaa.storage.commands import CommandJournal
+
+    store, run_id, owner = setup_run(workspace_tmp_path, docker_session_reuse=True)
+    journal = CommandJournal(store)
+    intent = journal.reserve(
+        run_id,
+        owner,
+        "session-command",
+        {"argv": ["python3", "--version"]},
+        idempotency_key="session-command",
+    )
+    assert intent.docker_session_reuse is True
+    assert intent.docker_session_id is not None
+    saved = DockerSessionJournal(store).saved_intent(intent.docker_session_id)
+    assert saved == intent
 
 
 def test_session_lifecycle_persists_and_reuses_identity(workspace_tmp_path):

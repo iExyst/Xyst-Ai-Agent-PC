@@ -9,6 +9,7 @@ from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
 
 OutputCallback = Callable[[str, bytes], Awaitable[None]]
+SessionContainerCallback = Callable[[str], Awaitable[None]]
 
 
 class CommandTransport(Protocol):
@@ -27,6 +28,7 @@ class CommandTransport(Protocol):
         deadline: float,
         on_output: OutputCallback | None = None,
         procedure_secrets: dict[str, str] | None = None,
+        on_session_container: SessionContainerCallback | None = None,
     ) -> dict[str, Any]: ...
 
     async def control(

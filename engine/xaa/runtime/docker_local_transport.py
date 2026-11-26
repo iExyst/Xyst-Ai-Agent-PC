@@ -18,9 +18,11 @@ from typing import Any, Literal, cast
 
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
-from xaa.runtime.command_transport import OutputCallback
+from xaa.runtime.command_transport import OutputCallback, SessionContainerCallback
 from xaa.runtime.docker_execution_policy import (
-    docker_container_name,
+    PROFILE_LABEL,
+    SESSION_LABEL,
+    docker_container_target,
     docker_copy_argv,
     docker_create_argv,
     docker_exec_argv,
@@ -213,6 +215,7 @@ class DockerLocalTransport:
     image_reference: str
     profile_sha256: str
     docker_network_access: bool = False
+    docker_session_reuse: bool = False
     _control_only: bool = False
     _active: dict[str, asyncio.subprocess.Process] = field(
         default_factory=lambda: dict[str, asyncio.subprocess.Process]()
@@ -243,7 +246,8 @@ class DockerLocalTransport:
                 endpoint,
                 image_reference,
                 authority.profile_sha256,
-                authority.docker_network_access,
+                docker_network_access=authority.docker_network_access,
+                docker_session_reuse=authority.docker_session_reuse,
                 _control_only=True,
             )
         image = await cls._inspect_image(executable, endpoint, image_reference, deadline=deadline)
@@ -280,6 +284,7 @@ class DockerLocalTransport:
             image_reference,
             profile,
             docker_network_access=authority.docker_network_access,
+            docker_session_reuse=authority.docker_session_reuse,
         )
 
     @staticmethod
@@ -352,6 +357,7 @@ class DockerLocalTransport:
             or intent.image_reference != self.image_reference
             or intent.profile_sha256 != self.profile_sha256
             or intent.docker_network_access != self.docker_network_access
+            or intent.docker_session_reuse != self.docker_session_reuse
         ):
             raise PermissionError("Execution grant does not match the Docker image profile.")
 
@@ -378,10 +384,19 @@ class DockerLocalTransport:
             profile_sha256=self.profile_sha256,
             image_reference=self.image_reference,
             docker_network_access=self.docker_network_access,
+            docker_session_reuse=self.docker_session_reuse,
+            docker_session_id=os.urandom(16).hex() if self.docker_session_reuse else None,
             workspace="application-owned-readiness-fixture",
         )
         try:
-            result = await self.run(intent, snapshot, deadline=deadline)
+
+            async def register_probe_container(_container_id: str) -> None:
+                return None
+
+            run_options: dict[str, Any] = {"deadline": deadline}
+            if intent.docker_session_reuse:
+                run_options["on_session_container"] = register_probe_container
+            result = await self.run(intent, snapshot, **run_options)
             encoded = result.get("stdout_b64")
             if (
                 result.get("execution_id") != intent.execution_id
@@ -465,7 +480,7 @@ class DockerLocalTransport:
                 "exec",
                 "--user",
                 "65534:65534",
-                docker_container_name(intent.execution_id),
+                docker_container_target(intent),
                 "python3",
                 "-I",
                 "-c",
@@ -498,7 +513,7 @@ class DockerLocalTransport:
                 "exec",
                 "--user",
                 "65534:65534",
-                docker_container_name(intent.execution_id),
+                docker_container_target(intent),
                 "python3",
                 "-I",
                 "-c",
@@ -514,7 +529,7 @@ class DockerLocalTransport:
         code, stdout, stderr = await _cli_request(
             self.executable,
             self.endpoint,
-            ("inspect", "--type", "container", docker_container_name(intent.execution_id)),
+            ("inspect", "--type", "container", docker_container_target(intent)),
             deadline=deadline,
             allow_failure=True,
         )
@@ -540,7 +555,13 @@ class DockerLocalTransport:
         if not isinstance(labels, dict):
             raise PermissionError("Docker container has no execution identity label.")
         labels = cast(dict[str, Any], labels)
-        if labels.get(EXECUTION_LABEL) != intent.execution_id:
+        if intent.docker_session_reuse:
+            if (
+                labels.get(SESSION_LABEL) != intent.docker_session_id
+                or labels.get(PROFILE_LABEL) != intent.profile_sha256
+            ):
+                raise PermissionError("Docker container identity does not match the saved session.")
+        elif labels.get(EXECUTION_LABEL) != intent.execution_id:
             raise PermissionError("Docker container identity does not match the saved execution.")
         return value
 
@@ -549,7 +570,7 @@ class DockerLocalTransport:
         if current is None:
             return True
         await self._run_cli(
-            ("rm", "--force", docker_container_name(intent.execution_id)),
+            ("rm", "--force", docker_container_target(intent)),
             deadline=deadline,
         )
         return await self._inspect_container(intent, deadline=deadline) is None
@@ -562,20 +583,15 @@ class DockerLocalTransport:
         deadline: float,
         on_output: OutputCallback | None = None,
         procedure_secrets: dict[str, str] | None = None,
+        on_session_container: SessionContainerCallback | None = None,
     ) -> dict[str, Any]:
         self.require_intent(intent)
+        if on_session_container is not None and not intent.docker_session_reuse:
+            raise PermissionError("A session callback requires an owner-granted Docker session.")
         if procedure_secrets or intent.procedure_credential_names:
             raise PermissionError("Docker commands do not receive procedure credentials.")
         if time.monotonic() + intent.max_seconds > deadline:
             raise TimeoutError("Command duration exceeds the remaining parent time budget.")
-        create = docker_create_argv(
-            intent,
-            self.image_reference,
-            endpoint=self.endpoint,
-            windows=os.name == "nt",
-        )
-        # The helper's executable is replaced with the resolved local CLI path.
-        create = (self.executable, *create[1:])
         started = time.monotonic()
         stdout = bytearray()
         stderr = bytearray()
@@ -583,47 +599,73 @@ class DockerLocalTransport:
         execution_id: str | None = None
         timed_out = False
         output_limited = False
+        session_mode = intent.docker_session_reuse
         try:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("Docker execution deadline expired before container creation.")
-            with tempfile.TemporaryDirectory(prefix="xaa-docker-cli-") as config:
-                process = await asyncio.create_subprocess_exec(
-                    *create,
-                    stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env=_safe_environment(self.executable, config),
-                    creationflags=0x08000000 if os.name == "nt" else 0,
+            inspected = (
+                await self._inspect_container(intent, deadline=deadline) if session_mode else None
+            )
+            new_container = inspected is None
+            if new_container:
+                create = docker_create_argv(
+                    intent,
+                    self.image_reference,
+                    endpoint=self.endpoint,
+                    windows=os.name == "nt",
                 )
-                self._active[intent.execution_id] = process
-                async with asyncio.timeout(min(15, deadline - time.monotonic())):
-                    raw_id, _ = await process.communicate()
-            if process.returncode != 0:
-                raise TransportError("Docker could not create the isolated command container.")
-            execution_id = raw_id.decode("ascii", errors="strict").strip()
-            if len(execution_id) != 64 or any(
-                char not in "0123456789abcdef" for char in execution_id
-            ):
-                raise TransportError("Docker returned an invalid container identity.")
-            await self._run_cli(("start", execution_id), deadline=deadline)
-            inspected = await self._inspect_container(intent, deadline=deadline)
-            if inspected is None:
-                raise TransportError("Docker command container disappeared before policy review.")
+                create = (self.executable, *create[1:])
+                with tempfile.TemporaryDirectory(prefix="xaa-docker-cli-") as config:
+                    process = await asyncio.create_subprocess_exec(
+                        *create,
+                        stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=_safe_environment(self.executable, config),
+                        creationflags=0x08000000 if os.name == "nt" else 0,
+                    )
+                    self._active[intent.execution_id] = process
+                    async with asyncio.timeout(min(15, deadline - time.monotonic())):
+                        raw_id, _ = await process.communicate()
+                if process.returncode != 0:
+                    raise TransportError("Docker could not create the isolated command container.")
+                execution_id = raw_id.decode("ascii", errors="strict").strip()
+                if len(execution_id) != 64 or any(
+                    char not in "0123456789abcdef" for char in execution_id
+                ):
+                    raise TransportError("Docker returned an invalid container identity.")
+                await self._run_cli(("start", execution_id), deadline=deadline)
+                inspected = await self._inspect_container(intent, deadline=deadline)
+                if inspected is None:
+                    raise TransportError(
+                        "Docker command container disappeared before policy review."
+                    )
+            state_value = inspected.get("State")
+            state = cast(dict[str, Any], state_value) if isinstance(state_value, dict) else {}
+            if state.get("Running") is not True:
+                raise TransportError("The saved Docker session container is not running.")
             _require_container_policy(inspected, network_access=intent.docker_network_access)
             await self._verify_command_container_profile(intent, deadline=deadline)
-            copy = docker_copy_argv(
-                intent,
-                endpoint=self.endpoint,
-                windows=os.name == "nt",
-            )
-            copy = (self.executable, *copy[1:])
-            await self._run_cli(
-                copy[3:],
-                deadline=deadline,
-                payload=_snapshot_tar(snapshot),
-                output_limit=16384,
-            )
+            if session_mode and new_container:
+                if on_session_container is None or execution_id is None:
+                    raise PermissionError(
+                        "New Docker sessions must be durably registered before use."
+                    )
+                await on_session_container(execution_id)
+            if not session_mode or new_container:
+                copy = docker_copy_argv(
+                    intent,
+                    endpoint=self.endpoint,
+                    windows=os.name == "nt",
+                )
+                copy = (self.executable, *copy[1:])
+                await self._run_cli(
+                    copy[3:],
+                    deadline=deadline,
+                    payload=_snapshot_tar(snapshot),
+                    output_limit=16384,
+                )
             command = docker_exec_argv(
                 intent,
                 endpoint=self.endpoint,
@@ -721,8 +763,11 @@ class DockerLocalTransport:
                 "stdout_bytes": len(stdout),
                 "stderr_bytes": len(stderr),
                 "elapsed_seconds": max(0.0, time.monotonic() - started),
+                "docker_session_available": session_mode and normal,
             }
-            if not await self._remove_container(intent, deadline=time.monotonic() + 15):
+            if (not session_mode or not normal) and not await self._remove_container(
+                intent, deadline=time.monotonic() + 15
+            ):
                 raise TransportError("Docker command container cleanup could not be confirmed.")
             self._active.pop(intent.execution_id, None)
             self._executing.discard(intent.execution_id)
@@ -754,6 +799,9 @@ class DockerLocalTransport:
             intent.backend != "docker-local-v1"
             or intent.distribution != "Docker-local"
             or intent.image_reference != self.image_reference
+            or intent.profile_sha256 != self.profile_sha256
+            or intent.docker_network_access != self.docker_network_access
+            or intent.docker_session_reuse != self.docker_session_reuse
         ):
             raise PermissionError("Docker control must use the saved execution identity.")
         process = self._active.get(intent.execution_id)
@@ -769,7 +817,7 @@ class DockerLocalTransport:
                 if state.get("Running") is True:
                     try:
                         await self._run_cli(
-                            ("kill", docker_container_name(intent.execution_id)),
+                            ("kill", docker_container_target(intent)),
                             deadline=deadline,
                         )
                     except TransportError:
