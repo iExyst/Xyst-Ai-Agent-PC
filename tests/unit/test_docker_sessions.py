@@ -160,3 +160,27 @@ def test_stopping_a_run_durably_requests_session_cleanup(workspace_tmp_path):
     requested = journal.get(session.id)
     assert requested is not None and requested.state == "stopping"
     assert [item.id for item in journal.terminal()] == [session.id]
+
+
+def test_schema_42_database_migrates_the_docker_session_journal(workspace_tmp_path):
+    store, _run_id, _owner = setup_run(workspace_tmp_path)
+    with store.connection() as connection:
+        connection.execute("DROP INDEX docker_sessions_state_updated")
+        connection.execute("DROP TABLE docker_sessions")
+        connection.execute("PRAGMA user_version=42")
+
+    migrated = RunStore(store.path)
+    with migrated.connection() as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(docker_sessions)")}
+    assert version == 43
+    assert {
+        "id",
+        "run_id",
+        "task_scope",
+        "profile_sha256",
+        "image_reference",
+        "state",
+        "container_id",
+        "active_execution_id",
+    } <= columns
