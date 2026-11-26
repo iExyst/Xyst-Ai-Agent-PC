@@ -113,6 +113,67 @@ async def test_live_docker_session_reuses_private_workspace_and_isolates_session
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("termination", ["timeout", "cancelled"])
+async def test_live_docker_session_timeout_and_cancel_close_the_container(
+    termination: str,
+) -> None:
+    live_docker_required()
+    grant = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+    )
+    transport = await DockerLocalTransport.discover(grant, deadline=time.monotonic() + 20)
+    intent = CommandIntent(
+        argv=["python3", "-I", "-c", "import time; print('running',flush=True); time.sleep(60)"],
+        max_seconds=2 if termination == "timeout" else 20,
+        execution_id=uuid4().hex,
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256=transport.profile_sha256,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+        docker_session_id=uuid4().hex,
+        workspace="docker-live-session-termination",
+    )
+    started = asyncio.Event()
+
+    async def register(_container_id: str) -> None:
+        return None
+
+    async def observe_output(_stream: str, chunk: bytes) -> None:
+        if b"running" in chunk:
+            started.set()
+
+    run = asyncio.create_task(
+        transport.run(
+            intent,
+            WorkspaceSnapshot((), (), ()),
+            deadline=time.monotonic() + 30,
+            on_output=observe_output,
+            on_session_container=register,
+        )
+    )
+    try:
+        if termination == "cancelled":
+            await asyncio.wait_for(started.wait(), timeout=20)
+            await transport.control("stop", intent, deadline=time.monotonic() + 15)
+        result = await asyncio.wait_for(run, timeout=30)
+        assert result["termination_reason"] == termination
+        assert result["docker_session_available"] is False
+        assert result["cleanup_confirmed"] is True
+        status = await transport.control("status", intent, deadline=time.monotonic() + 10)
+        assert status["closed"] is True and status["manager_alive"] is False
+    finally:
+        if not run.done():
+            run.cancel()
+            await asyncio.gather(run, return_exceptions=True)
+        await transport.control("cleanup", intent, deadline=time.monotonic() + 15)
+
+
+@pytest.mark.asyncio
 async def test_live_docker_bridge_access_requires_the_explicit_grant() -> None:
     live_docker_required()
     grant = CommandGrant(
