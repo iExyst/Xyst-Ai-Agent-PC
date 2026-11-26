@@ -728,12 +728,14 @@ async def test_live_docker_session_recovery_after_worker_death_during_close(
         idempotency_key="docker-close-seed-call",
         deadline=time.monotonic() + 45,
     )
-    assert result["succeeded"] is True and result["docker_session_available"] is True
+    assert result["succeeded"] is True
     with store.connection() as connection:
         session_id = connection.execute(
             "SELECT id FROM docker_sessions WHERE run_id=?", (run["id"],)
         ).fetchone()["id"]
     sessions = DockerSessionJournal(store)
+    ready = sessions.get(session_id)
+    assert ready is not None and ready.state == "ready"
     intent = sessions.saved_intent(session_id)
     failed = store.transition(run["id"], RunState.FAILED, owner=owner)
     assert failed["lease_owner"] is None

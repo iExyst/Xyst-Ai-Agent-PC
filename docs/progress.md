@@ -2,7 +2,7 @@
 
 ## Recover Docker session state after interruption during close (2026-11-26)
 
-Added a hosted live-engine case that starts stopped-run session cleanup in a separate worker, waits until Docker has removed the container but the CLI has not returned, then kills the worker. The expected recovery pass observes the already absent container and durably closes the `stopping` session without replaying its completed command. Locally, 31 focused Docker session/policy unit tests pass; Ruff, formatting, and `git diff --check` pass; integration collection skips all 19 cases because this Windows host has no Docker daemon. The hosted Docker and exact-source Windows workflows must pass before claiming this boundary verified.
+Added a hosted live-engine case that starts stopped-run session cleanup in a separate worker, waits until Docker has removed the container but the CLI has not returned, then kills the worker. The expected recovery pass observes the already absent container and durably closes the `stopping` session without replaying its completed command. Locally, 31 focused Docker session/policy unit tests pass; Ruff, formatting, and `git diff --check` pass; integration collection skips all 19 cases because this Windows host has no Docker daemon. First hosted run [45815487168](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45815487168) passed the other 18 cases but failed the new case on a harness assertion: the public controller outcome omits internal `docker_session_available`. The test now checks the saved journal state instead. Retry Docker and exact-source Windows workflows are pending; this boundary is not verified until both pass.
 
 ## Exercise Docker recovery after output but before result receipt (2026-11-26)
 
