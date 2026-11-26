@@ -98,15 +98,26 @@ session with no access to the first run's private file, archive receipt, and
 run-stop cleanup. Exact-source Windows CI [45793528115](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45793528115)
 passed on `5fdf666a` with 1,783 Python tests and 43 skipped, plus configured
 browser, static, type, desktop, API-contract, and process-recovery checks.
-The wider acceptance gate is still open: real-engine coverage does not yet prove
-host-sentinel and Docker-credential isolation, crashes during reservation,
-container creation, active execution, output receipt, or close, installed
-Windows coordinator/grant/artifact behavior, aggregate session resource budgets,
-or cleanup after every grant-revocation and failed-execution path. A focused
+
+The per-profile aggregate session cap is now enforced transactionally in the
+durable journal. Two local regressions prove that concurrent reservations do
+not exceed four and cleanup-pending sessions hold capacity until confirmed
+removal. Hosted Docker run [45830773729](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45830773729)
+passed all 20 live-engine cases; the new case created four limited containers
+through distinct runs, rejected a fifth, and confirmed recovery removed all
+four ([JUnit evidence](../../.acceptance/hosted-docker-session-budget-45830773729/junit.xml)).
+The fixed limits aggregate to at most 512 MiB, two CPU cores, and 128 processes
+for reusable sessions in one profile. Independent profile databases and
+disposable per-command containers are outside this cap.
+
+The wider acceptance gate remains open for installed Windows coordinator,
+grant, and artifact behavior; machine-wide resource budgets across separate
+profiles and disposable per-command containers; live daemon credential handling;
+and cleanup after every grant-revocation and failed-execution path. A focused
 Windows unit regression verifies Docker CLI launches use a private temporary
 configuration and omit inherited Docker authentication/configuration, SSH-agent,
-cloud-secret, and user-profile environment variables; live daemon credential
-handling and host-sentinel acceptance remain open. Exact-source Windows workflow
+cloud-secret, and user-profile environment variables; server-side daemon
+credential behavior remains unverified. Exact-source Windows workflow
 [45796858646](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45796858646)
 passed on `413f243b` with 1,784 Python tests and 43 skipped, plus the configured
 browser, static, type, desktop, API-contract, and process-recovery checks. Docker
