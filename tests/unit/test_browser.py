@@ -464,6 +464,85 @@ async def test_browser_form_fill_journal_omits_values_and_returns_page_text(
 
 
 @pytest.mark.asyncio
+async def test_coordinator_dispatches_form_fill_only_with_browser_interaction_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    store = RunStore(tmp_path / "browser-form-fill-dispatch.sqlite3")
+    run = store.create_run(
+        objective="Search an approved public page",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model="fixture",
+        approved_web_hosts=["docs.example.com"],
+        approved_browser=True,
+        approved_browser_interaction=True,
+    )
+    token = store.acquire_lease(run["id"], "browser-form-fill-dispatch", seconds=30)
+    assert token is not None
+    coordinator = Coordinator(store, object())  # type: ignore[arg-type]
+    arguments = {
+        "url": "https://docs.example.com/search",
+        "form_index": 0,
+        "values": [{"name": "q", "value": "synthetic query"}],
+    }
+    observed: list[tuple[str, dict[str, Any], list[str]]] = []
+
+    async def dispatch(
+        dispatched_store: RunStore,
+        run_id: str,
+        dispatched_token: str,
+        call_id: str,
+        dispatched_arguments: dict[str, Any],
+        approved_hosts: list[str],
+        *,
+        deadline: float,
+    ) -> dict[str, Any]:
+        assert dispatched_store is store
+        assert run_id == run["id"]
+        assert dispatched_token == token
+        assert call_id == "browser-fill-authorized"
+        assert dispatched_arguments == arguments
+        assert deadline > time.monotonic()
+        observed.append((call_id, dispatched_arguments, approved_hosts))
+        return {"status": "ok", "filled_fields": ["q"]}
+
+    monkeypatch.setattr("xaa.runtime.coordinator.run_approved_browser_form_fill", dispatch)
+    call = {
+        "id": "browser-fill-authorized",
+        "function": {
+            "name": "browser_fill_form",
+            "arguments": json.dumps(arguments),
+        },
+    }
+    result = await coordinator._execute_tool(
+        run["id"],
+        token,
+        run,
+        0,
+        time.monotonic() + 5,
+        call,
+        [],
+    )
+    assert result == {"status": "ok", "filled_fields": ["q"]}
+    assert observed == [("browser-fill-authorized", arguments, ["docs.example.com"])]
+
+    denied = {**run, "approved_browser_interaction": False}
+    denied_call = {**call, "id": "browser-fill-denied"}
+    with pytest.raises(PermissionError, match="browser-interaction permission"):
+        await coordinator._execute_tool(
+            run["id"],
+            token,
+            denied,
+            0,
+            time.monotonic() + 5,
+            denied_call,
+            [],
+        )
+    assert len(observed) == 1
+
+
+@pytest.mark.asyncio
 async def test_browser_interaction_cancellation_records_an_uncertain_outcome(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
