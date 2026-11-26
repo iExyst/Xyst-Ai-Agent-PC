@@ -107,7 +107,14 @@ checks pass. GitHub rejected manual dispatch because its default-branch copy of
 runs the live suite when these transport or acceptance files change. The first
 hosted run passed the 14 existing cases but caught an invalid 45-second grant in
 the new fixture before worker startup; the fixture now uses the supported
-30-second limit. Corrected hosted verification is pending.
+30-second limit. Corrected hosted Docker run
+[45803924172](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45803924172)
+passed all 15 live-engine cases on Docker 28.0.4 and the pinned Python image.
+The process-death scenario killed the active worker group, observed the durable
+busy session, removed its container through stopped-run recovery, and confirmed
+the pending call was sealed without completion or replay
+([JUnit evidence](../../.acceptance/hosted-docker-worker-crash-45803924172/junit.xml)).
+Exact-source Windows verification for the corrected test is still running.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 
