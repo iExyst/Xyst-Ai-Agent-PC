@@ -85,7 +85,10 @@ $stream.Dispose()
     audio = base64.b64decode(result.stdout)
     audio_path.write_bytes(audio)
     transcript = asyncio.run(transcribe_windows_wav(audio))
-    normalize = lambda value: re.sub(r"[^a-z]+", " ", value.lower()).strip()
+
+    def normalize(value: str) -> str:
+        return re.sub(r"[^a-z]+", " ", value.lower()).strip()
+
     passed = normalize(transcript) == "hello world"
     token = "windows-speech-acceptance-token-long-enough"
     encoded_audio = "data:audio/wav;base64," + base64.b64encode(audio).decode("ascii")
