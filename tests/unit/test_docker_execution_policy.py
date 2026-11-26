@@ -22,6 +22,7 @@ from xaa.runtime.docker_local_probe import PROBE_CODE
 from xaa.runtime.docker_local_transport import (
     DockerLocalTransport,
     _require_container_policy,
+    _safe_environment,
     _snapshot_tar,
 )
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
@@ -30,6 +31,50 @@ from xaa.storage.commands import CommandOutcome
 IMAGE = "registry.example/xaa/python@sha256:" + "a" * 64
 WINDOWS_ENDPOINT = "npipe:////./pipe/docker_engine"
 LINUX_ENDPOINT = "unix:///var/run/docker.sock"
+
+
+def test_docker_cli_environment_uses_private_config_and_drops_inherited_credentials(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    secret_environment = {
+        "DOCKER_CONFIG": "C:/Users/example/.docker",
+        "DOCKER_AUTH_CONFIG": "registry-auth-secret",
+        "DOCKER_HOST": "tcp://remote.example:2376",
+        "DOCKER_CONTEXT": "production",
+        "SSH_AUTH_SOCK": "C:/Users/example/ssh-agent.sock",
+        "AWS_SECRET_ACCESS_KEY": "cloud-secret",
+        "HOME": "C:/Users/example",
+        "USERPROFILE": "C:/Users/example",
+    }
+    for key, value in secret_environment.items():
+        monkeypatch.setenv(key, value)
+    safe_path = tmp_path / "safe-bin"
+    monkeypatch.setenv("PATH", str(safe_path))
+    config = tmp_path / "docker-config"
+    executable = tmp_path / "tools" / "docker.exe"
+
+    environment = _safe_environment(str(executable), str(config))
+
+    assert environment["DOCKER_CONFIG"] == str(config)
+    assert environment["HOME"] == str(config)
+    assert environment["TEMP"] == str(config)
+    assert environment["TMP"] == str(config)
+    assert environment["TMPDIR"] == str(config)
+    assert environment["PATH"].split(os.pathsep) == [
+        str(executable.parent.resolve()),
+        str(safe_path),
+    ]
+    assert not (
+        {
+            "DOCKER_AUTH_CONFIG",
+            "DOCKER_HOST",
+            "DOCKER_CONTEXT",
+            "SSH_AUTH_SOCK",
+            "AWS_SECRET_ACCESS_KEY",
+            "USERPROFILE",
+        }
+        & environment.keys()
+    )
 
 
 def test_docker_readiness_probe_checks_effective_cgroup_limits() -> None:

@@ -88,9 +88,13 @@ The wider acceptance gate is still open: real-engine coverage does not yet prove
 host-sentinel and Docker-credential isolation, crashes during reservation,
 container creation, active execution, output receipt, or close, installed
 Windows coordinator/grant/artifact behavior, aggregate session resource budgets,
-or cleanup after every grant-revocation and failed-execution path. Docker is not
-installed on the development Windows host, so its live acceptance runs on the
-hosted Docker runner.
+or cleanup after every grant-revocation and failed-execution path. A focused
+Windows unit regression verifies Docker CLI launches use a private temporary
+configuration and omit inherited Docker authentication/configuration, SSH-agent,
+cloud-secret, and user-profile environment variables; live daemon credential
+handling and host-sentinel acceptance remain open. Docker is not installed on
+the development Windows host, so its live acceptance runs on the hosted Docker
+runner.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 

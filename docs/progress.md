@@ -1,5 +1,9 @@
 # Project phase assessment (2026-11-26)
 
+## Check Docker CLI credential environment isolation (2026-11-26)
+
+Added a regression for the subprocess environment used by local Docker operations. It confirms each CLI launch receives a private temporary `DOCKER_CONFIG`/home/temp directory, a narrowly assembled PATH, and no inherited Docker auth/config, SSH-agent, cloud-secret, or Windows user-profile variables. The focused Windows test passes; Ruff, format, and diff checks pass. This validates CLI environment construction, not registry authentication behavior or daemon-side credential handling; live host-sentinel and installed Windows acceptance remain open.
+
 ## Verify Docker sessions across specialist tasks (2026-11-26)
 
 Extended the durable coordinator acceptance to two specialist tasks in one run. Task A wrote a private file into its Docker session; task B received a distinct task-scoped session and could not see that file. Stopping the run then confirmed cleanup of the parent session and both specialist sessions. Hosted Docker run [45793528249](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45793528249) passed all 14 live-engine cases on Docker 28.0.4 with the pinned Python image ([JUnit](../.acceptance/hosted-docker-task-session-45793528249/docker-local-acceptance-45793528249/junit.xml)). Exact-source Windows run [45793528115](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45793528115) passed on `5fdf666a`: 1,783 tests passed and 43 skipped in 637.10 seconds; Ruff, formatting, Pyright, browser/Edge, contracts, desktop UI, and process-recovery checks also passed. Live Docker tests skip locally because Docker is not installed on this Windows host. Still open: Docker crash-point recovery, installed Windows coordinator/grant/artifact acceptance, credential and host isolation checks, aggregate session budgets, and revocation/failure cleanup coverage.
