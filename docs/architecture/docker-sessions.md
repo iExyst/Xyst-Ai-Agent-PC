@@ -74,14 +74,23 @@ passed all 13 live-engine transport cases, including archive content, receipt, a
 ([JUnit evidence](../../.acceptance/hosted-docker-session-45783624096/docker-local-acceptance-45783624096/junit.xml)). The newer hosted Docker run [45787095885](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45787095885)
 passed 14 live-engine cases, adding the SQLite-backed command controller, repeated session commands, archived artifact receipt and contents, and stopped-run recovery
 ([JUnit evidence](../../.acceptance/hosted-docker-coordinator-45787095885/docker-local-acceptance-45787095885/junit.xml)).
-Exact-source Windows CI [45790438139](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45790438139)
-passed on commit `c576d845` with 1,783 Python tests and 43 skipped and all configured browser, static, type, desktop, API-contract, and process-recovery checks. The wider acceptance gate is still open. In particular,
-real-engine evidence does not yet cover cross-task isolation through the
-coordinator, host sentinels and Docker credential isolation, crash points during
-reservation, container creation, active execution, output receipt, or close, app
-restart through the installed Windows coordinator, aggregate session resource
-budgets, and cleanup after every grant-revocation and failed-execution path.
-The controller scenario reuses the journaled session across commands, verifies a second run receives a separate session with no access to the first run’s private file, and exercises run-stop recovery. The installed Windows coordinator and desktop grant/artifact path still require acceptance.
+Hosted Docker run [45793528249](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45793528249)
+passed all 14 live-engine cases and extends coordinator evidence to task isolation:
+two specialist tasks in one run received distinct sessions, task B could not read
+task A's private file, and stopped-run recovery cleaned the parent and both task
+sessions ([JUnit evidence](../../.acceptance/hosted-docker-task-session-45793528249/docker-local-acceptance-45793528249/junit.xml)).
+The prior coordinator scenario also verifies a second run receives a separate
+session with no access to the first run's private file, archive receipt, and
+run-stop cleanup. Exact-source Windows CI [45793528115](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45793528115)
+passed on `5fdf666a` with 1,783 Python tests and 43 skipped, plus configured
+browser, static, type, desktop, API-contract, and process-recovery checks.
+The wider acceptance gate is still open: real-engine coverage does not yet prove
+host-sentinel and Docker-credential isolation, crashes during reservation,
+container creation, active execution, output receipt, or close, installed
+Windows coordinator/grant/artifact behavior, aggregate session resource budgets,
+or cleanup after every grant-revocation and failed-execution path. Docker is not
+installed on the development Windows host, so its live acceptance runs on the
+hosted Docker runner.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 
