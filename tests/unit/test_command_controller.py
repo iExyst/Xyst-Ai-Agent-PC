@@ -1,9 +1,11 @@
 import asyncio
 import base64
 import hashlib
+import io
 import json
 import os
 import subprocess
+import tarfile
 import time
 from uuid import uuid4
 
@@ -185,6 +187,74 @@ async def test_controller_commits_only_registered_matching_output(workspace_tmp_
     )
     assert result["succeeded"] is True
     assert len(store.list_artifacts(run_id)) == 3
+
+
+async def test_controller_persists_only_validated_session_archives_as_run_artifacts(
+    workspace_tmp_path,
+):
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w:") as archive:
+        member = tarfile.TarInfo("./review.txt")
+        content = b"owner-reviewed session output"
+        member.size = len(content)
+        archive.addfile(member, io.BytesIO(content))
+    archive_bytes = archive_buffer.getvalue()
+
+    class ExportTransport(FixtureTransport):
+        async def run(
+            self,
+            intent,
+            snapshot,
+            *,
+            deadline,
+            on_output=None,
+            on_session_container=None,
+        ):
+            if on_session_container is not None:
+                await on_session_container("c" * 64)
+            result = await super().run(intent, snapshot, deadline=deadline, on_output=on_output)
+            result.update(
+                {
+                    "docker_session_available": True,
+                    "docker_session_archive_b64": base64.b64encode(archive_bytes).decode(),
+                    "docker_session_archive_bytes": len(archive_bytes),
+                    "docker_session_archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
+                }
+            )
+            return result
+
+    image = "registry.example/xaa@sha256:" + "b" * 64
+    grant = {
+        "backend": "docker-local-v1",
+        "distribution": "Docker-local",
+        "profile_sha256": "a" * 64,
+        "image_reference": image,
+        "max_seconds": 30,
+        "docker_session_reuse": True,
+        "docker_session_export": True,
+    }
+    controller, store, run_id, token, _project = setup(
+        workspace_tmp_path, ExportTransport(), command_grant=grant
+    )
+    result = await controller.execute(
+        run_id,
+        token,
+        "export-command",
+        {"argv": ["fixture"]},
+        idempotency_key="export-command",
+        deadline=time.monotonic() + 15,
+    )
+
+    assert result["session_archive_artifact_id"]
+    artifact = next(
+        item
+        for item in store.list_artifacts(run_id)
+        if item["id"] == result["session_archive_artifact_id"]
+    )
+    assert artifact["media_type"] == "application/x-tar"
+    assert artifact["size_bytes"] == len(archive_bytes)
+    assert artifact["sha256"] == hashlib.sha256(archive_bytes).hexdigest()
+    assert artifact["provenance"].startswith("execution.session_archive:")
 
 
 async def test_active_command_cancellation_seals_unknown_outcome_without_replay(workspace_tmp_path):

@@ -155,12 +155,27 @@ def test_reusable_docker_session_is_explicit_and_backend_scoped() -> None:
         docker_session_reuse=True,
     )
     assert "persists across commands" in command_tool_description(grant)
+    export_grant = grant.model_copy(update={"docker_session_export": True})
+    assert "validated session archive" in command_tool_description(export_grant)
+    with pytest.raises(ValueError, match="requires the owner session-reuse grant"):
+        CommandGrant(
+            backend="docker-local-v1",
+            distribution="Docker-local",
+            profile_sha256="c" * 64,
+            image_reference=IMAGE,
+            docker_session_export=True,
+        )
     with pytest.raises(ValueError, match="only for the Docker backend"):
         CommandGrant(
             distribution="Ubuntu-24.04",
             profile_sha256="c" * 64,
             docker_session_reuse=True,
         )
+
+
+def test_docker_session_export_requires_an_owner_granted_session() -> None:
+    with pytest.raises(ValueError, match="requires the owner session-reuse grant"):
+        intent(docker_session_export=True)
 
 
 def test_docker_intent_cannot_change_the_granted_image() -> None:

@@ -14,6 +14,10 @@ from xaa.credentials import CredentialStore
 from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandIntent
 from xaa.runtime.command_transport import CommandTransport
+from xaa.runtime.docker_session_archive import (
+    MAX_SESSION_ARCHIVE_BYTES,
+    validate_session_archive,
+)
 from xaa.runtime.snapshot_worker import capture_command_snapshot
 from xaa.storage.commands import (
     CommandCleanupEvidence,
@@ -40,15 +44,29 @@ class CommandController:
         self.journal = CommandJournal(store, task_scope=task_scope, purpose=purpose)
         self.credential_store = credential_store
 
-    def artifact(self, run_id: str, owner: str, identity: str, kind: str, data: bytes) -> str:
+    def artifact(
+        self,
+        run_id: str,
+        owner: str,
+        identity: str,
+        kind: str,
+        data: bytes,
+        *,
+        media_type: str = "text/plain",
+    ) -> str:
         directory = command_artifact_root(self.store, create=True)
-        name = f"{uuid4()}.{kind}.bin"
+        extension = "tar" if media_type == "application/x-tar" else "bin"
+        name = f"{uuid4()}.{kind}.{extension}"
         with (directory / name).open("xb") as target:
             target.write(data)
             target.flush()
             os.fsync(target.fileno())
         return self.store.register_artifact(
-            run_id, owner, name, provenance=f"execution.{kind}:{identity}"
+            run_id,
+            owner,
+            name,
+            provenance=f"execution.{kind}:{identity}",
+            media_type=media_type,
         )["id"]
 
     async def cleanup(self, intent: CommandIntent) -> CommandCleanupEvidence:
@@ -309,6 +327,37 @@ class CommandController:
                 output_ids[stream + "_artifact_id"] = self.artifact(
                     run_id, owner, intent.execution_id, stream, data
                 )
+            if intent.docker_session_export:
+                try:
+                    encoded_archive = observed.get("docker_session_archive_b64")
+                    if (
+                        not isinstance(encoded_archive, str)
+                        or len(encoded_archive) > ((MAX_SESSION_ARCHIVE_BYTES + 2) // 3) * 4
+                    ):
+                        raise ValueError("Session archive is missing or too large.")
+                    archive_data = base64.b64decode(encoded_archive, validate=True)
+                    archive = validate_session_archive(archive_data)
+                    if archive.size_bytes != observed.get(
+                        "docker_session_archive_bytes"
+                    ) or archive.sha256 != observed.get("docker_session_archive_sha256"):
+                        raise ValueError("Session archive digest does not match its receipt.")
+                    output_ids["session_archive_artifact_id"] = self.artifact(
+                        run_id,
+                        owner,
+                        intent.docker_session_id or intent.execution_id,
+                        "session_archive",
+                        archive_data,
+                        media_type="application/x-tar",
+                    )
+                except (OSError, ValueError):
+                    output_ids["session_archive_error"] = (
+                        "The bounded session archive could not be validated or stored."
+                    )
+                else:
+                    if observed.get("docker_session_export_error") is not None:
+                        output_ids["session_archive_error"] = (
+                            "Session files could not be packaged within the validated archive limits."
+                        )
             outcome = CommandOutcome.model_validate(
                 {
                     **{

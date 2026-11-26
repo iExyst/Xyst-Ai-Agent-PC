@@ -25,6 +25,7 @@ class CommandGrant(BaseModel):
     )
     docker_network_access: bool = False
     docker_session_reuse: bool = False
+    docker_session_export: bool = False
     ssh_identity_file: str | None = Field(default=None, min_length=1, max_length=1024)
 
     @model_validator(mode="after")
@@ -38,6 +39,8 @@ class CommandGrant(BaseModel):
             raise ValueError("Docker network access is available only for the Docker backend.")
         if self.docker_session_reuse and self.backend != "docker-local-v1":
             raise ValueError("Reusable Docker sessions are available only for the Docker backend.")
+        if self.docker_session_export and not self.docker_session_reuse:
+            raise ValueError("Docker session export requires the owner session-reuse grant.")
         if self.backend == "ssh-wsl-bubblewrap-v1":
             if self.ssh_identity_file is None:
                 raise ValueError("SSH grants require the owner's selected private-key path.")
@@ -61,7 +64,13 @@ def command_tool_description(grant: CommandGrant) -> str:
             "resource limits, and only a private writable copy of the project; "
             + (
                 "that isolated workspace persists across commands for this run and specialist task, "
-                "but never edits the original project."
+                "but never edits the original project. "
+                + (
+                    "After each successful command, the app may retain a validated session archive "
+                    "up to 8 MiB as an untrusted run artifact for owner review."
+                    if grant.docker_session_export
+                    else "Session files are not exported as run artifacts."
+                )
                 if grant.docker_session_reuse
                 else "command changes are discarded and never edit the original project."
             )
@@ -133,6 +142,7 @@ class CommandIntent(CommandArguments):
     )
     docker_network_access: bool = False
     docker_session_reuse: bool = False
+    docker_session_export: bool = False
     docker_session_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     ssh_identity_file: str | None = Field(default=None, min_length=1, max_length=1024)
     workspace: str
@@ -160,6 +170,8 @@ class CommandIntent(CommandArguments):
                 raise ValueError("Reusable Docker commands require a saved session identity.")
         elif self.docker_session_id is not None:
             raise ValueError("A Docker session identity requires the owner reuse grant.")
+        if self.docker_session_export and not self.docker_session_reuse:
+            raise ValueError("Docker session export requires the owner session-reuse grant.")
         if self.backend == "ssh-wsl-bubblewrap-v1":
             if self.ssh_identity_file is None:
                 raise ValueError("SSH commands require the saved owner-selected identity file.")

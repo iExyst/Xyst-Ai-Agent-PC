@@ -1128,6 +1128,19 @@ def test_artifact_download_requires_auth_and_rejects_tampering(workspace_tmp_pat
         assert image_response.content == png.read_bytes()
         assert image_response.headers["content-type"] == "image/png"
         assert image["media_type"] == "image/png"
+        archive = root / "session.tar"
+        archive.write_bytes(b"bounded session archive")
+        session_archive = store.register_artifact(
+            run_id,
+            token,
+            archive.name,
+            provenance="execution.session_archive:session-1",
+            media_type="application/x-tar",
+        )
+        archive_response = client.get(f"/artifacts/{session_archive['id']}", headers=headers)
+        assert archive_response.content == archive.read_bytes()
+        assert archive_response.headers["content-type"] == "application/x-tar"
+        assert archive_response.headers["content-disposition"].endswith('.tar"')
         artifact.write_bytes(b"tampered")
         assert client.get(route, headers=headers).status_code == 409
 

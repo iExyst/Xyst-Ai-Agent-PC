@@ -70,6 +70,8 @@ class CommandOutcome(BaseModel):
     workspace_changes_persisted: Literal[False] = False
     stdout_artifact_id: str = Field(min_length=1, max_length=128)
     stderr_artifact_id: str = Field(min_length=1, max_length=128)
+    session_archive_artifact_id: str | None = Field(default=None, min_length=1, max_length=128)
+    session_archive_error: str | None = Field(default=None, max_length=256)
     stdout_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     stderr_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     stdout_bytes: int = Field(ge=0, le=1048576)
@@ -558,6 +560,7 @@ class CommandJournal:
                 image_reference=grant.image_reference,
                 docker_network_access=grant.docker_network_access,
                 docker_session_reuse=grant.docker_session_reuse,
+                docker_session_export=grant.docker_session_export,
                 docker_session_id=docker_session_id,
                 ssh_identity_file=grant.ssh_identity_file,
                 workspace=workspace,

@@ -30,6 +30,10 @@ from xaa.runtime.docker_execution_policy import (
     validate_local_engine_endpoint,
 )
 from xaa.runtime.docker_local_probe import PROBE_CODE
+from xaa.runtime.docker_session_archive import (
+    MAX_SESSION_ARCHIVE_BYTES,
+    validate_session_archive,
+)
 from xaa.runtime.owned_transport import TransportError
 from xaa.runtime.processes import stop_owned_process
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot, checked_path
@@ -216,6 +220,7 @@ class DockerLocalTransport:
     profile_sha256: str
     docker_network_access: bool = False
     docker_session_reuse: bool = False
+    docker_session_export: bool = False
     _control_only: bool = False
     _active: dict[str, asyncio.subprocess.Process] = field(
         default_factory=lambda: dict[str, asyncio.subprocess.Process]()
@@ -248,6 +253,7 @@ class DockerLocalTransport:
                 authority.profile_sha256,
                 docker_network_access=authority.docker_network_access,
                 docker_session_reuse=authority.docker_session_reuse,
+                docker_session_export=authority.docker_session_export,
                 _control_only=True,
             )
         image = await cls._inspect_image(executable, endpoint, image_reference, deadline=deadline)
@@ -285,6 +291,7 @@ class DockerLocalTransport:
             profile,
             docker_network_access=authority.docker_network_access,
             docker_session_reuse=authority.docker_session_reuse,
+            docker_session_export=authority.docker_session_export,
         )
 
     @staticmethod
@@ -358,6 +365,7 @@ class DockerLocalTransport:
             or intent.profile_sha256 != self.profile_sha256
             or intent.docker_network_access != self.docker_network_access
             or intent.docker_session_reuse != self.docker_session_reuse
+            or intent.docker_session_export != self.docker_session_export
         ):
             raise PermissionError("Execution grant does not match the Docker image profile.")
 
@@ -385,6 +393,7 @@ class DockerLocalTransport:
             image_reference=self.image_reference,
             docker_network_access=self.docker_network_access,
             docker_session_reuse=self.docker_session_reuse,
+            docker_session_export=self.docker_session_export,
             docker_session_id=os.urandom(16).hex() if self.docker_session_reuse else None,
             workspace="application-owned-readiness-fixture",
         )
@@ -765,6 +774,33 @@ class DockerLocalTransport:
                 "elapsed_seconds": max(0.0, time.monotonic() - started),
                 "docker_session_available": session_mode and normal,
             }
+            if session_mode and normal and exit_code == 0 and intent.docker_session_export:
+                try:
+                    archive = await self._run_cli(
+                        (
+                            "exec",
+                            "--user",
+                            "65534:65534",
+                            docker_container_target(intent),
+                            "tar",
+                            "-cf",
+                            "-",
+                            "-C",
+                            "/workspace",
+                            ".",
+                        ),
+                        deadline=deadline,
+                        output_limit=MAX_SESSION_ARCHIVE_BYTES,
+                    )
+                    validated = validate_session_archive(archive)
+                    result["docker_session_archive_b64"] = base64.b64encode(archive).decode("ascii")
+                    result["docker_session_archive_sha256"] = validated.sha256
+                    result["docker_session_archive_bytes"] = validated.size_bytes
+                    result["docker_session_archive_files"] = validated.file_count
+                except (OSError, RuntimeError, TimeoutError, TransportError, ValueError):
+                    result["docker_session_export_error"] = (
+                        "Session files could not be packaged within the validated archive limits."
+                    )
             if (not session_mode or not normal) and not await self._remove_container(
                 intent, deadline=time.monotonic() + 15
             ):
@@ -802,6 +838,7 @@ class DockerLocalTransport:
             or intent.profile_sha256 != self.profile_sha256
             or intent.docker_network_access != self.docker_network_access
             or intent.docker_session_reuse != self.docker_session_reuse
+            or intent.docker_session_export != self.docker_session_export
         ):
             raise PermissionError("Docker control must use the saved execution identity.")
         process = self._active.get(intent.execution_id)

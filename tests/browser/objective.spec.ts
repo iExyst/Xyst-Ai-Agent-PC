@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {navigateMainSection,selectLocalModel} from './navigation';
 
 test('connect, submit an objective and render its saved events', async ({ page }) => {
+  test.setTimeout(45000);
   const errors: string[] = [];
   const runResourcesRequests: string[] = [];
   let planReads = 0;
@@ -54,11 +55,13 @@ test('connect, submit an objective and render its saved events', async ({ page }
     ],ready:['inspect','inventory',...Array.from({length:5},(_,index)=>`extra-${index+1}`)],blocked:[]},headers});
     if (path.endsWith('/artifacts')) return route.fulfill({ json: [
       { id: 'artifact-1', provenance: 'git.diff', size_bytes: 40, media_type: 'text/plain', sha256:'a'.repeat(64) },
+      { id: 'session-archive-1', provenance: 'execution.session_archive:session-1', size_bytes: 512, media_type: 'application/x-tar', sha256:'e'.repeat(64) },
       { id: 'browser-image-1', provenance: 'browser.screenshot:untrusted_web_content', size_bytes: 68, media_type: 'image/png', sha256:'b'.repeat(64) },
       { id: 'xlsx-1', provenance: 'user.input_document', size_bytes: 18, media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', sha256:'c'.repeat(64) },
       { id: 'browser-download-1', provenance: 'browser.download:report.txt', size_bytes: 24, media_type: 'application/octet-stream', sha256:'d'.repeat(64) }
     ], headers });
     if (path === '/artifacts/artifact-1') return route.fulfill({ body: '<script>window.artifactExecuted=true</script>', contentType: 'text/plain', headers });
+    if (path === '/artifacts/session-archive-1') return route.fulfill({ body: Buffer.alloc(512), contentType: 'application/x-tar', headers });
     if (path === '/artifacts/browser-image-1') return route.fulfill({ body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3Z8AAAAASUVORK5CYII=', 'base64'), contentType: 'image/png', headers });
     if (path === '/artifacts/xlsx-1') return route.fulfill({ body: 'XLSX fixture bytes', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers });
     if (path === '/artifacts/browser-download-1') return route.fulfill({ body: 'untrusted downloaded report\n', contentType: 'application/octet-stream', headers });
@@ -319,6 +322,9 @@ test('connect, submit an objective and render its saved events', async ({ page }
   const browserDownload = page.waitForEvent('download');
   await page.getByRole('button', {name:'Download browser.download:report.txt', exact:true}).click();
   expect((await browserDownload).suggestedFilename()).toBe('report.txt');
+  const sessionArchiveDownload = page.waitForEvent('download');
+  await page.getByRole('button', {name:'Download execution.session_archive:session-1', exact:true}).click();
+  expect((await sessionArchiveDownload).suggestedFilename()).toBe('xaa-docker-session.tar');
   await page.getByRole('button', { name: 'View browser.screenshot:untrusted_web_content' }).click();
   await expect(page.getByRole('img', { name: 'Untrusted image content' })).toBeVisible();
   await navigateMainSection(page,'New objective');

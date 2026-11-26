@@ -2,8 +2,10 @@
 
 import asyncio
 import base64
+import io
 import json
 import os
+import tarfile
 import tempfile
 import time
 from uuid import uuid4
@@ -12,6 +14,7 @@ import pytest
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
 from xaa.runtime.docker_execution_policy import docker_create_argv
 from xaa.runtime.docker_local_transport import DockerLocalTransport, _cli_request
+from xaa.runtime.docker_session_archive import validate_session_archive
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 
 IMAGE_REFERENCE = os.environ.get("XAA_DOCKER_IMAGE_DIGEST", "")
@@ -225,6 +228,57 @@ async def test_live_docker_session_recovery_after_manager_restart_never_replays_
         assert status["removed"] is True
     finally:
         await launcher.control("cleanup", intent, deadline=time.monotonic() + 15)
+
+
+@pytest.mark.asyncio
+async def test_live_docker_session_exports_bounded_archive_without_project_integration() -> None:
+    live_docker_required()
+    grant = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+        docker_session_export=True,
+    )
+    transport = await DockerLocalTransport.discover(grant, deadline=time.monotonic() + 20)
+    intent = CommandIntent(
+        argv=[
+            "python3",
+            "-I",
+            "-c",
+            "from pathlib import Path; Path('review.txt').write_text('owner review only')",
+        ],
+        max_seconds=10,
+        execution_id=uuid4().hex,
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256=transport.profile_sha256,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+        docker_session_export=True,
+        docker_session_id=uuid4().hex,
+        workspace="docker-live-session-export",
+    )
+    try:
+        result = await transport.run(
+            intent,
+            WorkspaceSnapshot((), (), ()),
+            deadline=time.monotonic() + 30,
+            on_session_container=lambda _container_id: asyncio.sleep(0),
+        )
+        assert result["succeeded"] is True and result["docker_session_available"] is True
+        encoded = result["docker_session_archive_b64"]
+        archive_data = base64.b64decode(encoded, validate=True)
+        receipt = validate_session_archive(archive_data)
+        assert receipt.size_bytes == result["docker_session_archive_bytes"]
+        assert receipt.sha256 == result["docker_session_archive_sha256"]
+        with tarfile.open(fileobj=io.BytesIO(archive_data), mode="r:") as archive:
+            member = next(item for item in archive if item.name.endswith("review.txt"))
+            extracted = archive.extractfile(member)
+            assert extracted is not None and extracted.read() == b"owner review only"
+    finally:
+        await transport.control("cleanup", intent, deadline=time.monotonic() + 15)
 
 
 @pytest.mark.asyncio

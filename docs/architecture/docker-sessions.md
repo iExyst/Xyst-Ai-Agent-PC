@@ -27,9 +27,13 @@ part of session reuse. Those capabilities need independent owner grants and
 their own canonicalization, secret-redaction, and acceptance requirements.
 
 The container workspace may persist between commands inside the session, but it
-must remain isolated from the project directory. When a session closes, X.A.A.
-may preserve a bounded, digest-checked archive as an untrusted run artifact for
-owner review. It must never copy session changes directly into the project.
+must remain isolated from the project directory. A separate default-off owner
+grant can export a tar archive after a successful command. The archive is capped
+at 8 MiB, must contain at most 4096 regular files with at most 32 MiB of declared
+content, and rejects traversal paths, duplicate paths, links, special files, and
+privileged mode bits. The app validates the tar structure and digest before
+storing it as an untrusted run artifact. Download and inspect it through the
+artifact panel; session files are never copied directly into the project.
 
 ## Durable lifecycle
 
@@ -64,14 +68,18 @@ between distinct session IDs, default-denied network and the explicit bridge
 grant, timeout and cancellation cleanup, bounded command output, process/CPU
 limits, manager-restart cleanup without command replay, and orphan cleanup.
 
-The wider acceptance gate is still open. In particular, real-engine evidence
+The new archive validator and owner grant have local unit, controller, API
+download, desktop build, and browser coverage; the new live Docker archive case
+has not run yet. The wider acceptance gate is still open. In particular, real-engine evidence
 does not yet cover cross-run/task isolation through the coordinator, host
 sentinels and Docker credential isolation, crash points during reservation,
 container creation, active execution, output receipt, or close, app restart
 through the installed Windows coordinator, aggregate session resource budgets,
-and cleanup after every grant-revocation and failed-execution path. A bounded,
-digest-checked archive export is not implemented; session changes must not be
-copied into the project directly and should reach it only through owner review.
+and cleanup after every grant-revocation and failed-execution path. Hosted
+real-engine export acceptance must verify archive contents and receipts, and the
+installed Windows coordinator must exercise the grant and artifact path.
+Session changes must not be copied into the project directly and should reach
+it only through owner review.
 
 The disposable-per-command profile remains the default. Reusable sessions are
 available only when the owner opts in, and they should not be described as full

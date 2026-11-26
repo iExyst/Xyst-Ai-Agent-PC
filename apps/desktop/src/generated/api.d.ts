@@ -2627,6 +2627,11 @@ export interface components {
              */
             docker_network_access: boolean;
             /**
+             * Docker Session Export
+             * @default false
+             */
+            docker_session_export: boolean;
+            /**
              * Docker Session Reuse
              * @default false
              */

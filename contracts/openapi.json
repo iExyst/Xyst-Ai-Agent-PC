@@ -547,6 +547,11 @@
             "title": "Docker Network Access",
             "type": "boolean"
           },
+          "docker_session_export": {
+            "default": false,
+            "title": "Docker Session Export",
+            "type": "boolean"
+          },
           "docker_session_reuse": {
             "default": false,
             "title": "Docker Session Reuse",

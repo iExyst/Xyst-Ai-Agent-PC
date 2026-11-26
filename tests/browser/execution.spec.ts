@@ -99,8 +99,10 @@ test('Docker setup checks a pinned image and network access is a separate run gr
   const commandPermission=page.getByLabel('Allow isolated commands for this next run');
   const networkPermission=page.getByLabel("Allow this run's Docker commands to use the bridge network");
   const sessionPermission=page.getByLabel('Reuse a private Docker session for this run');
+  const exportPermission=page.getByLabel('Save a bounded Docker session archive after each successful command');
   await expect(networkPermission).toBeDisabled();
   await expect(sessionPermission).not.toBeChecked();
+  await expect(exportPermission).toBeDisabled();
   await commandPermission.check();
   await expect(networkPermission).toBeEnabled();
   await expect(sessionPermission).toBeEnabled();
@@ -113,9 +115,11 @@ test('Docker setup checks a pinned image and network access is a separate run gr
   await expect.poll(()=>grants.length).toBe(2);
   expect(grants[1]).toMatchObject({backend:'docker-local-v1',docker_network_access:true,docker_session_reuse:false});
   await sessionPermission.check();
+  await expect(exportPermission).toBeEnabled();
+  await exportPermission.check();
   await page.getByRole('button',{name:'Start objective',exact:true}).click();
   await expect.poll(()=>grants.length).toBe(3);
-  expect(grants[2]).toMatchObject({backend:'docker-local-v1',docker_network_access:true,docker_session_reuse:true});
+  expect(grants[2]).toMatchObject({backend:'docker-local-v1',docker_network_access:true,docker_session_reuse:true,docker_session_export:true});
 });
 
 test('SSH setup sends the selected Windows alias and identity for pinned-host checks',async({page})=>{

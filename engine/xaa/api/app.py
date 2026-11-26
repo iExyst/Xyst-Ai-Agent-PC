@@ -5366,6 +5366,7 @@ def create_app(
             raise HTTPException(status_code=409, detail="Artifact integrity verification failed.")
         extension = {
             "application/octet-stream": "bin",
+            "application/x-tar": "tar",
             "image/png": "png",
             "image/jpeg": "jpg",
             "application/pdf": "pdf",

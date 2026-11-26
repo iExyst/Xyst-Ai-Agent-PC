@@ -279,7 +279,13 @@ class RunStore:
         provenance: str,
         media_type: str = "text/plain",
     ) -> dict[str, Any]:
-        if media_type not in {"text/plain", "image/png", "image/jpeg", "application/octet-stream"}:
+        if media_type not in {
+            "text/plain",
+            "image/png",
+            "image/jpeg",
+            "application/octet-stream",
+            "application/x-tar",
+        }:
             raise ValueError("Managed artifacts support plain text, PNG and JPEG images.")
         root = (self.path.parent / "artifacts").resolve(strict=True)
         if Path(filename).name != filename:
