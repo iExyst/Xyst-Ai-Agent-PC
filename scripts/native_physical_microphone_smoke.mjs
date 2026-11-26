@@ -2,18 +2,43 @@ import { chromium, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { spawn, execFileSync } from 'node:child_process';
+import { createServer } from 'node:net';
 import path from 'node:path';
 
 if (process.platform !== 'win32') throw new Error('Physical microphone acceptance requires Windows.');
 
 const executable = path.resolve(process.argv[2] ?? 'build/native-dev/xaa-desktop.exe');
 const root = path.resolve('.acceptance', `physical-microphone-${randomUUID()}`);
-const debugPort = 19347;
+const profileDirectories = [
+  root,
+  path.join(root, 'appdata'),
+  path.join(root, 'localappdata'),
+  path.join(root, 'data'),
+  path.join(root, 'webview'),
+];
+await Promise.all(profileDirectories.map(directory => mkdir(directory, { recursive: true })));
+const portProbe = createServer();
+await new Promise((resolve, reject) => {
+  portProbe.once('error', reject);
+  portProbe.listen(0, '127.0.0.1', resolve);
+});
+const address = portProbe.address();
+if (!address || typeof address === 'string') throw new Error('Could not reserve a WebView debugging port.');
+const debugPort = address.port;
+await new Promise((resolve, reject) => portProbe.close(error => error ? reject(error) : resolve()));
+const inheritedEnvironmentNames = new Set([
+  'COMSPEC', 'HOMEDRIVE', 'HOMEPATH', 'OS', 'PATHEXT', 'PROCESSOR_ARCHITECTURE',
+  'PROCESSOR_IDENTIFIER', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'SYSTEMROOT', 'TEMP',
+  'TMP', 'USERDOMAIN', 'USERNAME', 'USERPROFILE', 'WINDIR',
+]);
+const childEnvironment = Object.fromEntries(Object.entries(process.env)
+  .filter(([key]) => inheritedEnvironmentNames.has(key.toUpperCase())));
+childEnvironment.PATH = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32');
 const desktop = spawn(executable, [], {
   windowsHide: true,
   stdio: 'ignore',
   env: {
-    ...process.env,
+    ...childEnvironment,
     APPDATA: path.join(root, 'appdata'),
     LOCALAPPDATA: path.join(root, 'localappdata'),
     XAA_DATA_DIR: path.join(root, 'data'),
@@ -26,7 +51,6 @@ let browser;
 let report;
 
 try {
-  await mkdir(root, { recursive: true });
   let connected = false;
   for (let attempt = 0; attempt < 120; attempt++) {
     try {
