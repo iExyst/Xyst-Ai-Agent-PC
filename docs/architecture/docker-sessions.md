@@ -114,7 +114,7 @@ The process-death scenario killed the active worker group, observed the durable
 busy session, removed its container through stopped-run recovery, and confirmed
 the pending call was sealed without completion or replay
 ([JUnit evidence](../../.acceptance/hosted-docker-worker-crash-45803924172/junit.xml)).
-Exact-source Windows verification for the corrected test is still running.
+Exact-source Windows workflow [45803924142](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45803924142) passed on `b0ac2756` with 1,784 Python tests and 44 skipped, plus configured browser/Edge, static, type, desktop, API-contract, and process-recovery checks.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 
