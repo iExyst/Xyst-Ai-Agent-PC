@@ -3095,6 +3095,8 @@ export interface components {
         };
         /** GPUResourceSnapshot */
         GPUResourceSnapshot: {
+            /** Device Id */
+            device_id?: string | null;
             /** Memory Free Bytes */
             memory_free_bytes: number | null;
             /** Memory Total Bytes */

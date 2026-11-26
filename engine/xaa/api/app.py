@@ -301,6 +301,7 @@ class ModelResourceEstimateResponse(BaseModel):
 
 class GPUResourceSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+    device_id: str | None = Field(default=None, min_length=1, max_length=160)
     name: str = Field(min_length=1, max_length=128)
     memory_total_bytes: int | None = Field(ge=1)
     memory_free_bytes: int | None = Field(ge=0)

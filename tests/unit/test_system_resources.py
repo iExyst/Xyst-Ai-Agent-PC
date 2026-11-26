@@ -29,16 +29,40 @@ def test_parse_nvidia_smi_csv_supports_multiple_and_unavailable_metrics() -> Non
         "NVIDIA GeForce RTX 5080, 16303, 5762, 95\nNVIDIA GPU, N/A, N/A, 0\nmalformed,row\n"
     ) == [
         {
+            "device_id": None,
             "name": "NVIDIA GeForce RTX 5080",
             "memory_total_bytes": 16303 * 1024 * 1024,
             "memory_free_bytes": 5762 * 1024 * 1024,
             "utilization_percent": 95,
         },
         {
+            "device_id": None,
             "name": "NVIDIA GPU",
             "memory_total_bytes": None,
             "memory_free_bytes": None,
             "utilization_percent": 0,
+        },
+    ]
+
+
+def test_parse_nvidia_smi_csv_retains_only_well_formed_uuid() -> None:
+    assert system_resources.parse_nvidia_smi_csv(
+        "GPU-01234567-89ab-cdef-0123-456789abcdef, Twin GPU, 1000, 800, 20\n"
+        "not-a-uuid, Twin GPU, 1000, 700, 30\n"
+    ) == [
+        {
+            "device_id": "nvidia:GPU-01234567-89ab-cdef-0123-456789abcdef",
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000 * 1024 * 1024,
+            "memory_free_bytes": 800 * 1024 * 1024,
+            "utilization_percent": 20,
+        },
+        {
+            "device_id": None,
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000 * 1024 * 1024,
+            "memory_free_bytes": 700 * 1024 * 1024,
+            "utilization_percent": 30,
         },
     ]
 
@@ -234,6 +258,70 @@ def test_merge_gpu_devices_pairs_duplicate_names_one_to_one() -> None:
     ]
 
 
+def test_resource_sample_summary_tracks_same_name_adapters_by_stable_id() -> None:
+    result = system_resources.summarize_resource_samples(
+        [
+            {
+                "gpu_devices": [
+                    {
+                        "device_id": "dxgi:00000000:00000001",
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 900,
+                        "utilization_percent": 10,
+                    },
+                    {
+                        "device_id": "dxgi:00000000:00000002",
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 800,
+                        "utilization_percent": 20,
+                    },
+                ]
+            },
+            {
+                "gpu_devices": [
+                    {
+                        "device_id": "dxgi:00000000:00000002",
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 300,
+                        "utilization_percent": 80,
+                    },
+                    {
+                        "device_id": "dxgi:00000000:00000001",
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 600,
+                        "utilization_percent": 40,
+                    },
+                ]
+            },
+        ]
+    )
+
+    assert result["gpu_devices"] == {
+        "Twin GPU (device 1)": {"memory_used_peak_bytes": 400, "utilization_peak_percent": 40.0},
+        "Twin GPU (device 2)": {"memory_used_peak_bytes": 700, "utilization_peak_percent": 80.0},
+    }
+
+
+def test_merge_gpu_devices_prefers_matching_stable_ids_over_enumeration_order() -> None:
+    host_devices = [
+        {"device_id": "dxgi:00000000:00000001", "name": "Twin GPU", "memory_free_bytes": None},
+        {"device_id": "dxgi:00000000:00000002", "name": "Twin GPU", "memory_free_bytes": None},
+    ]
+    driver_devices = [
+        {"device_id": "dxgi:00000000:00000002", "name": "Twin GPU", "memory_free_bytes": 200},
+        {"device_id": "dxgi:00000000:00000001", "name": "Twin GPU", "memory_free_bytes": 100},
+    ]
+
+    assert system_resources.merge_gpu_devices(host_devices, driver_devices) == [
+        {"device_id": "dxgi:00000000:00000001", "name": "Twin GPU", "memory_free_bytes": 100},
+        {"device_id": "dxgi:00000000:00000002", "name": "Twin GPU", "memory_free_bytes": 200},
+    ]
+
+
 def test_windows_gpu_engine_counters_aggregate_processes_per_physical_engine() -> None:
     counters = [
         ("pid_10_luid_0x00000000_0x00016631_phys_0_eng_0_engtype_3D", 20.0),
@@ -288,6 +376,7 @@ def test_linux_gpu_devices_use_nvidia_smi_metrics(monkeypatch: pytest.MonkeyPatc
 
     assert system_resources._gpu_devices() == [
         {
+            "device_id": None,
             "name": "NVIDIA GeForce RTX 5080",
             "memory_total_bytes": 16303 * 1024 * 1024,
             "memory_free_bytes": 11873 * 1024 * 1024,
@@ -357,12 +446,14 @@ def test_linux_amd_gpu_devices_reads_only_bounded_amd_vram_counters(
 
     assert system_resources.linux_amd_gpu_devices(drm) == [
         {
+            "device_id": "drm:card1",
             "name": "AMD Radeon Fixture",
             "memory_total_bytes": 1000,
             "memory_free_bytes": 750,
             "utilization_percent": None,
         },
         {
+            "device_id": "drm:card2",
             "name": "AMD GPU 2",
             "memory_total_bytes": 400,
             "memory_free_bytes": 0,

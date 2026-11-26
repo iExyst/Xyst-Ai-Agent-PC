@@ -81,9 +81,20 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
   const gpuCards=(snapshot?.gpu_devices??[]).map((gpu,index,devices)=>{
     const sameNameBefore=devices.slice(0,index).filter(item=>item.name===gpu.name).length;
     const sameNameCount=devices.filter(item=>item.name===gpu.name).length;
-    const adapterOrdinal=sameNameBefore+1;
+    const firstStableSample=gpu.device_id
+      ?history.find(sample=>sample.gpu_devices.some(item=>item.device_id===gpu.device_id))
+      :undefined;
+    const firstStableIndex=firstStableSample?.gpu_devices.findIndex(item=>item.device_id===gpu.device_id)??-1;
+    const adapterOrdinal=firstStableIndex>=0
+      ?firstStableSample!.gpu_devices.slice(0,firstStableIndex).filter(item=>item.name===gpu.name).length+1
+      :sameNameBefore+1;
     const title=sameNameCount>1?`${gpu.name} · Adapter ${adapterOrdinal}`:gpu.name;
-    const trend=history.map(sample=>sample.gpu_devices.filter(item=>item.name===gpu.name)[adapterOrdinal-1]?.utilization_percent??Number.NaN);
+    const trend=history.map(sample=>{
+      const match=gpu.device_id
+        ?sample.gpu_devices.find(item=>item.device_id===gpu.device_id)
+        :sample.gpu_devices.filter(item=>item.name===gpu.name)[adapterOrdinal-1];
+      return match?.utilization_percent??Number.NaN;
+    });
     return {gpu,adapterOrdinal,title,trend};
   });
   return <div className="system-monitor">
@@ -93,7 +104,7 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
         <ResourceCard title="Processor" value={snapshot.cpu_percent===null?'Measuring…':`${snapshot.cpu_percent.toFixed(1)}%`} detail={`${snapshot.logical_processors} logical processors`} percent={snapshot.cpu_percent} trend={history.map(sample=>sample.cpu_percent??Number.NaN)}/>
         <ResourceCard title="Memory" value={memoryPercent===null?'Unavailable':`${memoryPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.memory_available_bytes)} available of ${formatBytes(snapshot.memory_total_bytes)}`} percent={memoryPercent} trend={history.map(sample=>sample.memory_used_percent??Number.NaN)}/>
         <ResourceCard title="Profile drive" value={diskPercent===null?'Unavailable':`${diskPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.disk_free_bytes)} free of ${formatBytes(snapshot.disk_total_bytes)}`} percent={diskPercent} trend={diskTrend}/>
-        {gpuCards.map(({gpu,adapterOrdinal,title,trend})=><ResourceCard key={`${gpu.name}-${adapterOrdinal}`} title={title} value={gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`} detail={`${formatBytes(gpu.memory_free_bytes)} GPU memory free of ${formatBytes(gpu.memory_total_bytes)}`} percent={gpu.utilization_percent} trend={trend}/>)}
+        {gpuCards.map(({gpu,adapterOrdinal,title,trend})=><ResourceCard key={gpu.device_id??`${gpu.name}-${adapterOrdinal}`} title={title} value={gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`} detail={`${formatBytes(gpu.memory_free_bytes)} GPU memory free of ${formatBytes(gpu.memory_total_bytes)}`} percent={gpu.utilization_percent} trend={trend}/>)}
         <section className="system-resource-card" aria-label="Inference queue"><div className="system-resource-heading"><h2>Inference queue</h2><strong>{snapshot.queue_active?'Working':'Idle'}</strong></div><p>{snapshot.queue_waiting} waiting · {snapshot.queue_reserved_weight.toLocaleString()} estimated queue weight</p><p>Capacity: {snapshot.queue_max_pending} waiting requests · {snapshot.queue_max_reserved_weight.toLocaleString()} weight units</p></section>
       </div>
       <p className="system-monitor-note">GPU readings are reported when Windows adapter or NVIDIA driver telemetry is available. A missing GPU card means that telemetry isn’t available; it does not mean this computer has no accelerator. Queue weight limits estimated queued payload size; they do not predict model tokenization or GPU memory requirements.</p>

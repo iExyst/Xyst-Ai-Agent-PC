@@ -126,12 +126,26 @@ def _memory_bytes() -> tuple[int, int] | None:
 
 
 def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
-    """Parse bounded `nvidia-smi` CSV output without assuming a GPU model."""
+    """Parse bounded `nvidia-smi` CSV while retaining stable GPU UUIDs."""
     devices: list[dict[str, Any]] = []
     for row in csv.reader(text.splitlines()):
-        if len(row) != 4 or len(devices) >= 8:
+        if len(row) not in {4, 5} or len(devices) >= 8:
             continue
-        name = row[0].strip()[:128]
+        if len(row) == 5:
+            raw_uuid, raw_name, *metrics = row
+            device_id = (
+                f"nvidia:{raw_uuid.strip()}"
+                if re.fullmatch(
+                    r"GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
+                    raw_uuid.strip(),
+                    re.IGNORECASE,
+                )
+                else None
+            )
+        else:
+            raw_name, *metrics = row
+            device_id = None
+        name = raw_name.strip()[:128]
         if not name:
             continue
 
@@ -142,7 +156,7 @@ def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
                 return None
             return parsed if parsed >= 0 else None
 
-        total_mib, free_mib, utilization = (integer(value) for value in row[1:])
+        total_mib, free_mib, utilization = (integer(value) for value in metrics)
         total = total_mib * 1024 * 1024 if total_mib is not None else None
         free = (
             min(total, free_mib * 1024 * 1024)
@@ -153,6 +167,7 @@ def parse_nvidia_smi_csv(text: str) -> list[dict[str, Any]]:
         )
         devices.append(
             {
+                "device_id": device_id,
                 "name": name,
                 "memory_total_bytes": total,
                 "memory_free_bytes": free,
@@ -377,6 +392,7 @@ def linux_amd_gpu_devices(drm_root: Path = Path("/sys/class/drm")) -> list[dict[
             name = f"AMD GPU {card.name[4:]}"
         devices.append(
             {
+                "device_id": f"drm:{card.name}",
                 "name": name[:128],
                 "memory_total_bytes": total,
                 "memory_free_bytes": max(0, total - min(used, total)),
@@ -521,6 +537,7 @@ def _dxgi_gpu_devices(
                     pdh_counters.append((counter, len(devices)))
             devices.append(
                 {
+                    "device_id": f"dxgi:{high:08x}:{low:08x}",
                     "name": name,
                     "memory_total_bytes": total,
                     "memory_free_bytes": None,
@@ -579,7 +596,7 @@ def _gpu_devices(
             result = subprocess.run(
                 [
                     str(executable),
-                    "--query-gpu=name,memory.total,memory.free,utilization.gpu",
+                    "--query-gpu=uuid,name,memory.total,memory.free,utilization.gpu",
                     "--format=csv,noheader,nounits",
                 ],
                 check=True,
@@ -599,25 +616,45 @@ def merge_gpu_devices(
 ) -> list[dict[str, Any]]:
     """Keep host-wide devices while preferring matching vendor-driver metrics."""
     devices = list(host_devices)
+    host_indices_by_id = {
+        str(device["device_id"]): index
+        for index, device in enumerate(devices)
+        if isinstance(device.get("device_id"), str)
+    }
     host_indices_by_name: dict[str, list[int]] = {}
     for index, device in enumerate(devices):
         host_indices_by_name.setdefault(device["name"].casefold(), []).append(index)
     matched_by_name: dict[str, int] = {}
+    used_host_indices: set[int] = set()
     for device in driver_devices:
+        device_id = device.get("device_id")
+        stable_match = host_indices_by_id.get(device_id) if isinstance(device_id, str) else None
         name = device["name"].casefold()
         matches = host_indices_by_name.get(name, [])
         matched = matched_by_name.get(name, 0)
-        if matched >= len(matches):
-            devices.append(device)
+        if stable_match is not None:
+            if stable_match in used_host_indices:
+                continue
+            index = stable_match
         else:
+            while matched < len(matches) and matches[matched] in used_host_indices:
+                matched += 1
+            if matched >= len(matches):
+                devices.append(device)
+                continue
             index = matches[matched]
             matched_by_name[name] = matched + 1
-            # Keep host metrics when a driver field is unavailable, and pair
-            # same-name adapters one-to-one instead of collapsing them.
-            devices[index] = {
-                **devices[index],
-                **{key: value for key, value in device.items() if value is not None},
-            }
+        used_host_indices.add(index)
+        # Keep host metrics and its stable identity when a driver field is absent
+        # or uses a provider-specific identifier for the same physical adapter.
+        devices[index] = {
+            **devices[index],
+            **{
+                key: value
+                for key, value in device.items()
+                if value is not None and (key != "device_id" or not devices[index].get(key))
+            },
+        }
     return devices[:8]
 
 
@@ -626,6 +663,7 @@ def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[
     cpu_peak: float | None = None
     ram_peak: int | None = None
     gpu_peaks: dict[str, dict[str, int | float | None]] = {}
+    gpu_labels: dict[str, str] = {}
     queue_waiting_peak = 0
     queue_reserved_weight_peak = 0
     queue_active_seen = False
@@ -653,6 +691,7 @@ def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[
         devices = sample.get("gpu_devices")
         if not isinstance(devices, list):
             continue
+        name_ordinals: dict[str, int] = {}
         for device_index, value in enumerate(cast(list[object], devices)):
             if not isinstance(value, dict):
                 continue
@@ -660,7 +699,16 @@ def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[
             name = device.get("name")
             if not isinstance(name, str) or not name:
                 continue
-            device_key = f"{name} (device {device_index + 1})"
+            name_ordinals[name] = name_ordinals.get(name, 0) + 1
+            stable_id = device.get("device_id")
+            identity = (
+                f"id:{stable_id}"
+                if isinstance(stable_id, str) and stable_id
+                else f"fallback:{name.casefold()}:{name_ordinals[name]}"
+            )
+            if identity not in gpu_labels:
+                gpu_labels[identity] = f"{name} (device {device_index + 1})"
+            device_key = gpu_labels[identity]
             current = gpu_peaks.setdefault(
                 device_key, {"memory_used_peak_bytes": None, "utilization_peak_percent": None}
             )
