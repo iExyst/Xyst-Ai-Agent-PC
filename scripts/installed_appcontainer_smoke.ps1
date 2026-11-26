@@ -44,6 +44,12 @@ try {
     if (-not $report.command.passed -or -not $report.command.nested_snapshot_access_verified -or -not $report.command.original_workspace_unchanged -or -not $report.command.outside_sentinel_unchanged) { throw 'Installed engine command report did not verify snapshot isolation.' }
     $report.installed_engine_readiness_verified = $true
     $report.installed_coordinator_command_verified = $true
+    $speechReportRoot = Join-Path $root 'speech'
+    & node (Join-Path $workspace 'scripts/native_windows_speech_smoke.mjs') $engine $speechReportRoot --installed-package
+    if ($LASTEXITCODE -ne 0) { throw 'Installed Windows offline speech acceptance failed.' }
+    $report.offline_speech = Get-Content -LiteralPath (Join-Path $speechReportRoot 'report.json') -Raw | ConvertFrom-Json
+    if (-not $report.offline_speech.passed -or $report.offline_speech.package_kind -ne 'Installed Windows package engine' -or $report.offline_speech.engine_sha256 -ne $manifest.artifacts.engine.sha256) { throw 'Installed Windows speech report did not verify the installed package engine.' }
+    $report.installed_offline_speech_verified = $true
 } finally {
     if (Test-Path -LiteralPath $uninstaller) {
         $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
@@ -52,7 +58,7 @@ try {
     } else {
         $report.binaries_removed = $false
     }
-    $report.passed = $report.installed_binary_hashes_match -and $report.installed_engine_readiness_verified -and $report.installed_npm_lock_worker_verified -and $report.installed_coordinator_command_verified -and $report.binaries_removed -and $report.uninstaller_exit_code -eq 0
+$report.passed = $report.installed_binary_hashes_match -and $report.installed_engine_readiness_verified -and $report.installed_npm_lock_worker_verified -and $report.installed_coordinator_command_verified -and $report.installed_offline_speech_verified -and $report.binaries_removed -and $report.uninstaller_exit_code -eq 0
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'report.json') -Encoding utf8
 }
 if (-not $report.passed) { throw "Installed AppContainer acceptance failed. Evidence: $root" }

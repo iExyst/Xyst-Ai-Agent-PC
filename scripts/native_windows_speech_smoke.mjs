@@ -6,7 +6,15 @@ import path from 'node:path';
 
 if (process.platform !== 'win32') throw new Error('Frozen Windows speech acceptance requires Windows.');
 
-const root = path.resolve('.acceptance', `native-windows-speech-${randomUUID()}`);
+const engineArgument = process.argv[2];
+const reportRootArgument = process.argv[3];
+const installedPackage = process.argv[4] === '--installed-package';
+if (process.argv.length > 5 || (process.argv[4] !== undefined && !installedPackage) || (installedPackage && !engineArgument)) {
+  throw new Error('Usage: native_windows_speech_smoke.mjs [engine-path [report-directory [--installed-package]]].');
+}
+const root = reportRootArgument
+  ? path.resolve(reportRootArgument)
+  : path.resolve('.acceptance', `native-windows-speech-${randomUUID()}`);
 const bundle = path.join(root, 'bundle');
 const data = path.join(root, 'data');
 const systemRoot = process.env.SystemRoot || 'C:\\Windows';
@@ -52,8 +60,12 @@ if (audio.length < 44 || audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toStr
 await writeFile(path.join(root, 'synthetic-hello.wav'), audio);
 
 const sourceEngine = path.resolve('apps/desktop/src-tauri/binaries/xaa-engine-x86_64-pc-windows-msvc.exe');
-const engine = path.join(bundle, 'xaa-engine.exe');
-await copyFile(sourceEngine, engine);
+const engine = engineArgument ? path.resolve(engineArgument) : path.join(bundle, 'xaa-engine.exe');
+if (engineArgument) {
+  await readFile(engine);
+} else {
+  await copyFile(sourceEngine, engine);
+}
 const manifest = { 'xaa-engine.exe': createHash('sha256').update(await readFile(engine)).digest('hex') };
 await writeFile(path.join(bundle, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
@@ -131,7 +143,9 @@ try {
   if (usage.inference_attempts !== 0) throw new Error(`Offline speech acceptance unexpectedly attempted model inference (${usage.inference_attempts}).`);
   report = {
     passed: true,
-    package_kind: 'PyInstaller frozen Windows engine used by native desktop bundle',
+    package_kind: installedPackage
+      ? 'Installed Windows package engine'
+      : 'PyInstaller frozen Windows engine used by native desktop bundle',
     transcription_provider: 'windows_offline',
     recognizer: 'installed Windows System.Speech recognizer',
     synthetic_phrase: 'Hello world',
