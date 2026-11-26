@@ -433,6 +433,60 @@ asyncio.run(main())
 
 
 @pytest.mark.asyncio
+async def test_live_docker_session_cannot_read_host_sentinel_file(
+    workspace_tmp_path: Path,
+) -> None:
+    live_docker_required()
+    sentinel = workspace_tmp_path / "docker-host-private-sentinel.txt"
+    sentinel.write_text("host-only-xaa-sentinel", encoding="utf-8")
+    request = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        max_seconds=15,
+        docker_session_reuse=True,
+    )
+    transport = await DockerLocalTransport.discover(request, deadline=time.monotonic() + 20)
+    intent = CommandIntent(
+        argv=[
+            "python3",
+            "-I",
+            "-c",
+            f"from pathlib import Path; sentinel = Path({str(sentinel)!r}); print(sentinel.read_text(encoding='utf-8') if sentinel.is_file() else 'not-visible')",
+        ],
+        max_seconds=15,
+        execution_id=uuid4().hex,
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256=transport.profile_sha256,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+        docker_session_id=uuid4().hex,
+        workspace="docker-live-host-sentinel",
+    )
+
+    async def register(_container_id: str) -> None:
+        return None
+
+    try:
+        result = await transport.run(
+            intent,
+            WorkspaceSnapshot((), (), ()),
+            deadline=time.monotonic() + 30,
+            on_session_container=register,
+        )
+        assert result["succeeded"] is True
+        assert base64.b64decode(result["stdout_b64"], validate=True).decode().strip() == (
+            "not-visible"
+        )
+        assert sentinel.read_text(encoding="utf-8") == "host-only-xaa-sentinel"
+        assert result["cleanup_confirmed"] is True
+    finally:
+        await transport.control("cleanup", intent, deadline=time.monotonic() + 15)
+
+
+@pytest.mark.asyncio
 async def test_live_docker_session_exports_bounded_archive_without_project_integration() -> None:
     live_docker_required()
     grant = CommandGrant(
