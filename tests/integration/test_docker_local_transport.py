@@ -380,7 +380,8 @@ async def test_live_docker_session_controller_persists_archive_and_recovers_stop
         receipt = validate_session_archive(archive_bytes)
         assert receipt.sha256 == artifact_record["sha256"]
         with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as archive:
-            extracted = archive.extractfile("session.txt")
+            member = next(item for item in archive if item.name.rsplit("/", 1)[-1] == "session.txt")
+            extracted = archive.extractfile(member)
             assert extracted is not None and extracted.read() == b"owner review"
 
         store.transition(run["id"], RunState.FAILED, owner=owner)
