@@ -128,6 +128,80 @@ async def test_queue_wait_deadline_releases_reservation():
         queue.lock.release()
 
 
+async def test_queue_serializes_other_processes_and_releases_timed_out_reservations(
+    workspace_tmp_path,
+):
+    import sys
+
+    lock_path = workspace_tmp_path / "lm-studio.lock"
+    ready_path = workspace_tmp_path / "worker-ready"
+    release_path = workspace_tmp_path / "worker-release"
+    worker = """
+import asyncio, sys, time
+from pathlib import Path
+from xaa.providers.inference_process_lock import inference_process_lock
+
+async def main():
+    async with inference_process_lock(Path(sys.argv[1]), deadline=time.monotonic() + 5):
+        Path(sys.argv[2]).write_text('ready', encoding='utf-8')
+        while not Path(sys.argv[3]).exists():
+            await asyncio.sleep(0.01)
+
+asyncio.run(main())
+"""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        worker,
+        str(lock_path),
+        str(ready_path),
+        str(release_path),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        for _ in range(300):
+            if ready_path.exists():
+                break
+            if process.returncode is not None:
+                stderr = await process.stderr.read() if process.stderr else b""
+                pytest.fail(f"Lock holder exited early: {stderr.decode(errors='replace')}")
+            await asyncio.sleep(0.01)
+        assert ready_path.exists()
+
+        timed_queue = InferenceQueue(process_lock_path=lock_path, wait_timeout=0.05)
+        with pytest.raises(InferenceQueueTimeout, match="Timed out waiting"):
+            async with timed_queue.slot(1):
+                pytest.fail("entered while another process held the inference lock")
+        assert timed_queue.waiting == 0
+        assert timed_queue.reserved_weight == 0
+        assert timed_queue.active is False
+
+        queue = InferenceQueue(process_lock_path=lock_path, wait_timeout=3)
+        entered = asyncio.Event()
+        task = asyncio.create_task(_hold_queue_slot(queue, entered))
+        await asyncio.sleep(0.08)
+        assert queue.waiting == 1
+        assert queue.active is False
+        assert not entered.is_set()
+        release_path.write_text("release", encoding="utf-8")
+        await asyncio.wait_for(process.wait(), 3)
+        await asyncio.wait_for(task, 3)
+        assert entered.is_set()
+        assert queue.waiting == 0
+        assert queue.reserved_weight == 0
+        assert queue.active is False
+    finally:
+        release_path.write_text("release", encoding="utf-8")
+        if process.returncode is None:
+            await asyncio.wait_for(process.wait(), 3)
+
+
+async def _hold_queue_slot(queue, entered):
+    async with queue.slot(1):
+        entered.set()
+
+
 async def test_read_timeout_is_actionable_and_releases_queue_for_successor():
     import httpx
     from xaa.providers.lm_studio import ProviderError

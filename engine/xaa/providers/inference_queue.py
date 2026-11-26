@@ -5,6 +5,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from xaa.providers.inference_process_lock import (
+    acquire_inference_process_lock,
+    release_inference_process_lock,
+)
 
 
 class InferenceQueueError(RuntimeError):
@@ -33,12 +39,14 @@ class InferenceQueue:
         max_pending: int = 16,
         max_reserved_weight: int = 2_000_000,
         wait_timeout: float = 180.0,
+        process_lock_path: Path | None = None,
     ) -> None:
         if max_pending < 1 or max_reserved_weight < 1 or wait_timeout <= 0:
             raise ValueError("Inference queue limits must be positive.")
         self.max_pending = max_pending
         self.max_reserved_weight = max_reserved_weight
         self.wait_timeout = wait_timeout
+        self.process_lock_path = process_lock_path
         self.lock = asyncio.Lock()
         self._waiting = 0
         self._reserved_weight = 0
@@ -92,25 +100,35 @@ class InferenceQueue:
         self._reserved_weight += weight
         waiting = True
         acquired = False
+        process_lock = None
         try:
             timeout = self.wait_timeout if wait_timeout is None else wait_timeout
+            deadline = asyncio.get_running_loop().time() + timeout
             try:
                 async with asyncio.timeout(timeout):
                     await self.lock.acquire()
+                    acquired = True
+                    if self.process_lock_path is not None:
+                        process_lock = await acquire_inference_process_lock(
+                            self.process_lock_path, deadline=deadline
+                        )
             except TimeoutError:
                 raise InferenceQueueTimeout(
                     "Timed out waiting for local inference capacity. Retry after current "
                     "model work finishes."
                 ) from None
-            acquired = True
             self._waiting -= 1
             waiting = False
             self._active = True
             yield
         finally:
-            if acquired:
-                self._active = False
-                self.lock.release()
-            if waiting:
-                self._waiting -= 1
-            self._reserved_weight -= weight
+            try:
+                if process_lock is not None:
+                    release_inference_process_lock(process_lock)
+            finally:
+                if acquired:
+                    self._active = False
+                    self.lock.release()
+                if waiting:
+                    self._waiting -= 1
+                self._reserved_weight -= weight

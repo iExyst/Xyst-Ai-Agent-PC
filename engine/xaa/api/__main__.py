@@ -10,6 +10,7 @@ from pydantic import SecretStr
 
 from xaa.api.app import create_app
 from xaa.credentials import API_LAUNCH_TOKEN_PROFILE, API_LAUNCH_URL_PROFILE, CredentialStore
+from xaa.providers.inference_process_lock import inference_process_lock_path
 from xaa.providers.lm_studio import LMStudioProvider
 
 token = os.environ.get("XAA_API_TOKEN", "")
@@ -29,6 +30,7 @@ app = create_app(
         os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234"),
         credential_store.get(),
         exact_context=os.environ.get("XAA_EXACT_CONTEXT") == "1",
+        process_lock_path=inference_process_lock_path(),
     ),
     SecretStr(token),
     shutdown_callback=request_shutdown,

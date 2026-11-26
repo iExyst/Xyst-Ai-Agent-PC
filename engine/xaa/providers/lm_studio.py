@@ -8,6 +8,7 @@ import ipaddress
 import json
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -107,11 +108,12 @@ class LMStudioProvider:
         *,
         exact_context: bool = False,
         transport: httpx.AsyncBaseTransport | None = None,
+        process_lock_path: Path | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.exact_context = exact_context
         self._credential = SecretStr(token) if token else None
-        self._inference_queue = InferenceQueue()
+        self._inference_queue = InferenceQueue(process_lock_path=process_lock_path)
         # Kept as a lock alias for narrowly scoped tests and existing diagnostics.
         self._inference_lock = self._inference_queue.lock
         self._diagnosed_models: set[str] = set()

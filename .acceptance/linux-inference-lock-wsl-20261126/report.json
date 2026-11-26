@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "platform": "Ubuntu 24.04 WSL2",
+  "python_version": "3.12.3",
+  "lock_backend": "fcntl.flock",
+  "held_lock_child_result": "busy",
+  "released_lock_child_result": "acquired",
+  "lock_target": "temporary /tmp lock file",
+  "source_file": "engine/xaa/providers/inference_process_lock.py",
+  "source_sha256": "5b1c3d3bd8b6b52b98f8ad3bd9ac7de6283692f28ac232935ec5a43032be031c",
+  "network_used": false,
+  "model_inference_requested": false
+}

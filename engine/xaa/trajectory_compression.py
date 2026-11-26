@@ -466,11 +466,12 @@ async def compress_jsonl_with_lm_studio(
 ) -> dict[str, Any]:
     """Run bounded compression through an explicitly selected loopback LM Studio model."""
     from xaa.providers.contracts import validate_completion
+    from xaa.providers.inference_process_lock import inference_process_lock_path
     from xaa.providers.lm_studio import LMStudioProvider, ProviderError
     from xaa.providers.tokenization import PromptCountRequest, PromptMessage
 
     endpoint = LMStudioProvider.validate_endpoint(base_url)
-    provider = LMStudioProvider(endpoint, token)
+    provider = LMStudioProvider(endpoint, token, process_lock_path=inference_process_lock_path())
 
     def prompt_messages(turns: list[dict[str, Any]]) -> list[PromptMessage]:
         messages: list[PromptMessage] = []
