@@ -1,4 +1,4 @@
-"""Check that scoped locked third-party packages have notice references."""
+"""Check release dependency inventory and scoped third-party notice references."""
 
 from __future__ import annotations
 
@@ -227,6 +227,15 @@ def expected_python(root: Path) -> set[tuple[str, str]]:
     }
 
 
+def expected_python_inventory(root: Path) -> set[tuple[str, str]]:
+    """Return every locked Python package, including the first-party engine."""
+    lock = tomllib.loads((root / "uv.lock").read_text(encoding="utf-8"))
+    return {
+        (python_key(package["name"]), str(package["version"]))
+        for package in lock.get("package", [])
+    }
+
+
 def expected_npm(root: Path) -> set[tuple[str, str]]:
     tree = cast(NpmTree, run_json(["npm", "ls", "--omit=dev", "--all", "--json"], cwd=root))
     packages: set[tuple[str, str]] = set()
@@ -240,6 +249,26 @@ def expected_npm(root: Path) -> set[tuple[str, str]]:
             visit(data.get("dependencies", {}))
 
     visit(tree.get("dependencies", {}))
+    return packages
+
+
+def expected_npm_inventory(root: Path) -> set[tuple[str, str]]:
+    """Return the complete npm dependency tree installed for this build host."""
+    tree = cast(NpmTree, run_json(["npm", "ls", "--all", "--json"], cwd=root))
+    packages: set[tuple[str, str]] = set()
+
+    def visit(dependencies: dict[str, NpmPackage]) -> None:
+        for name, data in dependencies.items():
+            version = data.get("version")
+            if not version:
+                # npm ls reports platform-incompatible optional packages without versions.
+                continue
+            packages.add((npm_key(name), version))
+            visit(data.get("dependencies", {}))
+
+    visit(tree.get("dependencies", {}))
+    project = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    packages.add((npm_key(project["name"]), str(project["version"])))
     return packages
 
 
@@ -273,12 +302,31 @@ def expected_cargo(root: Path) -> set[tuple[str, str]]:
     }
 
 
+def expected_cargo_inventory(root: Path) -> set[tuple[str, str]]:
+    """Return all pinned Cargo packages, including non-Windows target entries."""
+    lock = tomllib.loads(
+        (root / "apps" / "desktop" / "src-tauri" / "Cargo.lock").read_text(encoding="utf-8")
+    )
+    return {
+        (cargo_key(package["name"]), str(package["version"])) for package in lock.get("package", [])
+    }
+
+
 def missing_inventory_rows(
     ecosystem: str,
     expected: set[tuple[str, str]],
     inventory: dict[str, set[tuple[str, str]]],
 ) -> set[tuple[str, str]]:
     return expected - inventory[ecosystem]
+
+
+def inventory_set_mismatches(
+    ecosystem: str,
+    expected: set[tuple[str, str]],
+    inventory: dict[str, set[tuple[str, str]]],
+) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    """Return missing and stale rows against the complete build inventory."""
+    return expected - inventory[ecosystem], inventory[ecosystem] - expected
 
 
 def main() -> int:
@@ -294,10 +342,27 @@ def main() -> int:
         "npm": expected_npm(root),
         "Rust/Cargo": expected_cargo(root),
     }
+    expected_inventory = {
+        "Python": expected_python_inventory(root),
+        "npm": expected_npm_inventory(root),
+        "Rust/Cargo": expected_cargo_inventory(root),
+    }
 
     errors: list[str] = []
     errors.extend(inventory_metadata_errors(root / "docs/releases/dependency-inventory.md"))
     errors.extend(project_license_inventory_errors(root))
+    for ecosystem, packages in expected_inventory.items():
+        missing_rows, stale_rows = inventory_set_mismatches(ecosystem, packages, inventory)
+        if missing_rows:
+            errors.append(
+                f"{ecosystem}: {len(missing_rows)} build package(s) missing from inventory: "
+                + ", ".join(f"{name}@{version}" for name, version in sorted(missing_rows))
+            )
+        if stale_rows:
+            errors.append(
+                f"{ecosystem}: {len(stale_rows)} stale or non-target package row(s) in inventory: "
+                + ", ".join(f"{name}@{version}" for name, version in sorted(stale_rows))
+            )
     unknown_notice_placeholders = count_unknown_additional_notice_placeholders(notice_path)
     if unknown_notice_placeholders:
         errors.append(
@@ -328,6 +393,12 @@ def main() -> int:
     )
     print(
         "This check validates package references and populated metadata fields; it does not verify license text or legal completeness."
+    )
+    print(
+        "Release inventory exactly matches its resolution sources: "
+        + ", ".join(
+            f"{ecosystem}={len(packages)}" for ecosystem, packages in expected_inventory.items()
+        )
     )
     return 0
 

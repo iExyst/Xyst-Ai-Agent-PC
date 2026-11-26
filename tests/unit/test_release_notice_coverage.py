@@ -8,6 +8,7 @@ count_unknown_additional_notice_placeholders = run_path(str(_SCRIPT))[
 ]
 project_license_inventory_errors = run_path(str(_SCRIPT))["project_license_inventory_errors"]
 inventory_metadata_errors = run_path(str(_SCRIPT))["inventory_metadata_errors"]
+inventory_set_mismatches = run_path(str(_SCRIPT))["inventory_set_mismatches"]
 
 
 def project_fixture(root: Path, *, cargo_license: str = "MIT") -> Path:
@@ -70,6 +71,20 @@ def test_inventory_metadata_rejects_missing_source_reference(workspace_tmp_path:
     assert inventory_metadata_errors(inventory) == [
         "Python: conditional-package@1.2.3 has no source reference (line 1)."
     ]
+
+
+def test_inventory_set_mismatches_reports_missing_and_stale_rows():
+    expected = {("current-package", "1.0"), ("another-package", "2.0")}
+    inventory = {
+        "Python": {("current-package", "1.0"), ("removed-package", "0.9")},
+        "npm": set(),
+        "Rust/Cargo": set(),
+    }
+
+    missing, stale = inventory_set_mismatches("Python", expected, inventory)
+
+    assert missing == {("another-package", "2.0")}
+    assert stale == {("removed-package", "0.9")}
 
 
 def test_notice_coverage_reads_only_explicit_package_attributions(workspace_tmp_path: Path):
