@@ -120,8 +120,7 @@ Hosted Docker run [45806572862](https://github.com/iExyst/Xyst-Ai-Agent-PC/actio
 A second process-death acceptance now pauses the Docker CLI after daemon-side
 container creation but before the engine receives the container ID. It verifies
 recovery finds and removes the labeled object from the saved session identity
-while the journal remains in `creating` with no container ID. Local collection
-and static checks pass; hosted real-Docker verification is pending.
+while the journal remains in `creating` with no container ID. Local collection and static checks pass. Hosted Docker run [45808657231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45808657231) passed all 17 live-engine cases on Docker 28.0.4. The create-before-registration case observed the saved `creating` state without a container ID, then confirmed startup cleanup removed the labeled object without command replay ([JUnit evidence](../../.acceptance/hosted-docker-create-crash-45808657231/junit.xml)). Exact-source Windows verification is still running.
 
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
