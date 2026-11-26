@@ -95,8 +95,14 @@ def test_resource_sample_summary_reports_host_and_per_gpu_peaks() -> None:
         "queue_waiting_peak": 1,
         "queue_reserved_weight_peak": 200,
         "gpu_devices": {
-            "GPU A": {"memory_used_peak_bytes": 600, "utilization_peak_percent": 76.0},
-            "GPU B": {"memory_used_peak_bytes": None, "utilization_peak_percent": None},
+            "GPU A (device 1)": {
+                "memory_used_peak_bytes": 600,
+                "utilization_peak_percent": 76.0,
+            },
+            "GPU B (device 2)": {
+                "memory_used_peak_bytes": None,
+                "utilization_peak_percent": None,
+            },
         },
         "scope": "host-wide system counters; includes unrelated processes and is not process-attributed",
     }
@@ -125,8 +131,107 @@ def test_resource_sample_summary_ignores_malformed_and_out_of_range_counters() -
     assert result["host_cpu_utilization_peak_percent"] is None
     assert result["host_ram_used_peak_bytes"] is None
     assert result["gpu_devices"] == {
-        "GPU A": {"memory_used_peak_bytes": None, "utilization_peak_percent": None}
+        "GPU A (device 1)": {
+            "memory_used_peak_bytes": None,
+            "utilization_peak_percent": None,
+        }
     }
+
+
+def test_resource_sample_summary_keeps_same_name_adapters_separate() -> None:
+    result = system_resources.summarize_resource_samples(
+        [
+            {
+                "gpu_devices": [
+                    {
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 800,
+                        "utilization_percent": 10,
+                    },
+                    {
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 400,
+                        "utilization_percent": 60,
+                    },
+                ]
+            },
+            {
+                "gpu_devices": [
+                    {
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 700,
+                        "utilization_percent": 20,
+                    },
+                    {
+                        "name": "Twin GPU",
+                        "memory_total_bytes": 1000,
+                        "memory_free_bytes": 300,
+                        "utilization_percent": 80,
+                    },
+                ]
+            },
+        ]
+    )
+
+    assert result["gpu_devices"] == {
+        "Twin GPU (device 1)": {
+            "memory_used_peak_bytes": 300,
+            "utilization_peak_percent": 20.0,
+        },
+        "Twin GPU (device 2)": {
+            "memory_used_peak_bytes": 700,
+            "utilization_peak_percent": 80.0,
+        },
+    }
+
+
+def test_merge_gpu_devices_pairs_duplicate_names_one_to_one() -> None:
+    host_devices = [
+        {
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000,
+            "memory_free_bytes": None,
+            "utilization_percent": 25,
+        },
+        {
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000,
+            "memory_free_bytes": None,
+            "utilization_percent": 75,
+        },
+    ]
+    driver_devices = [
+        {
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000,
+            "memory_free_bytes": 800,
+            "utilization_percent": None,
+        },
+        {
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000,
+            "memory_free_bytes": 400,
+            "utilization_percent": None,
+        },
+    ]
+
+    assert system_resources.merge_gpu_devices(host_devices, driver_devices) == [
+        {
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000,
+            "memory_free_bytes": 800,
+            "utilization_percent": 25,
+        },
+        {
+            "name": "Twin GPU",
+            "memory_total_bytes": 1000,
+            "memory_free_bytes": 400,
+            "utilization_percent": 75,
+        },
+    ]
 
 
 def test_windows_gpu_engine_counters_aggregate_processes_per_physical_engine() -> None:

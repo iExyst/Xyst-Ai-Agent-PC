@@ -599,14 +599,25 @@ def merge_gpu_devices(
 ) -> list[dict[str, Any]]:
     """Keep host-wide devices while preferring matching vendor-driver metrics."""
     devices = list(host_devices)
-    by_name = {device["name"].casefold(): index for index, device in enumerate(devices)}
+    host_indices_by_name: dict[str, list[int]] = {}
+    for index, device in enumerate(devices):
+        host_indices_by_name.setdefault(device["name"].casefold(), []).append(index)
+    matched_by_name: dict[str, int] = {}
     for device in driver_devices:
-        match = by_name.get(device["name"].casefold())
-        if match is None:
-            by_name[device["name"].casefold()] = len(devices)
+        name = device["name"].casefold()
+        matches = host_indices_by_name.get(name, [])
+        matched = matched_by_name.get(name, 0)
+        if matched >= len(matches):
             devices.append(device)
         else:
-            devices[match] = device
+            index = matches[matched]
+            matched_by_name[name] = matched + 1
+            # Keep host metrics when a driver field is unavailable, and pair
+            # same-name adapters one-to-one instead of collapsing them.
+            devices[index] = {
+                **devices[index],
+                **{key: value for key, value in device.items() if value is not None},
+            }
     return devices[:8]
 
 
@@ -642,15 +653,16 @@ def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[
         devices = sample.get("gpu_devices")
         if not isinstance(devices, list):
             continue
-        for value in cast(list[object], devices):
+        for device_index, value in enumerate(cast(list[object], devices)):
             if not isinstance(value, dict):
                 continue
             device = cast(dict[str, object], value)
             name = device.get("name")
             if not isinstance(name, str) or not name:
                 continue
+            device_key = f"{name} (device {device_index + 1})"
             current = gpu_peaks.setdefault(
-                name, {"memory_used_peak_bytes": None, "utilization_peak_percent": None}
+                device_key, {"memory_used_peak_bytes": None, "utilization_peak_percent": None}
             )
             gpu_total = device.get("memory_total_bytes")
             gpu_free = device.get("memory_free_bytes")

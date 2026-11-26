@@ -78,6 +78,14 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
     ?Math.round((snapshot.disk_total_bytes-snapshot.disk_free_bytes)*100/snapshot.disk_total_bytes*10)/10:null;
   const diskTrend=history.map(sample=>sample.disk_total_bytes!==null&&sample.disk_free_bytes!==null&&sample.disk_total_bytes>0
     ?(sample.disk_total_bytes-sample.disk_free_bytes)*100/sample.disk_total_bytes:Number.NaN);
+  const gpuCards=(snapshot?.gpu_devices??[]).map((gpu,index,devices)=>{
+    const sameNameBefore=devices.slice(0,index).filter(item=>item.name===gpu.name).length;
+    const sameNameCount=devices.filter(item=>item.name===gpu.name).length;
+    const adapterOrdinal=sameNameBefore+1;
+    const title=sameNameCount>1?`${gpu.name} · Adapter ${adapterOrdinal}`:gpu.name;
+    const trend=history.map(sample=>sample.gpu_devices.filter(item=>item.name===gpu.name)[adapterOrdinal-1]?.utilization_percent??Number.NaN);
+    return {gpu,adapterOrdinal,title,trend};
+  });
   return <div className="system-monitor">
     <section className="system-monitor-intro"><div><p className="eyebrow">LOCAL HARDWARE</p><h2>System monitor</h2><p>Live host capacity and local inference queue estimates. Measurements stay on this computer.</p></div><button type="button" className="secondary-button" onClick={()=>void refresh(true)} disabled={refreshing}>{refreshing?'Refreshing…':'Refresh now'}</button></section>
     {snapshot&&<>
@@ -85,7 +93,7 @@ export function SystemMonitorPanel({client}:{client:EngineClient}) {
         <ResourceCard title="Processor" value={snapshot.cpu_percent===null?'Measuring…':`${snapshot.cpu_percent.toFixed(1)}%`} detail={`${snapshot.logical_processors} logical processors`} percent={snapshot.cpu_percent} trend={history.map(sample=>sample.cpu_percent??Number.NaN)}/>
         <ResourceCard title="Memory" value={memoryPercent===null?'Unavailable':`${memoryPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.memory_available_bytes)} available of ${formatBytes(snapshot.memory_total_bytes)}`} percent={memoryPercent} trend={history.map(sample=>sample.memory_used_percent??Number.NaN)}/>
         <ResourceCard title="Profile drive" value={diskPercent===null?'Unavailable':`${diskPercent.toFixed(1)}% used`} detail={`${formatBytes(snapshot.disk_free_bytes)} free of ${formatBytes(snapshot.disk_total_bytes)}`} percent={diskPercent} trend={diskTrend}/>
-        {snapshot.gpu_devices.map((gpu,index)=><ResourceCard key={`${gpu.name}-${index}`} title={gpu.name} value={gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`} detail={`${formatBytes(gpu.memory_free_bytes)} GPU memory free of ${formatBytes(gpu.memory_total_bytes)}`} percent={gpu.utilization_percent} trend={history.map(sample=>sample.gpu_devices.find(item=>item.name===gpu.name)?.utilization_percent??Number.NaN)}/>)}
+        {gpuCards.map(({gpu,adapterOrdinal,title,trend})=><ResourceCard key={`${gpu.name}-${adapterOrdinal}`} title={title} value={gpu.utilization_percent===null?'Unavailable':`${gpu.utilization_percent}% active`} detail={`${formatBytes(gpu.memory_free_bytes)} GPU memory free of ${formatBytes(gpu.memory_total_bytes)}`} percent={gpu.utilization_percent} trend={trend}/>)}
         <section className="system-resource-card" aria-label="Inference queue"><div className="system-resource-heading"><h2>Inference queue</h2><strong>{snapshot.queue_active?'Working':'Idle'}</strong></div><p>{snapshot.queue_waiting} waiting · {snapshot.queue_reserved_weight.toLocaleString()} estimated queue weight</p><p>Capacity: {snapshot.queue_max_pending} waiting requests · {snapshot.queue_max_reserved_weight.toLocaleString()} weight units</p></section>
       </div>
       <p className="system-monitor-note">GPU readings are reported when Windows adapter or NVIDIA driver telemetry is available. A missing GPU card means that telemetry isn’t available; it does not mean this computer has no accelerator. Queue weight limits estimated queued payload size; they do not predict model tokenization or GPU memory requirements.</p>
