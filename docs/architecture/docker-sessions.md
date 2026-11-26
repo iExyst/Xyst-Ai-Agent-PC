@@ -116,10 +116,7 @@ the pending call was sealed without completion or replay
 ([JUnit evidence](../../.acceptance/hosted-docker-worker-crash-45803924172/junit.xml)).
 Exact-source Windows workflow [45803924142](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45803924142) passed on `b0ac2756` with 1,784 Python tests and 44 skipped, plus configured browser/Edge, static, type, desktop, API-contract, and process-recovery checks.
 
-A separate live-engine case now writes a host sentinel and asks a command in a
-reusable session to read that exact host path. It requires the path to remain
-invisible while preserving the host bytes. Local collection skips without
-Docker; hosted verification is pending.
+Hosted Docker run [45806572862](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45806572862) passed all 16 live-engine cases. The host-sentinel case could not read the exact host file path, and the host file remained unchanged ([JUnit evidence](../../.acceptance/hosted-docker-host-sentinel-45806572862/junit.xml)). Docker-dependent cases skip locally because this Windows host has no Docker daemon.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 

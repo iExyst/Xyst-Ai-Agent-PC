@@ -2,7 +2,7 @@
 
 ## Add a real Docker host-sentinel isolation case (2026-11-26)
 
-Added a live-engine session scenario that places a unique sentinel file on the host, asks a command inside the Docker session to read that exact absolute path, and requires `not-visible` while confirming the host bytes remain unchanged. Ruff and formatting pass; local collection skips the case because Docker is unavailable on this Windows host. The targeted hosted Docker workflow will run it on push; real-engine verification is pending.
+Added a live-engine session scenario that places a unique sentinel file on the host, asks a command inside the Docker session to read that exact absolute path, and requires `not-visible` while confirming the host bytes remain unchanged. Ruff and formatting pass; local collection skips the case because Docker is unavailable on this Windows host. Hosted Docker run [45806572862](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45806572862) passed all 16 live-engine cases on Docker 28.0.4 with the pinned Python image; the sentinel case passed in 0.815 seconds ([JUnit](../.acceptance/hosted-docker-host-sentinel-45806572862/junit.xml), [environment](../.acceptance/hosted-docker-host-sentinel-45806572862/environment.json)). Exact-source Windows verification is still running.
 
 ## Exercise Docker recovery after active worker process death (2026-11-26)
 
