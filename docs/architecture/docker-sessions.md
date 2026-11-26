@@ -122,6 +122,13 @@ container creation but before the engine receives the container ID. It verifies
 recovery finds and removes the labeled object from the saved session identity
 while the journal remains in `creating` with no container ID. Local collection and static checks pass. Hosted Docker run [45808657231](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45808657231) passed all 17 live-engine cases on Docker 28.0.4. The create-before-registration case observed the saved `creating` state without a container ID, then confirmed startup cleanup removed the labeled object without command replay ([JUnit evidence](../../.acceptance/hosted-docker-create-crash-45808657231/junit.xml)). Exact-source Windows run [45808657304](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45808657304) passed on `3fae4af6` with 1,784 Python tests passed and 46 skipped plus configured browser/Edge, static, type, desktop, contract, and process-recovery checks.
 
+The process-death acceptance also covers a command that exits and emits its
+marker while the worker is held inside the output callback, before the transport
+can return a result to the coordinator. The active-command case remains
+separate. Local unit, lint, formatting, and integration collection pass; live
+Docker and exact-source Windows CI are pending. This boundary is not verified
+until the hosted acceptance succeeds.
+
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 

@@ -243,9 +243,15 @@ async def test_live_docker_session_recovery_after_manager_restart_never_replays_
         await launcher.control("cleanup", intent, deadline=time.monotonic() + 15)
 
 
+@pytest.mark.parametrize(
+    "hold_output",
+    [False, True],
+    ids=["active-command", "output-before-result-receipt"],
+)
 @pytest.mark.asyncio
 async def test_live_docker_session_recovery_after_worker_process_death_never_replays(
     workspace_tmp_path: Path,
+    hold_output: bool,
 ) -> None:
     live_docker_required()
     if os.name != "posix":
@@ -279,6 +285,12 @@ async def test_live_docker_session_recovery_after_worker_process_death_never_rep
     store.transition(run["id"], RunState.PLANNING, owner=owner)
     store.transition(run["id"], RunState.RUNNING, owner=owner)
     call_id = "docker-crash-active-call"
+    command_source = (
+        "from pathlib import Path; Path('/workspace/started').write_text('yes'); "
+        "print('docker-crash-marker', flush=True)"
+    )
+    if not hold_output:
+        command_source += "; import time; time.sleep(300)"
     intent = CommandJournal(store).reserve(
         run["id"],
         owner,
@@ -288,7 +300,7 @@ async def test_live_docker_session_recovery_after_worker_process_death_never_rep
                 "python3",
                 "-I",
                 "-c",
-                "from pathlib import Path; import time; Path('/workspace/started').write_text('yes'); print('docker-crash-marker', flush=True); time.sleep(300)",
+                command_source,
             ],
             "max_seconds": 30,
         },
@@ -303,6 +315,8 @@ async def test_live_docker_session_recovery_after_worker_process_death_never_rep
     registration = workspace_tmp_path / "container-id.txt"
     registered_ack = workspace_tmp_path / "container-registered"
     command_started = workspace_tmp_path / "command-started"
+    output_waiting = workspace_tmp_path / "output-waiting"
+    release_output = workspace_tmp_path / "release-output"
     worker_code = """
 import asyncio, json, pathlib, sys, time
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
@@ -328,6 +342,13 @@ async def main():
     async def output(_stream, chunk):
         if b"docker-crash-marker" in chunk:
             pathlib.Path(values["command_started"]).write_text("started", encoding="ascii")
+            if values["hold_output"]:
+                pathlib.Path(values["output_waiting"]).write_text("waiting", encoding="ascii")
+                deadline = time.monotonic() + 30
+                while not pathlib.Path(values["release_output"]).exists():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("The output receipt was not released.")
+                    await asyncio.sleep(0.02)
     await transport.run(
         intent, WorkspaceSnapshot((), (), ()), deadline=time.monotonic() + 90,
         on_session_container=register, on_output=output,
@@ -352,6 +373,9 @@ asyncio.run(main())
                     "registration": str(registration),
                     "registered_ack": str(registered_ack),
                     "command_started": str(command_started),
+                    "hold_output": hold_output,
+                    "output_waiting": str(output_waiting),
+                    "release_output": str(release_output),
                 }
             ),
             cwd=str(Path.cwd()),
@@ -391,6 +415,15 @@ asyncio.run(main())
             if time.monotonic() >= deadline:
                 raise TimeoutError("Docker command did not reach its active marker.")
             await asyncio.sleep(0.05)
+        if hold_output:
+            deadline = time.monotonic() + 10
+            while not output_waiting.exists():
+                if worker.returncode is not None:
+                    stderr = await worker.stderr.read() if worker.stderr is not None else b""
+                    raise AssertionError(f"Docker output callback exited early: {stderr!r}")
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Docker output callback did not hold result receipt.")
+                await asyncio.sleep(0.02)
 
         status = await transport.control("status", intent, deadline=time.monotonic() + 10)
         assert status["manager_alive"] is True and status["closed"] is False
