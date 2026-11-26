@@ -89,9 +89,7 @@ async def test_windows_recognizer_reports_no_detected_speech(
     async def create_process(*_args: object, **_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(
             returncode=0,
-            communicate=AsyncMock(
-                return_value=(b'{"error":"no_speech_recognized"}', b"")
-            ),
+            communicate=AsyncMock(return_value=(b'{"error":"no_speech_recognized"}', b"")),
             kill=lambda: None,
             wait=AsyncMock(),
         )
