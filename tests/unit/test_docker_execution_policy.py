@@ -316,17 +316,25 @@ async def test_docker_image_inspection_requires_exact_digest_and_no_implicit_vol
 
 
 @pytest.mark.asyncio
-async def test_docker_readiness_probe_checks_nonce_result_and_container_cleanup(
+@pytest.mark.parametrize(("network_access", "network_denied"), [(False, True), (True, False)])
+async def test_docker_readiness_probe_checks_nonce_network_intent_and_container_cleanup(
     monkeypatch: pytest.MonkeyPatch,
+    network_access: bool,
+    network_denied: bool,
 ) -> None:
-    transport = DockerLocalTransport("docker", LINUX_ENDPOINT, IMAGE, "c" * 64)
+    transport = DockerLocalTransport(
+        "docker", LINUX_ENDPOINT, IMAGE, "c" * 64, docker_network_access=network_access
+    )
     actions: list[str] = []
 
     async def run(command_intent, snapshot, *, deadline):
         assert command_intent.argv == ["python3", "-I", "/workspace/probe.py"]
+        assert command_intent.docker_network_access is network_access
+        assert f"xaa_network_access = {network_access}".encode() in snapshot.files[0].content
         nonce = snapshot.files[1].content.decode("ascii")
         output = json.dumps(
-            {"nonce": nonce, "checks": True, "network_denied": True}, separators=(",", ":")
+            {"nonce": nonce, "checks": True, "network_denied": network_denied},
+            separators=(",", ":"),
         ).encode()
         return {
             "execution_id": command_intent.execution_id,

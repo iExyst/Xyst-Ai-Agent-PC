@@ -360,7 +360,10 @@ class DockerLocalTransport:
         nonce = os.urandom(16).hex()
         snapshot = WorkspaceSnapshot(
             (
-                SnapshotFile("probe.py", PROBE_CODE.encode("utf-8")),
+                SnapshotFile(
+                    "probe.py",
+                    f"xaa_network_access = {self.docker_network_access!r}\n{PROBE_CODE}".encode(),
+                ),
                 SnapshotFile("probe.txt", nonce.encode("ascii")),
             ),
             (),
@@ -406,7 +409,7 @@ class DockerLocalTransport:
                 set(output) != {"nonce", "checks", "network_denied"}
                 or output.get("nonce") != nonce
                 or output.get("checks") is not True
-                or output.get("network_denied") is not True
+                or output.get("network_denied") is not (not intent.docker_network_access)
             ):
                 raise ValueError("Docker readiness probe did not confirm the isolation fixture.")
         finally:
@@ -454,6 +457,7 @@ class DockerLocalTransport:
         bootstrap = (
             "from pathlib import Path; "
             f"Path('/workspace/probe.txt').write_text({nonce!r}, encoding='ascii'); "
+            f"xaa_network_access = {intent.docker_network_access!r}; "
             f"exec({PROBE_CODE!r})"
         )
         output = await self._run_cli(
@@ -481,7 +485,7 @@ class DockerLocalTransport:
             set(probe_result) != {"nonce", "checks", "network_denied"}
             or probe_result.get("nonce") != nonce
             or probe_result.get("checks") is not True
-            or probe_result.get("network_denied") is not True
+            or probe_result.get("network_denied") is not (not intent.docker_network_access)
         ):
             raise PermissionError("Docker command container failed its isolation probe.")
         cleanup = (
