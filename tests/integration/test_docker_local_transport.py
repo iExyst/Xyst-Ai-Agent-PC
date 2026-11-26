@@ -19,10 +19,12 @@ from xaa.runtime.docker_execution_policy import docker_create_argv
 from xaa.runtime.docker_local_transport import DockerLocalTransport, _cli_request
 from xaa.runtime.docker_session_archive import validate_session_archive
 from xaa.runtime.states import RunState
+from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.storage.commands import command_artifact_root
 from xaa.storage.docker_sessions import DockerSessionJournal
-from xaa.storage.runs import RunStore
+from xaa.storage.runs import RunStore, TaskReadScope
+from xaa.storage.tasks import TaskStore
 
 IMAGE_REFERENCE = os.environ.get("XAA_DOCKER_IMAGE_DIGEST", "")
 
@@ -433,10 +435,77 @@ async def test_live_docker_session_controller_persists_archive_and_recovers_stop
         isolated_session = sessions.get(str(row["id"]))
         assert isolated_session is not None and isolated_session.state == "closed"
 
+        task_store = TaskStore(store)
+        task_store.save_plan(
+            run["id"],
+            owner,
+            [
+                TaskDefinition(
+                    id=task_id,
+                    objective="Verify private task Docker session isolation",
+                    acceptance_criteria=["Only this task session sees its private file"],
+                    permissions=["workspace.read", "workspace.write", "workspace.command"],
+                )
+                for task_id in ("docker-task-a", "docker-task-b")
+            ],
+        )
+        task_scopes: dict[str, TaskReadScope] = {}
+        for _ in range(2):
+            claim = task_store.claim_ready(run["id"], owner)
+            assert claim is not None
+            task_id = str(claim["task"]["local_id"])
+            task_scopes[task_id] = TaskReadScope(run["id"], owner, task_id, str(claim["token"]))
+        task_write = await CommandController(
+            store, transport, task_scope=task_scopes["docker-task-a"]
+        ).execute(
+            run["id"],
+            owner,
+            "write-task-private-file",
+            {
+                "argv": [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; Path('/workspace/task-only.txt').write_text('private task A')",
+                ]
+            },
+            idempotency_key="write-task-private-file",
+            deadline=time.monotonic() + 45,
+        )
+        assert task_write["succeeded"] is True
+        task_isolated = await CommandController(
+            store, transport, task_scope=task_scopes["docker-task-b"]
+        ).execute(
+            run["id"],
+            owner,
+            "verify-task-private-session",
+            {
+                "argv": [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; raise SystemExit(9 if Path('/workspace/task-only.txt').exists() else 0)",
+                ]
+            },
+            idempotency_key="verify-task-private-session",
+            deadline=time.monotonic() + 45,
+        )
+        assert task_isolated["succeeded"] is True
+        assert source.read_text(encoding="utf-8") == "original project"
+
         store.transition(run["id"], RunState.FAILED, owner=owner)
-        assert await StoppedCommandRecovery(store, same_live_transport).run_once() == 1
+        assert await StoppedCommandRecovery(store, same_live_transport).run_once() == 3
         session = sessions.get(session_id)
         assert session is not None and session.state == "closed"
+        with store.connection() as connection:
+            rows = connection.execute(
+                "SELECT task_scope,id,state FROM docker_sessions WHERE run_id=?",
+                (run["id"],),
+            ).fetchall()
+        assert {str(item["task_scope"]) for item in rows} == {
+            "parent",
+            "docker-task-a",
+            "docker-task-b",
+        }
+        assert all(str(item["state"]) == "closed" for item in rows)
     finally:
         if second_run is not None and second_owner is not None:
             current_second = store.get_run(str(second_run["id"]))
