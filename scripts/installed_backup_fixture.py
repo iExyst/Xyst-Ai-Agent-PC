@@ -57,10 +57,13 @@ def seed(directory: Path, report_path: Path) -> None:
         "artifact_sha256": hashlib.sha256(payload).hexdigest(),
     }
     # Model the last released pre-identity-link database layout. The fixture is
-    # created with current code so its run and artifact are valid, then only the
-    # schema-19..22 additions are removed before the predecessor/current upgrade.
+    # created with current code so its run and artifact are valid, then the
+    # schema-19..22 additions and later Docker-session journal are removed before
+    # the predecessor/current upgrade.
     with sqlite3.connect(directory / "xaa.sqlite3") as db:
         db.execute("PRAGMA foreign_keys=ON")
+        db.execute("DROP INDEX IF EXISTS docker_sessions_state_updated")
+        db.execute("DROP TABLE docker_sessions")
         db.execute("DROP INDEX IF EXISTS channel_bindings_identity_link_idx")
         db.execute("ALTER TABLE channel_bindings DROP COLUMN identity_link_id")
         db.execute("DROP TABLE channel_identity_link_events")
@@ -72,11 +75,19 @@ def seed(directory: Path, report_path: Path) -> None:
         seeded_version = int(db.execute("PRAGMA user_version").fetchone()[0])
         integrity = str(db.execute("PRAGMA integrity_check").fetchone()[0])
         foreign_keys = db.execute("PRAGMA foreign_key_check").fetchall()
+        docker_session_table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='docker_sessions'"
+        ).fetchone()
     if seeded_version != 18 or integrity != "ok" or foreign_keys:
         raise RuntimeError("Could not construct a valid schema-18 installed upgrade fixture.")
+    if docker_session_table is not None:
+        raise RuntimeError(
+            "The schema-18 fixture unexpectedly contains the schema-43 Docker journal."
+        )
     report["seeded_schema_version"] = seeded_version
     report["schema_downgrade_integrity"] = integrity
     report["schema_downgrade_foreign_key_violations"] = len(foreign_keys)
+    report["docker_session_journal_absent_before_upgrade"] = docker_session_table is None
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
@@ -95,9 +106,22 @@ def verify(directory: Path, fixture_path: Path, report_path: Path) -> None:
         schema_version = int(db.execute("PRAGMA user_version").fetchone()[0])
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         foreign_keys = db.execute("PRAGMA foreign_key_check").fetchall()
+        docker_session_table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='docker_sessions'"
+        ).fetchone()
+        docker_session_index = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' "
+            "AND name='docker_sessions_state_updated'"
+        ).fetchone()
     checks = {
         "seeded_from_schema_18": fixture.get("seeded_schema_version") == 18,
+        "docker_session_journal_absent_before_upgrade": fixture.get(
+            "docker_session_journal_absent_before_upgrade"
+        )
+        is True,
         "current_schema_after_upgrade": schema_version == DATABASE_SCHEMA_VERSION,
+        "docker_session_journal_created": docker_session_table is not None,
+        "docker_session_lifecycle_index_created": docker_session_index is not None,
         "run_matches": run == fixture["run"],
         "events_match": events == fixture["events"],
         "artifact_metadata_matches": artifact == fixture["artifact"],

@@ -20,10 +20,11 @@ on:
   workflow_dispatch:
     inputs:
       acceptance:
-        description: Windows package, Docker, WSL dependency, or credential acceptance
+        description: Run all acceptances or one focused package, Docker, WSL, or credential check
         type: choice
         options:
           - all
+          - windows-installer
           - docker-local
           - wsl-workspace-slice
           - wsl-node
@@ -301,7 +302,7 @@ jobs:
         timeout-minutes: 2
 
   windows-installer:
-    if: (github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch') || (github.event_name == 'workflow_dispatch' && inputs.acceptance == 'all')
+    if: (github.ref == 'refs/heads/main' && github.event_name != 'workflow_dispatch') || (github.event_name == 'workflow_dispatch' && (inputs.acceptance == 'all' || inputs.acceptance == 'windows-installer'))
     runs-on: windows-latest
     timeout-minutes: 30
     env:
