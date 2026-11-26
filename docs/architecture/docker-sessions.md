@@ -129,7 +129,10 @@ separate. Hosted Docker workflow [45812311641](https://github.com/iExyst/Xyst-Ai
 passed all 18 live-engine cases on Docker 28.0.4 and the pinned Python image,
 including both process-death boundaries ([JUnit evidence](../../.acceptance/hosted-docker-output-crash-45812311641/junit.xml)).
 Exact-source Windows workflow [45812311537](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45812311537)
-is still running.
+passed on `9e9af403` with 1,784 Python tests passed and 47 skipped, plus the
+configured desktop, browser/Edge, static, type, API-contract, and process-
+recovery checks. The separate live-Docker workflow is required for daemon
+coverage because this Windows development host has no Docker daemon.
 
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
