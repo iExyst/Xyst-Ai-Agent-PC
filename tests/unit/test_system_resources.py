@@ -43,6 +43,92 @@ def test_parse_nvidia_smi_csv_supports_multiple_and_unavailable_metrics() -> Non
     ]
 
 
+def test_resource_sample_summary_reports_host_and_per_gpu_peaks() -> None:
+    result = system_resources.summarize_resource_samples(
+        [
+            {
+                "cpu_percent": 32.5,
+                "memory_total_bytes": 1000,
+                "memory_available_bytes": 400,
+                "queue_active": True,
+                "queue_waiting": 1,
+                "queue_reserved_tokens": 200,
+                "gpu_devices": [
+                    {
+                        "name": "GPU A",
+                        "memory_total_bytes": 800,
+                        "memory_free_bytes": 500,
+                        "utilization_percent": 20,
+                    },
+                    {
+                        "name": "GPU B",
+                        "memory_total_bytes": 400,
+                        "memory_free_bytes": None,
+                        "utilization_percent": None,
+                    },
+                ],
+            },
+            {
+                "cpu_percent": 81,
+                "memory_total_bytes": 1000,
+                "memory_available_bytes": 250,
+                "queue_active": False,
+                "queue_waiting": 0,
+                "queue_reserved_tokens": 50,
+                "gpu_devices": [
+                    {
+                        "name": "GPU A",
+                        "memory_total_bytes": 800,
+                        "memory_free_bytes": 200,
+                        "utilization_percent": 76,
+                    }
+                ],
+            },
+        ]
+    )
+
+    assert result == {
+        "sample_count": 2,
+        "host_cpu_utilization_peak_percent": 81.0,
+        "host_ram_used_peak_bytes": 750,
+        "queue_active_seen": True,
+        "queue_waiting_peak": 1,
+        "queue_reserved_tokens_peak": 200,
+        "gpu_devices": {
+            "GPU A": {"memory_used_peak_bytes": 600, "utilization_peak_percent": 76.0},
+            "GPU B": {"memory_used_peak_bytes": None, "utilization_peak_percent": None},
+        },
+        "scope": "host-wide system counters; includes unrelated processes and is not process-attributed",
+    }
+
+
+def test_resource_sample_summary_ignores_malformed_and_out_of_range_counters() -> None:
+    result = system_resources.summarize_resource_samples(
+        [
+            {
+                "cpu_percent": 101,
+                "memory_total_bytes": 100,
+                "memory_available_bytes": 101,
+                "gpu_devices": [
+                    {
+                        "name": "GPU A",
+                        "memory_total_bytes": 100,
+                        "memory_free_bytes": 101,
+                        "utilization_percent": 101,
+                    },
+                    {"name": "", "memory_total_bytes": 100, "memory_free_bytes": 0},
+                ],
+            }
+        ]
+    )
+
+    assert result["host_cpu_utilization_peak_percent"] is None
+    assert result["host_ram_used_peak_bytes"] is None
+    assert result["gpu_devices"] == {
+        "GPU A": {"memory_used_peak_bytes": None, "utilization_peak_percent": None}
+    }
+
+
 def test_windows_gpu_engine_counters_aggregate_processes_per_physical_engine() -> None:
     counters = [
         ("pid_10_luid_0x00000000_0x00016631_phys_0_eng_0_engtype_3D", 20.0),

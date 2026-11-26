@@ -29,8 +29,12 @@ from xaa.runtime.executor import (
 from xaa.runtime.git_tools import GitArguments
 from xaa.runtime.planning import SavePlanArguments
 from xaa.runtime.specialists import RunReadyArguments
+from xaa.runtime.system_resources import SystemResourceMonitor, summarize_resource_samples
 from xaa.runtime.workspace_search import SearchArguments
 from xaa.storage.runs import RunStore
+
+RESOURCE_SAMPLE_INTERVAL_SECONDS = 1.0
+MAX_RESOURCE_SAMPLES_PER_TRIAL = 512
 
 
 class Echo(BaseModel):
@@ -158,6 +162,68 @@ def resources() -> dict[str, Any]:
     return snapshot
 
 
+class HostResourceSampler:
+    """Collect bounded host resource samples while one trial is executing."""
+
+    def __init__(self, provider: LMStudioProvider) -> None:
+        self.provider = provider
+        self.monitor = SystemResourceMonitor()
+        self.samples: list[dict[str, Any]] = []
+        self.sample_times: list[float] = []
+        self.sample_errors = 0
+        self.stop_event = asyncio.Event()
+        self.task: asyncio.Task[None] | None = None
+
+    async def _sample(self) -> None:
+        if len(self.samples) >= MAX_RESOURCE_SAMPLES_PER_TRIAL:
+            self.stop_event.set()
+            return
+        try:
+            snapshot = await asyncio.to_thread(
+                self.monitor.snapshot, self.provider.inference_queue_snapshot()
+            )
+            self.samples.append(snapshot)
+            self.sample_times.append(time.monotonic())
+        except Exception:  # noqa: BLE001 - hardware telemetry must not fail a benchmark trial
+            # Benchmark results remain usable if a host counter is temporarily unavailable.
+            self.sample_errors += 1
+
+    async def _sample_until_stopped(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                await asyncio.wait_for(
+                    self.stop_event.wait(), timeout=RESOURCE_SAMPLE_INTERVAL_SECONDS
+                )
+            except TimeoutError:
+                await self._sample()
+
+    async def start(self) -> None:
+        await self._sample()
+        self.task = asyncio.create_task(self._sample_until_stopped())
+
+    async def sample_now(self) -> None:
+        """Capture an immediate sample at a trial boundary."""
+        await self._sample()
+
+    async def close(self) -> dict[str, Any]:
+        self.stop_event.set()
+        if self.task is not None:
+            await self.task
+        await asyncio.to_thread(self.monitor.close)
+        summary = summarize_resource_samples(self.samples)
+        intervals = [
+            current - previous
+            for previous, current in zip(self.sample_times, self.sample_times[1:])
+        ]
+        summary["target_sample_interval_seconds"] = RESOURCE_SAMPLE_INTERVAL_SECONDS
+        summary["observed_mean_sample_interval_seconds"] = (
+            round(sum(intervals) / len(intervals), 3) if intervals else None
+        )
+        summary["samples_capped"] = len(self.samples) >= MAX_RESOURCE_SAMPLES_PER_TRIAL
+        summary["sample_errors"] = self.sample_errors
+        return summary
+
+
 async def native_loaded_instances(address: str) -> dict[str, list[tuple[str, int | None]]]:
     """Read loaded instance IDs so a benchmark never unloads an instance the user already had."""
     async with httpx.AsyncClient(base_url=address.rstrip("/"), timeout=10) as client:
@@ -245,14 +311,17 @@ async def trial(
     )
     provider = MeasuredProvider(address)
     before = await asyncio.to_thread(resources)
+    sampler = HostResourceSampler(provider)
     error = None
     started = time.monotonic()
     try:
+        await sampler.start()
         await provider.models()
         await Coordinator(store, provider).execute(run["id"])
     except Exception as exc:  # noqa: BLE001 - benchmark records failed trials and continues without fallback
         error = type(exc).__name__
     finally:
+        host_resource_peak = await sampler.close()
         await provider.close()
     duration = time.monotonic() - started
     events = store.list_events(run["id"])
@@ -311,6 +380,7 @@ async def trial(
         "exact_file_bytes": actual == expected,
         "requested_tool_used": follows_tool,
         "host_before": before,
+        "host_resource_peak_during_trial": host_resource_peak,
         "host_after": await asyncio.to_thread(resources),
     }
 
@@ -339,7 +409,8 @@ async def main() -> None:
         "limitations": [
             "Small fixture sample, no production-default recommendation.",
             "No streaming, cancellation/recovery, complex coding or multi-agent reliability coverage.",
-            "Host resource snapshots are not per-process attribution or peak measurements.",
+            "Periodic peak samples are host-wide, include unrelated processes, and can miss spikes shorter than the one-second sample interval.",
+            "Model-load resource samples are available only when the benchmark loads the instance; pre-existing instances have no load-phase sample.",
             "Schema validity measures parseable proposals; invalid completion envelopes are reported separately.",
             "Request timing/token metrics include each trial's fresh harmless capability diagnostic; load time is separate.",
         ],
@@ -364,6 +435,7 @@ async def main() -> None:
         for model in args.models:
             instance = None
             owned_instance = False
+            model_load_resource_peak: dict[str, Any] | None = None
             existing = choose_loaded_instance(
                 loaded_instances.get(model, []), report["requested_context_length"]
             )
@@ -373,9 +445,15 @@ async def main() -> None:
                     load_seconds = 0.0
                 else:
                     load_started = time.monotonic()
-                    instance = await loader.load_model(
-                        model, context_length=report["requested_context_length"]
-                    )
+                    load_sampler = HostResourceSampler(loader)
+                    await load_sampler.start()
+                    try:
+                        instance = await loader.load_model(
+                            model, context_length=report["requested_context_length"]
+                        )
+                        await load_sampler.sample_now()
+                    finally:
+                        model_load_resource_peak = await load_sampler.close()
                     actual_context = report["requested_context_length"]
                     load_seconds = time.monotonic() - load_started
                     owned_instance = True
@@ -391,6 +469,7 @@ async def main() -> None:
                             address,
                         )
                         result["model_load_seconds"] = load_seconds
+                        result["model_load_resource_peak"] = model_load_resource_peak
                         result["used_preexisting_instance"] = existing is not None
                         trials.append(result)
                         save()

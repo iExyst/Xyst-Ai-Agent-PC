@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import ctypes
 import ctypes.wintypes
+import math
 import os
 import re
 import shutil
@@ -12,10 +13,11 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from itertools import islice
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 def _filetime_value(value: Any) -> int:
@@ -606,6 +608,78 @@ def merge_gpu_devices(
         else:
             devices[match] = device
     return devices[:8]
+
+
+def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    """Summarize host-wide peak counters without implying process attribution."""
+    cpu_peak: float | None = None
+    ram_peak: int | None = None
+    gpu_peaks: dict[str, dict[str, int | float | None]] = {}
+    queue_waiting_peak = 0
+    queue_reserved_tokens_peak = 0
+    queue_active_seen = False
+    for sample in samples:
+        cpu = sample.get("cpu_percent")
+        if isinstance(cpu, (int, float)) and not isinstance(cpu, bool):
+            cpu_value = float(cpu)
+            if math.isfinite(cpu_value) and 0 <= cpu_value <= 100:
+                cpu_peak = max(cpu_value, cpu_peak) if cpu_peak is not None else cpu_value
+
+        total = sample.get("memory_total_bytes")
+        available = sample.get("memory_available_bytes")
+        if type(total) is int and type(available) is int and 0 <= available <= total:
+            used = total - available
+            ram_peak = max(used, ram_peak) if ram_peak is not None else used
+
+        waiting = sample.get("queue_waiting")
+        if type(waiting) is int and waiting >= 0:
+            queue_waiting_peak = max(queue_waiting_peak, waiting)
+        reserved_tokens = sample.get("queue_reserved_tokens")
+        if type(reserved_tokens) is int and reserved_tokens >= 0:
+            queue_reserved_tokens_peak = max(queue_reserved_tokens_peak, reserved_tokens)
+        queue_active_seen = queue_active_seen or sample.get("queue_active") is True
+
+        devices = sample.get("gpu_devices")
+        if not isinstance(devices, list):
+            continue
+        for value in cast(list[object], devices):
+            if not isinstance(value, dict):
+                continue
+            device = cast(dict[str, object], value)
+            name = device.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            current = gpu_peaks.setdefault(
+                name, {"memory_used_peak_bytes": None, "utilization_peak_percent": None}
+            )
+            gpu_total = device.get("memory_total_bytes")
+            gpu_free = device.get("memory_free_bytes")
+            if type(gpu_total) is int and type(gpu_free) is int and 0 <= gpu_free <= gpu_total:
+                gpu_used = gpu_total - gpu_free
+                previous_used = current["memory_used_peak_bytes"]
+                current["memory_used_peak_bytes"] = (
+                    gpu_used if previous_used is None else max(gpu_used, int(previous_used))
+                )
+            utilization = device.get("utilization_percent")
+            if isinstance(utilization, (int, float)) and not isinstance(utilization, bool):
+                utilization_value = float(utilization)
+                if math.isfinite(utilization_value) and 0 <= utilization_value <= 100:
+                    previous_utilization = current["utilization_peak_percent"]
+                    current["utilization_peak_percent"] = (
+                        utilization_value
+                        if previous_utilization is None
+                        else max(utilization_value, float(previous_utilization))
+                    )
+    return {
+        "sample_count": len(samples),
+        "host_cpu_utilization_peak_percent": cpu_peak,
+        "host_ram_used_peak_bytes": ram_peak,
+        "queue_active_seen": queue_active_seen,
+        "queue_waiting_peak": queue_waiting_peak,
+        "queue_reserved_tokens_peak": queue_reserved_tokens_peak,
+        "gpu_devices": gpu_peaks,
+        "scope": "host-wide system counters; includes unrelated processes and is not process-attributed",
+    }
 
 
 class SystemResourceMonitor:
