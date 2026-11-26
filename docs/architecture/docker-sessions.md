@@ -81,9 +81,11 @@ Run transitions durably mark sessions for cleanup; the stopped-run recovery
 worker removes labeled containers and closes records only after observing
 removal. An unconfirmed container remains a durable cleanup obligation. Current
 acceptance does not yet prove every crash point or app shutdown edge. Aggregate
-reusable-session reservations are capped per profile as described above; a
-machine-wide cap across independent profiles and disposable containers remains
-outside this session budget.
+reusable-session reservations are capped per profile as described above. A
+separate per-user cap covers reusable sessions and disposable containers across
+X.A.A. profiles; hosted acceptance [45892002828](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45892002828)
+passed 21 live-engine cases for that budget. A true machine-wide cap across
+different OS users or external Docker clients remains open.
 
 ## Acceptance status
 
