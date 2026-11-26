@@ -329,6 +329,8 @@ async def test_live_docker_session_controller_persists_archive_and_recovers_stop
     async def same_live_transport(_intent: CommandIntent) -> DockerLocalTransport:
         return transport
 
+    second_run: dict[str, object] | None = None
+    second_owner: str | None = None
     try:
         first = await controller.execute(
             run["id"],
@@ -384,11 +386,68 @@ async def test_live_docker_session_controller_persists_archive_and_recovers_stop
             extracted = archive.extractfile(member)
             assert extracted is not None and extracted.read() == b"owner review"
 
+        second_run = store.create_run(
+            objective="Verify cross-run Docker session isolation",
+            acceptance_criteria=[],
+            workspace=str(project),
+            mode="workspace",
+            model=None,
+            command_grant=grant.model_dump(mode="json"),
+        )
+        second_owner = store.acquire_lease(
+            str(second_run["id"]), "live-docker-second-run", seconds=120
+        )
+        assert second_owner is not None
+        store.transition(str(second_run["id"]), RunState.PLANNING, owner=second_owner)
+        store.transition(str(second_run["id"]), RunState.RUNNING, owner=second_owner)
+        isolated = await controller.execute(
+            str(second_run["id"]),
+            second_owner,
+            "verify-cross-run-isolation",
+            {
+                "argv": [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; raise SystemExit(9 if Path('/workspace/session.txt').exists() else 0)",
+                ]
+            },
+            idempotency_key="verify-cross-run-isolation",
+            deadline=time.monotonic() + 45,
+        )
+        assert isolated["succeeded"] is True
+        assert isolated["session_archive_artifact_id"]
+        with store.connection() as connection:
+            row = connection.execute(
+                "SELECT id FROM docker_sessions WHERE run_id=?", (second_run["id"],)
+            ).fetchone()
+        assert row is not None and str(row["id"]) != session_id
+        isolated_artifact = store.get_artifact(isolated["session_archive_artifact_id"])
+        assert isolated_artifact is not None
+        isolated_archive = command_artifact_root(store) / isolated_artifact["storage_key"]
+        with tarfile.open(fileobj=io.BytesIO(isolated_archive.read_bytes()), mode="r:") as archive:
+            assert all(item.name.rsplit("/", 1)[-1] != "session.txt" for item in archive)
+        assert source.read_text(encoding="utf-8") == "original project"
+
+        store.transition(str(second_run["id"]), RunState.FAILED, owner=second_owner)
+        assert await StoppedCommandRecovery(store, same_live_transport).run_once() == 1
+        isolated_session = sessions.get(str(row["id"]))
+        assert isolated_session is not None and isolated_session.state == "closed"
+
         store.transition(run["id"], RunState.FAILED, owner=owner)
         assert await StoppedCommandRecovery(store, same_live_transport).run_once() == 1
         session = sessions.get(session_id)
         assert session is not None and session.state == "closed"
     finally:
+        if second_run is not None and second_owner is not None:
+            current_second = store.get_run(str(second_run["id"]))
+            if current_second is not None and current_second["state"] == "running":
+                store.transition(str(second_run["id"]), RunState.FAILED, owner=second_owner)
+            if current_second is not None and current_second["state"] in {
+                "running",
+                "failed",
+                "cancelled",
+            }:
+                await StoppedCommandRecovery(store, same_live_transport).run_once()
         current = store.get_run(run["id"])
         if current is not None and current["state"] == "running":
             store.transition(run["id"], RunState.FAILED, owner=owner)
