@@ -1121,6 +1121,15 @@
             "title": "Specialist Credential Grants",
             "type": "array"
           },
+          "transcription_provider": {
+            "default": "openai_compatible",
+            "enum": [
+              "openai_compatible",
+              "windows_offline"
+            ],
+            "title": "Transcription Provider",
+            "type": "string"
+          },
           "transcription_url": {
             "anyOf": [
               {

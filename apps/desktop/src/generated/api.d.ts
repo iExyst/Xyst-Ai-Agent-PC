@@ -2817,6 +2817,12 @@ export interface components {
             procedure_trial?: components["schemas"]["SkillTrial"] | null;
             /** Specialist Credential Grants */
             specialist_credential_grants?: components["schemas"]["SpecialistCredentialGrant"][];
+            /**
+             * Transcription Provider
+             * @default openai_compatible
+             * @enum {string}
+             */
+            transcription_provider: "openai_compatible" | "windows_offline";
             /** Transcription Url */
             transcription_url?: string | null;
             /** Workspace */

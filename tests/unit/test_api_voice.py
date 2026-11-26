@@ -107,3 +107,60 @@ def test_audio_run_uses_loopback_service_and_keeps_source_and_transcript(
         speech_server.shutdown()
         speech_server.server_close()
         speech_thread.join(timeout=2)
+
+
+def test_audio_run_uses_windows_offline_provider_without_service_url(
+    workspace_tmp_path,
+    monkeypatch,
+) -> None:
+    source_audio = wav_data()
+    received_audio: list[bytes] = []
+
+    async def transcribe(audio: bytes) -> str:
+        received_audio.append(audio)
+        return "Windows offline transcript fixture"
+
+    from xaa.runtime import windows_speech
+
+    monkeypatch.setattr(windows_speech, "transcribe_windows_wav", transcribe)
+    store = RunStore(workspace_tmp_path / "windows-voice.sqlite3")
+    token = "windows-voice-test-token-long-enough-for-validation"
+    encoded = "data:audio/wav;base64," + base64.b64encode(source_audio).decode("ascii")
+    with TestClient(create_app(QuietProvider(), SecretStr(token), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "objective": "Summarize the local recording",
+                "audio": encoded,
+                "transcription_provider": "windows_offline",
+            },
+        )
+        assert response.status_code == 201
+        assert received_audio == [source_audio]
+        artifacts = store.list_artifacts(response.json()["id"])
+        assert [item["media_type"] for item in artifacts] == ["audio/wav", "text/plain"]
+        transcript = store.get_artifact(artifacts[1]["id"])
+        assert transcript is not None
+        path = store.path.parent / "artifacts" / transcript["storage_key"]
+        assert path.read_text(encoding="utf-8") == "Windows offline transcript fixture"
+
+
+def test_windows_offline_transcription_rejects_service_url(workspace_tmp_path) -> None:
+    source_audio = wav_data()
+    store = RunStore(workspace_tmp_path / "windows-voice-url.sqlite3")
+    token = "windows-voice-url-test-token-long-enough"
+    encoded = "data:audio/wav;base64," + base64.b64encode(source_audio).decode("ascii")
+    with TestClient(create_app(QuietProvider(), SecretStr(token), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "objective": "Summarize the local recording",
+                "audio": encoded,
+                "transcription_provider": "windows_offline",
+                "transcription_url": "http://127.0.0.1:8000/v1/audio/transcriptions",
+            },
+        )
+    assert response.status_code == 409
+    assert "only used with an OpenAI-compatible local service" in response.json()["detail"]
