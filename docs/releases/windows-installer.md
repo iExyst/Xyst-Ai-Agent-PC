@@ -1,5 +1,11 @@
 # Unsigned Windows installer development build
 
+## Verify the Docker network grant in the Windows source and package (2026-11-26)
+
+Exact-source Windows CI [45759545786](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45759545786) passed on `ad7431481c88c48418d31f4b639b1788d364826b`: 1,766 Python tests passed, 37 skipped, and configured browser, static, contract, type and desktop checks passed. The live Docker run [45759552842](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45759552842) passed all eight real-Docker cases, including the owner-granted bridge connection. Exact-source installer run [45759879304](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45759879304) passed release-notice validation, frozen and installed AppContainer execution, native desktop recovery/onboarding, upgrade, current-user and standard-user install, boot, uninstall, and explicit data removal.
+
+The unsigned 0.1.1 setup is [artifact 15089503433](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45759879304/artifacts/15089503433), preserved in [`.acceptance/hosted-installer-45759879304/`](../../.acceptance/hosted-installer-45759879304/). It is 83,255,219 bytes; SHA-256 `27efb4f3074847dd1e2e651caee31516fe6cf2e4da76e1d50125a4a6bfc9cc61` matches the downloaded setup executable and installer manifest. The package is unsigned. This verifies the tested Windows build and installation path; code signing, legal review, broad independent-machine coverage, physical human-speech recognition, and final live-model acceptance remain open.
+
 ## Latest exact-source Windows package (2026-11-26)
 
 Exact-source workflow [45754532022](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45754532022) passed on `58348b1fe2949f9d40db8a7e8399f4619981d3be`, including the full Windows installer lifecycle and installed offline speech acceptance. The unsigned 0.1.1 setup artifact [15088555329](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45754532022/artifacts/15088555329) is 83,250,229 bytes; SHA-256 `1f7421a59d243051a7ef765bd7b67c289d4b69019a0c82cc5d641d75a9227d88` matches the downloaded executable and manifest. The installer remains unsigned; signing, legal review, independent-machine, physical microphone, and live-model release gates remain open.
