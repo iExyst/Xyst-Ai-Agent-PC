@@ -38,7 +38,8 @@ $recognizer.add_AudioLevelUpdated($audioHandler)
     [Console]::Error.WriteLine('Listening locally. Say: Hello world.')
     $result = $recognizer.Recognize([System.TimeSpan]::FromSeconds(35))
 if ($null -eq $result -or [string]::IsNullOrWhiteSpace($result.Text)) {
-    [Console]::Out.Write((@{failure='no_speech_recognized'; audio_events=$script:audioMetrics.events; peak_input_level=$script:audioMetrics.peak_level} | ConvertTo-Json -Compress))
+    $failure = if ($script:audioMetrics.peak_level -eq 0) { 'silent_input' } else { 'no_speech_recognized' }
+    [Console]::Out.Write((@{failure=$failure; audio_events=$script:audioMetrics.events; peak_input_level=$script:audioMetrics.peak_level} | ConvertTo-Json -Compress))
     exit 3
 }
 [Console]::Out.Write((@{text=$result.Text; culture=$recognizerInfo.Culture.Name; confidence=$result.Confidence; audio_events=$script:audioMetrics.events; peak_input_level=$script:audioMetrics.peak_level} | ConvertTo-Json -Compress))
@@ -77,7 +78,7 @@ try {
         reject(new Error(`Windows microphone recognizer returned invalid output: ${Buffer.concat(errors).toString('utf8').slice(-1000)}`));
         return;
       }
-      if (code === 3 && parsed.failure === 'no_speech_recognized') resolve(parsed);
+      if (code === 3 && ['silent_input', 'no_speech_recognized'].includes(parsed.failure)) resolve(parsed);
       else if (code !== 0) reject(new Error(`Windows microphone recognition failed: ${Buffer.concat(errors).toString('utf8').slice(-1000)}`));
       else resolve(parsed);
     });
@@ -86,8 +87,8 @@ try {
   const message = error instanceof Error ? error.message : String(error);
   failureCode = 'recognizer_error';
 }
-if (failureCode === undefined && result?.failure === 'no_speech_recognized') {
-  failureCode = 'no_speech_recognized';
+if (failureCode === undefined && ['silent_input', 'no_speech_recognized'].includes(result?.failure)) {
+  failureCode = result.failure;
 }
 const normalize = value => value.toLowerCase().replace(/[^a-z]+/g, ' ').trim();
 const transcript = result?.text;

@@ -1,3 +1,7 @@
+## Distinguish silent microphone input from speech-recognition failure (2026-11-26)
+
+The local Windows microphone acceptance now reports `silent_input` when System.Speech receives only zero-level audio events; it reports `no_speech_recognized` separately when nonzero audio arrives without a transcript. The local verification returned 281 audio-level events and a 0% peak, correctly classifying this host's input as silent ([report](../.acceptance/windows-microphone-speech-88c45147-1758-4eaf-a6c5-8ff060e29c5e/report.json)). The script retained no microphone audio, used no network, and requested no model inference. Physical-microphone-to-ASR acceptance remains open until Windows receives non-silent speech and produces the expected transcript.
+
 ## Report Windows speech input activity without retaining audio (2026-11-26)
 
 The local speech acceptance now records only System.Speech audio-level event count and peak input level alongside its transcript result. The latest run emitted 281 audio-level events with a peak level of 0%, returned `no_speech_recognized`, and retained no microphone audio ([report](../.acceptance/windows-microphone-speech-17c6d45f-648e-492e-9439-f7c29181008a/report.json)). This confirms the recognizer received an active but digitally silent input during that attempt; it does not verify human-speech recognition. The report remains local and records no network or model inference. A working, non-silent microphone is still needed to close this acceptance.
