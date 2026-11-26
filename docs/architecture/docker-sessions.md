@@ -102,7 +102,10 @@ on the hosted Docker runner.
 A new hosted acceptance case now kills the worker process group while a journaled
 Docker session command is active, then invokes stopped-run recovery and checks
 that the call is sealed without replay. The embedded worker and local collection
-checks pass; hosted real-Docker verification is pending.
+checks pass. GitHub rejected manual dispatch because its default-branch copy of
+`engine.yml` lacks `workflow_dispatch`, so a path-filtered Docker workflow now
+runs the live suite when these transport or acceptance files change. Hosted
+real-Docker verification is pending.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 
