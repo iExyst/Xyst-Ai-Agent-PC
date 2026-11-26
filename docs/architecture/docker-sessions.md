@@ -146,7 +146,10 @@ a `Path` to `RunStore`, before cleanup began. Corrected hosted Docker workflow
 passed all 19 live-engine cases on Docker 28.0.4 and the pinned Python image,
 including the close-interruption recovery ([JUnit evidence](../../.acceptance/hosted-docker-close-crash-45816309726/junit.xml)).
 Exact-source Windows workflow [45816309785](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45816309785)
-is in progress.
+passed on `f2f2204c` with 1,784 Python tests and 48 skipped, plus the configured
+desktop, browser/Edge, static, type, API-contract, and process-recovery checks.
+The installer job was skipped; this verifies source and desktop behavior, not a
+newly built installer.
 
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
