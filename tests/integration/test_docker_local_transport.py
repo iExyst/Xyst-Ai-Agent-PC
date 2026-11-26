@@ -5,6 +5,8 @@ import base64
 import io
 import json
 import os
+import signal
+import sys
 import tarfile
 import tempfile
 import time
@@ -22,7 +24,7 @@ from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.tool_worker import execute_filesystem
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
-from xaa.storage.commands import command_artifact_root
+from xaa.storage.commands import CommandJournal, command_artifact_root
 from xaa.storage.docker_sessions import DockerSessionJournal
 from xaa.storage.runs import RunStore, TaskReadScope
 from xaa.storage.tasks import TaskStore
@@ -238,6 +240,196 @@ async def test_live_docker_session_recovery_after_manager_restart_never_replays_
         assert status["removed"] is True
     finally:
         await launcher.control("cleanup", intent, deadline=time.monotonic() + 15)
+
+
+@pytest.mark.asyncio
+async def test_live_docker_session_recovery_after_worker_process_death_never_replays(
+    workspace_tmp_path: Path,
+) -> None:
+    live_docker_required()
+    if os.name != "posix":
+        pytest.skip("Process-group death acceptance requires the hosted POSIX Docker runner.")
+
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    request = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        max_seconds=45,
+        docker_session_reuse=True,
+    )
+    transport = await DockerLocalTransport.discover(request, deadline=time.monotonic() + 20)
+    grant = request.model_copy(update={"profile_sha256": transport.profile_sha256})
+    data = workspace_tmp_path / "data"
+    data.mkdir()
+    store = RunStore(data / "crash-recovery.sqlite3")
+    run = store.create_run(
+        objective="Recover an interrupted Docker session without replay",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model=None,
+        command_grant=grant.model_dump(mode="json"),
+    )
+    owner = store.acquire_lease(run["id"], "docker-worker-crash", seconds=120)
+    assert owner is not None
+    store.transition(run["id"], RunState.PLANNING, owner=owner)
+    store.transition(run["id"], RunState.RUNNING, owner=owner)
+    call_id = "docker-crash-active-call"
+    intent = CommandJournal(store).reserve(
+        run["id"],
+        owner,
+        call_id,
+        {
+            "argv": [
+                "python3",
+                "-I",
+                "-c",
+                "from pathlib import Path; import time; Path('/workspace/started').write_text('yes'); print('docker-crash-marker', flush=True); time.sleep(300)",
+            ],
+            "max_seconds": 40,
+        },
+        idempotency_key=call_id,
+    )
+    assert intent.docker_session_id is not None
+    sessions = DockerSessionJournal(store)
+    session = sessions.get(intent.docker_session_id)
+    assert session is not None and session.state == "reserved"
+    sessions.transition(session.id, owner, expected={"reserved"}, destination="creating")
+
+    registration = workspace_tmp_path / "container-id.txt"
+    registered_ack = workspace_tmp_path / "container-registered"
+    command_started = workspace_tmp_path / "command-started"
+    worker_code = """
+import asyncio, json, pathlib, sys, time
+from xaa.runtime.command_contracts import CommandGrant, CommandIntent
+from xaa.runtime.docker_local_transport import DockerLocalTransport
+from xaa.runtime.workspace_snapshot import WorkspaceSnapshot
+
+async def main():
+    values = json.loads(sys.argv[1])
+    intent = CommandIntent.model_validate(values["intent"])
+    grant = CommandGrant(
+        backend="docker-local-v1", distribution="Docker-local",
+        profile_sha256="0" * 64, image_reference=intent.image_reference,
+        max_seconds=45, docker_session_reuse=True,
+    )
+    transport = await DockerLocalTransport.discover(grant, deadline=time.monotonic() + 30)
+    async def register(container_id):
+        pathlib.Path(values["registration"]).write_text(container_id, encoding="ascii")
+        deadline = time.monotonic() + 30
+        while not pathlib.Path(values["registered_ack"]).exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Session journal registration was not acknowledged.")
+            await asyncio.sleep(0.02)
+    async def output(_stream, chunk):
+        if b"docker-crash-marker" in chunk:
+            pathlib.Path(values["command_started"]).write_text("started", encoding="ascii")
+    await transport.run(
+        intent, WorkspaceSnapshot((), (), ()), deadline=time.monotonic() + 90,
+        on_session_container=register, on_output=output,
+    )
+
+asyncio.run(main())
+"""
+    worker: asyncio.subprocess.Process | None = None
+
+    async def recover(_intent: CommandIntent) -> DockerLocalTransport:
+        return await DockerLocalTransport.discover(_intent, deadline=time.monotonic() + 20)
+
+    recovery = StoppedCommandRecovery(store, recover)
+    try:
+        worker = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            worker_code,
+            json.dumps(
+                {
+                    "intent": intent.model_dump(mode="json"),
+                    "registration": str(registration),
+                    "registered_ack": str(registered_ack),
+                    "command_started": str(command_started),
+                }
+            ),
+            cwd=str(Path.cwd()),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + 60
+        while not registration.exists():
+            if worker.returncode is not None:
+                stderr = await worker.stderr.read() if worker.stderr is not None else b""
+                raise AssertionError(f"Docker worker exited before session creation: {stderr!r}")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Docker worker did not register its session container.")
+            await asyncio.sleep(0.05)
+        container_id = registration.read_text(encoding="ascii")
+        sessions.transition(
+            session.id,
+            owner,
+            expected={"creating"},
+            destination="ready",
+            container_id=container_id,
+        )
+        sessions.transition(
+            session.id,
+            owner,
+            expected={"ready"},
+            destination="busy",
+            execution_id=intent.execution_id,
+        )
+        registered_ack.write_text("saved", encoding="ascii")
+        deadline = time.monotonic() + 45
+        while not command_started.exists():
+            if worker.returncode is not None:
+                stderr = await worker.stderr.read() if worker.stderr is not None else b""
+                raise AssertionError(f"Docker worker exited before active command: {stderr!r}")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Docker command did not reach its active marker.")
+            await asyncio.sleep(0.05)
+
+        status = await transport.control("status", intent, deadline=time.monotonic() + 10)
+        assert status["manager_alive"] is True and status["closed"] is False
+        os.killpg(worker.pid, signal.SIGKILL)
+        await asyncio.wait_for(worker.wait(), timeout=15)
+        assert worker.returncode == -signal.SIGKILL
+        interrupted = sessions.get(session.id)
+        assert interrupted is not None and interrupted.state == "busy"
+        assert interrupted.active_execution_id == intent.execution_id
+
+        stopped = store.transition(run["id"], RunState.FAILED, owner=owner)
+        assert stopped["lease_owner"] is None
+        assert await recovery.run_once() == 2
+        closed = sessions.get(session.id)
+        assert closed is not None and closed.state == "closed"
+        tool_call = store.unresolved_tool_calls(run["id"])
+        assert tool_call == []
+        with store.connection() as connection:
+            call = connection.execute(
+                "SELECT state,result FROM tool_calls WHERE run_id=? AND provider_call_id=?",
+                (run["id"], call_id),
+            ).fetchone()
+            completions = connection.execute(
+                "SELECT COUNT(*) FROM run_events WHERE run_id=? AND event_type='execution.completed'",
+                (run["id"],),
+            ).fetchone()[0]
+        assert call is not None and call["state"] == "failed"
+        assert json.loads(call["result"])["verification"] == "not_verified"
+        assert completions == 0
+    finally:
+        if worker is not None and worker.returncode is None:
+            os.killpg(worker.pid, signal.SIGKILL)
+            await asyncio.gather(worker.wait(), return_exceptions=True)
+        current = store.get_run(run["id"])
+        if current is not None and current["state"] == "running":
+            store.transition(run["id"], RunState.FAILED, owner=owner)
+        current = store.get_run(run["id"])
+        if current is not None and current["state"] in {"failed", "cancelled"}:
+            recovery.retry_after.clear()
+            await recovery.run_once()
 
 
 @pytest.mark.asyncio
