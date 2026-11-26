@@ -174,6 +174,60 @@ async def test_live_docker_session_timeout_and_cancel_close_the_container(
 
 
 @pytest.mark.asyncio
+async def test_live_docker_session_recovery_after_manager_restart_never_replays_command() -> None:
+    live_docker_required()
+    grant = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+    )
+    launcher = await DockerLocalTransport.discover(grant, deadline=time.monotonic() + 20)
+    intent = CommandIntent(
+        argv=["python3", "-I", "-c", "print('original-command')"],
+        max_seconds=10,
+        execution_id=uuid4().hex,
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256=launcher.profile_sha256,
+        image_reference=IMAGE_REFERENCE,
+        docker_session_reuse=True,
+        docker_session_id=uuid4().hex,
+        workspace="docker-live-session-recovery",
+    )
+    registered: list[str] = []
+
+    async def register(container_id: str) -> None:
+        registered.append(container_id)
+
+    try:
+        result = await launcher.run(
+            intent,
+            WorkspaceSnapshot((), (), ()),
+            deadline=time.monotonic() + 30,
+            on_session_container=register,
+        )
+        assert result["succeeded"] is True
+        assert result["docker_session_available"] is True
+        assert len(registered) == 1 and len(registered[0]) == 64
+
+        # A fresh recovery-only transport stands in for the replacement engine
+        # process. It can inspect and remove the saved session, never execute it.
+        recovery = await DockerLocalTransport.discover(intent, deadline=time.monotonic() + 20)
+        with pytest.raises(PermissionError, match="recovery-only"):
+            recovery.require_intent(intent)
+        status = await recovery.control("cleanup", intent, deadline=time.monotonic() + 20)
+        assert status["closed"] is True
+        assert status["cleanup_confirmed"] is True
+        assert status["manager_alive"] is False
+        assert status["outcome"] is None
+        assert status["removed"] is True
+    finally:
+        await launcher.control("cleanup", intent, deadline=time.monotonic() + 15)
+
+
+@pytest.mark.asyncio
 async def test_live_docker_bridge_access_requires_the_explicit_grant() -> None:
     live_docker_required()
     grant = CommandGrant(
