@@ -320,8 +320,8 @@ class SystemResourceSnapshot(BaseModel):
     disk_free_bytes: int | None = Field(ge=0)
     queue_active: bool
     queue_waiting: int = Field(ge=0)
-    queue_reserved_tokens: int = Field(ge=0)
-    queue_max_reserved_tokens: int = Field(ge=1)
+    queue_reserved_weight: int = Field(ge=0)
+    queue_max_reserved_weight: int = Field(ge=1)
     queue_max_pending: int = Field(ge=1)
     gpu_devices: list[GPUResourceSnapshot]
     accelerator_telemetry_available: bool

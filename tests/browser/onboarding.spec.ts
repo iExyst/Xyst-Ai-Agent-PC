@@ -143,7 +143,7 @@ test('onboarding requires a real tool diagnostic and runs its demonstration in O
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
     if(path==='/providers/lm-studio/selection')return route.fulfill({json:{model:request.postDataJSON().model},headers});
     if(path==='/providers/diagnostics')return route.fulfill({json:{model:'fixture/model',tool_round_trip_verified:true},headers});
-    if(path==='/system/resources')return route.fulfill({json:{sampled_at:'2026-11-14T17:00:00Z',platform:'win32',logical_processors:8,cpu_percent:24,memory_total_bytes:16*1024**3,memory_available_bytes:8*1024**3,memory_used_percent:50,disk_total_bytes:512*1024**3,disk_free_bytes:256*1024**3,queue_active:false,queue_waiting:0,queue_reserved_tokens:0,queue_max_reserved_tokens:200000,queue_max_pending:4,gpu_devices:[],accelerator_telemetry_available:false},headers});
+    if(path==='/system/resources')return route.fulfill({json:{sampled_at:'2026-11-14T17:00:00Z',platform:'win32',logical_processors:8,cpu_percent:24,memory_total_bytes:16*1024**3,memory_available_bytes:8*1024**3,memory_used_percent:50,disk_total_bytes:512*1024**3,disk_free_bytes:256*1024**3,queue_active:false,queue_waiting:0,queue_reserved_weight:0,queue_max_reserved_weight:200000,queue_max_pending:4,gpu_devices:[],accelerator_telemetry_available:false},headers});
     if(path==='/execution/distributions')return route.fulfill({json:{state:'unsupported',distributions:[]},headers});
     if(path==='/runs'&&request.method()==='POST'){created=request.postDataJSON();return route.fulfill({json:run,headers});}
     if(path.endsWith('/plan'))return route.fulfill({json:{tasks:[],ready:[],blocked:[]},headers});

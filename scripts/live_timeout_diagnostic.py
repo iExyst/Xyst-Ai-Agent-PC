@@ -35,8 +35,8 @@ class TimeoutDiagnosticProvider(LMStudioProvider):
         return self._inference_queue.waiting
 
     @property
-    def queue_reserved_tokens(self) -> int:
-        return self._inference_queue.reserved_tokens
+    def queue_reserved_weight(self) -> int:
+        return self._inference_queue.reserved_weight
 
 
 async def main() -> None:
@@ -87,7 +87,7 @@ async def main() -> None:
                 "The live request did not demonstrate a response-body timeout after "
                 f"receiving server headers: {outcome}"
             )
-        if provider.queue_waiters != 0 or provider.queue_reserved_tokens != 0:
+        if provider.queue_waiters != 0 or provider.queue_reserved_weight != 0:
             raise RuntimeError("Timed-out inference retained its queue reservation.")
 
         provider.restore_timeout()
@@ -105,7 +105,7 @@ async def main() -> None:
             "chunks_before_timeout": chunks,
             "timeout_error": outcome,
             "queue_waiters_after_timeout": provider.queue_waiters,
-            "queue_reserved_tokens_after_timeout": provider.queue_reserved_tokens,
+            "queue_reserved_weight_after_timeout": provider.queue_reserved_weight,
             "successor_answer": successor_answer,
         }
         evidence = Path(".acceptance") / str(uuid4())

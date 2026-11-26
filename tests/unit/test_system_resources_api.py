@@ -29,8 +29,8 @@ def test_system_resource_endpoint_requires_local_api_authentication(
     assert snapshot["logical_processors"] >= 1
     assert snapshot["queue_active"] is False
     assert snapshot["queue_waiting"] == 0
-    assert snapshot["queue_reserved_tokens"] == 0
-    assert snapshot["queue_max_reserved_tokens"] == 2_000_000
+    assert snapshot["queue_reserved_weight"] == 0
+    assert snapshot["queue_max_reserved_weight"] == 2_000_000
     assert snapshot["accelerator_telemetry_available"] is bool(snapshot["gpu_devices"])
     assert all(
         device["memory_free_bytes"] is None or device["memory_free_bytes"] >= 0

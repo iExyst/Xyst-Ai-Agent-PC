@@ -616,7 +616,7 @@ def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[
     ram_peak: int | None = None
     gpu_peaks: dict[str, dict[str, int | float | None]] = {}
     queue_waiting_peak = 0
-    queue_reserved_tokens_peak = 0
+    queue_reserved_weight_peak = 0
     queue_active_seen = False
     for sample in samples:
         cpu = sample.get("cpu_percent")
@@ -634,9 +634,9 @@ def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[
         waiting = sample.get("queue_waiting")
         if type(waiting) is int and waiting >= 0:
             queue_waiting_peak = max(queue_waiting_peak, waiting)
-        reserved_tokens = sample.get("queue_reserved_tokens")
-        if type(reserved_tokens) is int and reserved_tokens >= 0:
-            queue_reserved_tokens_peak = max(queue_reserved_tokens_peak, reserved_tokens)
+        reserved_weight = sample.get("queue_reserved_weight")
+        if type(reserved_weight) is int and reserved_weight >= 0:
+            queue_reserved_weight_peak = max(queue_reserved_weight_peak, reserved_weight)
         queue_active_seen = queue_active_seen or sample.get("queue_active") is True
 
         devices = sample.get("gpu_devices")
@@ -676,7 +676,7 @@ def summarize_resource_samples(samples: Sequence[Mapping[str, object]]) -> dict[
         "host_ram_used_peak_bytes": ram_peak,
         "queue_active_seen": queue_active_seen,
         "queue_waiting_peak": queue_waiting_peak,
-        "queue_reserved_tokens_peak": queue_reserved_tokens_peak,
+        "queue_reserved_weight_peak": queue_reserved_weight_peak,
         "gpu_devices": gpu_peaks,
         "scope": "host-wide system counters; includes unrelated processes and is not process-attributed",
     }
@@ -746,8 +746,8 @@ class SystemResourceMonitor:
             "disk_free_bytes": disk_free,
             "queue_active": bool(queue["active"]),
             "queue_waiting": int(queue["waiting"]),
-            "queue_reserved_tokens": int(queue["reserved_tokens"]),
-            "queue_max_reserved_tokens": int(queue["max_reserved_tokens"]),
+            "queue_reserved_weight": int(queue["reserved_weight"]),
+            "queue_max_reserved_weight": int(queue["max_reserved_weight"]),
             "queue_max_pending": int(queue["max_pending"]),
             "gpu_devices": gpu_devices,
             "accelerator_telemetry_available": bool(gpu_devices),

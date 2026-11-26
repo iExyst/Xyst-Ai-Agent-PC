@@ -7316,14 +7316,14 @@
             "title": "Queue Max Pending",
             "type": "integer"
           },
-          "queue_max_reserved_tokens": {
+          "queue_max_reserved_weight": {
             "minimum": 1.0,
-            "title": "Queue Max Reserved Tokens",
+            "title": "Queue Max Reserved Weight",
             "type": "integer"
           },
-          "queue_reserved_tokens": {
+          "queue_reserved_weight": {
             "minimum": 0.0,
-            "title": "Queue Reserved Tokens",
+            "title": "Queue Reserved Weight",
             "type": "integer"
           },
           "queue_waiting": {
@@ -7348,8 +7348,8 @@
           "disk_free_bytes",
           "queue_active",
           "queue_waiting",
-          "queue_reserved_tokens",
-          "queue_max_reserved_tokens",
+          "queue_reserved_weight",
+          "queue_max_reserved_weight",
           "queue_max_pending",
           "gpu_devices",
           "accelerator_telemetry_available"

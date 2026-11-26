@@ -20,28 +20,28 @@ class InferenceQueueTimeout(InferenceQueueError):
 
 
 class InferenceQueue:
-    """Serialize one local server while bounding queued request count and token weight.
+    """Serialize one local server while bounding queued count and estimated weight.
 
-    The token weight is a conservative UTF-8 byte estimate of prompt and tool JSON,
-    plus the requested output allowance. It bounds queued work; context safety is
-    independently enforced by the provider's context admission path.
+    The weight combines a conservative UTF-8 byte estimate of prompt and tool JSON
+    with the requested output allowance. It is not a token count or VRAM estimate.
+    Context safety is independently enforced by the provider's context admission path.
     """
 
     def __init__(
         self,
         *,
         max_pending: int = 16,
-        max_reserved_tokens: int = 2_000_000,
+        max_reserved_weight: int = 2_000_000,
         wait_timeout: float = 180.0,
     ) -> None:
-        if max_pending < 1 or max_reserved_tokens < 1 or wait_timeout <= 0:
+        if max_pending < 1 or max_reserved_weight < 1 or wait_timeout <= 0:
             raise ValueError("Inference queue limits must be positive.")
         self.max_pending = max_pending
-        self.max_reserved_tokens = max_reserved_tokens
+        self.max_reserved_weight = max_reserved_weight
         self.wait_timeout = wait_timeout
         self.lock = asyncio.Lock()
         self._waiting = 0
-        self._reserved_tokens = 0
+        self._reserved_weight = 0
         self._active = False
 
     @property
@@ -50,9 +50,9 @@ class InferenceQueue:
         return self._waiting
 
     @property
-    def reserved_tokens(self) -> int:
-        """Conservative token-weight estimate across active and queued requests."""
-        return self._reserved_tokens
+    def reserved_weight(self) -> int:
+        """Estimated queue weight across active and queued requests."""
+        return self._reserved_weight
 
     @property
     def active(self) -> bool:
@@ -64,18 +64,16 @@ class InferenceQueue:
         return {
             "active": self._active,
             "waiting": self._waiting,
-            "reserved_tokens": self._reserved_tokens,
-            "max_reserved_tokens": self.max_reserved_tokens,
+            "reserved_weight": self._reserved_weight,
+            "max_reserved_weight": self.max_reserved_weight,
             "max_pending": self.max_pending,
         }
 
     @asynccontextmanager
-    async def slot(
-        self, token_weight: int, *, wait_timeout: float | None = None
-    ) -> AsyncGenerator[None]:
-        if type(token_weight) is not int or token_weight < 0:
-            raise ValueError("Inference queue token weight must be a nonnegative integer.")
-        if token_weight > self.max_reserved_tokens:
+    async def slot(self, weight: int, *, wait_timeout: float | None = None) -> AsyncGenerator[None]:
+        if type(weight) is not int or weight < 0:
+            raise ValueError("Inference queue weight must be a nonnegative integer.")
+        if weight > self.max_reserved_weight:
             raise InferenceQueueFull(
                 "This request exceeds the local inference queue's working-set limit. "
                 "Reduce the prompt or output allowance, or increase the queue limit."
@@ -84,14 +82,14 @@ class InferenceQueue:
             raise InferenceQueueFull(
                 "The local inference queue is full. Wait for active model work to finish."
             )
-        if self._reserved_tokens + token_weight > self.max_reserved_tokens:
+        if self._reserved_weight + weight > self.max_reserved_weight:
             raise InferenceQueueFull(
                 "The local inference queue has no capacity for this request's estimated "
-                "prompt and output tokens. Wait for queued work to finish."
+                "payload weight. Wait for queued work to finish."
             )
 
         self._waiting += 1
-        self._reserved_tokens += token_weight
+        self._reserved_weight += weight
         waiting = True
         acquired = False
         try:
@@ -115,4 +113,4 @@ class InferenceQueue:
                 self.lock.release()
             if waiting:
                 self._waiting -= 1
-            self._reserved_tokens -= token_weight
+            self._reserved_weight -= weight

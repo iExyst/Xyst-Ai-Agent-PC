@@ -52,7 +52,7 @@ def test_resource_sample_summary_reports_host_and_per_gpu_peaks() -> None:
                 "memory_available_bytes": 400,
                 "queue_active": True,
                 "queue_waiting": 1,
-                "queue_reserved_tokens": 200,
+                "queue_reserved_weight": 200,
                 "gpu_devices": [
                     {
                         "name": "GPU A",
@@ -74,7 +74,7 @@ def test_resource_sample_summary_reports_host_and_per_gpu_peaks() -> None:
                 "memory_available_bytes": 250,
                 "queue_active": False,
                 "queue_waiting": 0,
-                "queue_reserved_tokens": 50,
+                "queue_reserved_weight": 50,
                 "gpu_devices": [
                     {
                         "name": "GPU A",
@@ -93,7 +93,7 @@ def test_resource_sample_summary_reports_host_and_per_gpu_peaks() -> None:
         "host_ram_used_peak_bytes": 750,
         "queue_active_seen": True,
         "queue_waiting_peak": 1,
-        "queue_reserved_tokens_peak": 200,
+        "queue_reserved_weight_peak": 200,
         "gpu_devices": {
             "GPU A": {"memory_used_peak_bytes": 600, "utilization_peak_percent": 76.0},
             "GPU B": {"memory_used_peak_bytes": None, "utilization_peak_percent": None},
@@ -292,8 +292,8 @@ def test_monitor_reports_cpu_memory_disk_queue_and_missing_gpu(
     queue = {
         "active": True,
         "waiting": 2,
-        "reserved_tokens": 640,
-        "max_reserved_tokens": 2_000_000,
+        "reserved_weight": 640,
+        "max_reserved_weight": 2_000_000,
         "max_pending": 16,
     }
 
@@ -306,7 +306,7 @@ def test_monitor_reports_cpu_memory_disk_queue_and_missing_gpu(
     assert second["disk_free_bytes"] == 6_000
     assert second["queue_active"] is True
     assert second["queue_waiting"] == 2
-    assert second["queue_reserved_tokens"] == 640
+    assert second["queue_reserved_weight"] == 640
     assert second["accelerator_telemetry_available"] is False
     monitor.close()
     assert not any("path" in key.lower() for key in second)

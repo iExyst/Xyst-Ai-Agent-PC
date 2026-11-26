@@ -4924,10 +4924,10 @@ export interface components {
             queue_active: boolean;
             /** Queue Max Pending */
             queue_max_pending: number;
-            /** Queue Max Reserved Tokens */
-            queue_max_reserved_tokens: number;
-            /** Queue Reserved Tokens */
-            queue_reserved_tokens: number;
+            /** Queue Max Reserved Weight */
+            queue_max_reserved_weight: number;
+            /** Queue Reserved Weight */
+            queue_reserved_weight: number;
             /** Queue Waiting */
             queue_waiting: number;
             /** Sampled At */
