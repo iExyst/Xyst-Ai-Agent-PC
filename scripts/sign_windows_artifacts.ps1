@@ -39,6 +39,7 @@ $certificate = $pfx.EndEntityCertificates[0]
 $thumbprint = $certificate.Thumbprint
 $storePath = "Cert:\CurrentUser\My\$thumbprint"
 $preexistingThumbprints = @(Get-ChildItem -LiteralPath 'Cert:\CurrentUser\My' | ForEach-Object { $_.Thumbprint })
+$importedThumbprints = @()
 if (Test-Path -LiteralPath $storePath) {
     throw 'The signing certificate already exists in the current-user store; refusing to remove an existing certificate.'
 }
@@ -58,6 +59,11 @@ try {
         -FilePath (Resolve-Path -LiteralPath $env:XAA_SIGNING_CERTIFICATE).Path `
         -CertStoreLocation 'Cert:\CurrentUser\My' `
         -Password $password
+    $importedThumbprints = @(
+        $imported |
+            ForEach-Object { [string]$_.Thumbprint } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
     $signingCertificate = @($imported | Where-Object { $_.Thumbprint -eq $thumbprint }) | Select-Object -First 1
     if ($null -eq $signingCertificate -or -not $signingCertificate.HasPrivateKey) {
         throw 'The PFX did not import the selected signing certificate with its private key.'
@@ -74,7 +80,10 @@ try {
     }
 } finally {
     Get-ChildItem -LiteralPath 'Cert:\CurrentUser\My' |
-        Where-Object { $preexistingThumbprints -notcontains $_.Thumbprint } |
+        Where-Object {
+            $importedThumbprints -contains $_.Thumbprint -and
+            $preexistingThumbprints -notcontains $_.Thumbprint
+        } |
         Remove-Item -Force -ErrorAction SilentlyContinue
     Remove-Variable password -ErrorAction SilentlyContinue
     Remove-Variable signingCertificate -ErrorAction SilentlyContinue
