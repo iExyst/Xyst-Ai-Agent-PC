@@ -75,7 +75,7 @@ $stream.Dispose()
         stdin=subprocess.DEVNULL,
         capture_output=True,
         env=child_environment,
-        timeout=20,
+        timeout=60,
         check=False,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )

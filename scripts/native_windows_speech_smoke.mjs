@@ -45,7 +45,7 @@ const synthesis = await new Promise((resolve, reject) => {
   });
   const chunks = [];
   child.stdout.on('data', chunk => chunks.push(chunk));
-  const timeout = setTimeout(() => { child.kill(); reject(new Error('Local synthetic speech generation timed out.')); }, 20_000);
+  const timeout = setTimeout(() => { child.kill(); reject(new Error('Local synthetic speech generation timed out.')); }, 60_000);
   child.once('error', error => { clearTimeout(timeout); reject(error); });
   child.once('close', code => {
     clearTimeout(timeout);
