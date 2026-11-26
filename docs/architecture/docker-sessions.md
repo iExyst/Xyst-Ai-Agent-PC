@@ -92,9 +92,12 @@ or cleanup after every grant-revocation and failed-execution path. A focused
 Windows unit regression verifies Docker CLI launches use a private temporary
 configuration and omit inherited Docker authentication/configuration, SSH-agent,
 cloud-secret, and user-profile environment variables; live daemon credential
-handling and host-sentinel acceptance remain open. Docker is not installed on
-the development Windows host, so its live acceptance runs on the hosted Docker
-runner.
+handling and host-sentinel acceptance remain open. Exact-source Windows workflow
+[45796858646](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45796858646)
+passed on `413f243b` with 1,784 Python tests and 43 skipped, plus the configured
+browser, static, type, desktop, API-contract, and process-recovery checks. Docker
+is not installed on the development Windows host, so its live acceptance runs
+on the hosted Docker runner.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 

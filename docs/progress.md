@@ -2,7 +2,7 @@
 
 ## Check Docker CLI credential environment isolation (2026-11-26)
 
-Added a regression for the subprocess environment used by local Docker operations. It confirms each CLI launch receives a private temporary `DOCKER_CONFIG`/home/temp directory, a narrowly assembled PATH, and no inherited Docker auth/config, SSH-agent, cloud-secret, or Windows user-profile variables. The focused Windows test passes; Ruff, format, and diff checks pass. This validates CLI environment construction, not registry authentication behavior or daemon-side credential handling; live host-sentinel and installed Windows acceptance remain open.
+Added a regression for the subprocess environment used by local Docker operations. It confirms each CLI launch receives a private temporary `DOCKER_CONFIG`/home/temp directory, a narrowly assembled PATH, and no inherited Docker auth/config, SSH-agent, cloud-secret, or Windows user-profile variables. All 25 Docker policy unit tests pass locally; Ruff, format, and diff checks pass. Exact-source Windows workflow [45796858646](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45796858646) passed on `413f243b`: 1,784 Python tests passed and 43 skipped, plus browser/Edge, Ruff, formatting, Pyright, contracts, desktop UI, and process-recovery checks. This validates CLI environment construction, not registry authentication behavior or daemon-side credential handling; live host-sentinel and installed Windows acceptance remain open.
 
 ## Verify Docker sessions across specialist tasks (2026-11-26)
 
