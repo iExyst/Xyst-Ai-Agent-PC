@@ -685,6 +685,143 @@ asyncio.run(main())
 
 
 @pytest.mark.asyncio
+async def test_live_docker_session_recovery_after_worker_death_during_close(
+    workspace_tmp_path: Path,
+) -> None:
+    live_docker_required()
+    if os.name != "posix":
+        pytest.skip("Process-group death acceptance requires the hosted POSIX Docker runner.")
+
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    request = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        max_seconds=20,
+        docker_session_reuse=True,
+    )
+    transport = await DockerLocalTransport.discover(request, deadline=time.monotonic() + 20)
+    grant = request.model_copy(update={"profile_sha256": transport.profile_sha256})
+    data = workspace_tmp_path / "data"
+    data.mkdir()
+    store = RunStore(data / "close-crash-recovery.sqlite3")
+    run = store.create_run(
+        objective="Recover a Docker session interrupted during close",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model=None,
+        command_grant=grant.model_dump(mode="json"),
+    )
+    owner = store.acquire_lease(run["id"], "docker-close-worker-crash", seconds=120)
+    assert owner is not None
+    store.transition(run["id"], RunState.PLANNING, owner=owner)
+    store.transition(run["id"], RunState.RUNNING, owner=owner)
+    controller = CommandController(store, transport)
+    result = await controller.execute(
+        run["id"],
+        owner,
+        "docker-close-seed-call",
+        {"argv": ["python3", "-I", "-c", "print('close-seed-finished')"]},
+        idempotency_key="docker-close-seed-call",
+        deadline=time.monotonic() + 45,
+    )
+    assert result["succeeded"] is True and result["docker_session_available"] is True
+    with store.connection() as connection:
+        session_id = connection.execute(
+            "SELECT id FROM docker_sessions WHERE run_id=?", (run["id"],)
+        ).fetchone()["id"]
+    sessions = DockerSessionJournal(store)
+    intent = sessions.saved_intent(session_id)
+    failed = store.transition(run["id"], RunState.FAILED, owner=owner)
+    assert failed["lease_owner"] is None
+    closing = sessions.get(session_id)
+    assert closing is not None and closing.state == "stopping"
+
+    rm_finished = workspace_tmp_path / "docker-rm-finished"
+    wrapper = workspace_tmp_path / "docker-close-wrapper"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f'{shlex.quote(transport.executable)} "$@"\n'
+        "status=$?\n"
+        'if [ "$status" -eq 0 ] && [ "$1" = "--host" ] && [ "$3" = "rm" ]; then\n'
+        f"  printf 'removed\\n' > {shlex.quote(str(rm_finished))}\n"
+        "  sleep 300\n"
+        "fi\n"
+        'exit "$status"\n',
+        encoding="utf-8",
+    )
+    os.chmod(wrapper, 0o755)
+    worker_code = """
+import asyncio, pathlib, sys, time
+from xaa.runtime.command_recovery import StoppedCommandRecovery
+from xaa.runtime.docker_local_transport import DockerLocalTransport
+from xaa.storage.runs import RunStore
+
+async def main():
+    store = RunStore(sys.argv[1])
+    async def discover(intent):
+        transport = await DockerLocalTransport.discover(intent, deadline=time.monotonic() + 20)
+        transport.executable = sys.argv[2]
+        return transport
+    await StoppedCommandRecovery(store, discover).run_once()
+
+asyncio.run(main())
+"""
+    worker: asyncio.subprocess.Process | None = None
+
+    async def recover(_intent: CommandIntent) -> DockerLocalTransport:
+        return await DockerLocalTransport.discover(_intent, deadline=time.monotonic() + 20)
+
+    recovery = StoppedCommandRecovery(store, recover)
+    try:
+        worker = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            worker_code,
+            str(data / "close-crash-recovery.sqlite3"),
+            str(wrapper),
+            cwd=str(Path.cwd()),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + 45
+        while not rm_finished.exists():
+            if worker.returncode is not None:
+                stderr = await worker.stderr.read() if worker.stderr is not None else b""
+                raise AssertionError(f"Docker close worker exited before removal: {stderr!r}")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Docker session cleanup did not reach its removal boundary.")
+            await asyncio.sleep(0.02)
+        assert await transport._inspect_container(intent, deadline=time.monotonic() + 10) is None
+        os.killpg(worker.pid, signal.SIGKILL)
+        await asyncio.wait_for(worker.wait(), timeout=15)
+        assert worker.returncode == -signal.SIGKILL
+        interrupted = sessions.get(session_id)
+        assert interrupted is not None and interrupted.state == "stopping"
+
+        assert await recovery.run_once() == 1
+        closed = sessions.get(session_id)
+        assert closed is not None and closed.state == "closed"
+        assert await transport._inspect_container(intent, deadline=time.monotonic() + 10) is None
+        assert store.unresolved_tool_calls(run["id"]) == []
+    finally:
+        if worker is not None and worker.returncode is None:
+            os.killpg(worker.pid, signal.SIGKILL)
+            await asyncio.gather(worker.wait(), return_exceptions=True)
+        current = store.get_run(run["id"])
+        if current is not None and current["state"] == "running":
+            store.transition(run["id"], RunState.FAILED, owner=owner)
+        current = store.get_run(run["id"])
+        if current is not None and current["state"] in {"failed", "cancelled"}:
+            recovery.retry_after.clear()
+            await recovery.run_once()
+
+
+@pytest.mark.asyncio
 async def test_live_docker_session_exports_bounded_archive_without_project_integration() -> None:
     live_docker_required()
     grant = CommandGrant(
