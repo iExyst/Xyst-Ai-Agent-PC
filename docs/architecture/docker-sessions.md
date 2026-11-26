@@ -109,6 +109,9 @@ four ([JUnit evidence](../../.acceptance/hosted-docker-session-budget-4583077372
 The fixed limits aggregate to at most 512 MiB, two CPU cores, and 128 processes
 for reusable sessions in one profile. Independent profile databases and
 disposable per-command containers are outside this cap.
+Exact-source Windows CI [45830773688](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45830773688)
+passed on `ad1ffc59` with 1,786 Python tests and 49 skipped, plus configured
+browser/UI, static, type, API-contract, and process-recovery checks.
 
 The wider acceptance gate remains open for installed Windows coordinator,
 grant, and artifact behavior; machine-wide resource budgets across separate
