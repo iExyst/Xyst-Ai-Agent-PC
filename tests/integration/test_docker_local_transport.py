@@ -20,6 +20,7 @@ from xaa.runtime.docker_local_transport import DockerLocalTransport, _cli_reques
 from xaa.runtime.docker_session_archive import validate_session_archive
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
+from xaa.runtime.tool_worker import execute_filesystem
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 from xaa.storage.commands import command_artifact_root
 from xaa.storage.docker_sessions import DockerSessionJournal
@@ -455,6 +456,18 @@ async def test_live_docker_session_controller_persists_archive_and_recovers_stop
             assert claim is not None
             task_id = str(claim["task"]["local_id"])
             task_scopes[task_id] = TaskReadScope(run["id"], owner, task_id, str(claim["token"]))
+            await execute_filesystem(
+                store,
+                run["id"],
+                owner,
+                f"{task_id}-branch-init",
+                "branch_init",
+                {},
+                idempotency_key=f"{task_id}-branch-init",
+                internal=True,
+                task_id=task_id,
+                task_token=task_scopes[task_id].task_token,
+            )
         task_write = await CommandController(
             store, transport, task_scope=task_scopes["docker-task-a"]
         ).execute(
