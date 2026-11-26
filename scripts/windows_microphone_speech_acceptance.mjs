@@ -26,16 +26,27 @@ try {
     $recognizer.InitialSilenceTimeout = [System.TimeSpan]::FromSeconds(20)
     $recognizer.BabbleTimeout = [System.TimeSpan]::FromSeconds(12)
     $recognizer.EndSilenceTimeout = [System.TimeSpan]::FromSeconds(1)
+$script:audioMetrics = [System.Collections.Hashtable]::Synchronized(@{events=0; peak_level=0})
+$audioHandlerBlock = {
+    param($sender, $eventArgs)
+    $script:audioMetrics.events = [int]$script:audioMetrics.events + 1
+    $script:audioMetrics.peak_level = [Math]::Max([int]$script:audioMetrics.peak_level, [int]$eventArgs.AudioLevel)
+}.GetNewClosure()
+$audioHandler = [System.EventHandler[System.Speech.Recognition.AudioLevelUpdatedEventArgs]]$audioHandlerBlock
+$recognizer.add_AudioLevelUpdated($audioHandler)
     $recognizer.SetInputToDefaultAudioDevice()
     [Console]::Error.WriteLine('Listening locally. Say: Hello world.')
     $result = $recognizer.Recognize([System.TimeSpan]::FromSeconds(35))
-    if ($null -eq $result -or [string]::IsNullOrWhiteSpace($result.Text)) { throw 'No speech was recognized.' }
-    [Console]::Out.Write((@{text=$result.Text; culture=$recognizerInfo.Culture.Name; confidence=$result.Confidence} | ConvertTo-Json -Compress))
+if ($null -eq $result -or [string]::IsNullOrWhiteSpace($result.Text)) {
+    [Console]::Out.Write((@{failure='no_speech_recognized'; audio_events=$script:audioMetrics.events; peak_input_level=$script:audioMetrics.peak_level} | ConvertTo-Json -Compress))
+    exit 3
+}
+[Console]::Out.Write((@{text=$result.Text; culture=$recognizerInfo.Culture.Name; confidence=$result.Confidence; audio_events=$script:audioMetrics.events; peak_input_level=$script:audioMetrics.peak_level} | ConvertTo-Json -Compress))
 }
 finally { $recognizer.Dispose() }
 `;
 const encoded = Buffer.from(program, 'utf16le').toString('base64');
-console.log('The microphone will be listened to locally for up to 35 seconds. Say “Hello world” once the listening prompt appears. The report retains only the transcript and confidence, not microphone audio.');
+console.log('The microphone will be listened to locally for up to 35 seconds. Say “Hello world” once the listening prompt appears. The report retains only the transcript, confidence, and aggregate input-level diagnostics, not microphone audio.');
 
 let result;
 let failureCode;
@@ -60,18 +71,23 @@ try {
     child.once('error', error => { clearTimeout(timeout); reject(error); });
     child.once('close', code => {
       clearTimeout(timeout);
-      if (code !== 0) reject(new Error(`Windows microphone recognition failed: ${Buffer.concat(errors).toString('utf8').slice(-1000)}`));
-      else {
-        try { resolve(JSON.parse(Buffer.concat(output).toString('utf8'))); }
-        catch { reject(new Error('Windows microphone recognizer returned invalid output.')); }
+      let parsed;
+      try { parsed = JSON.parse(Buffer.concat(output).toString('utf8')); }
+      catch {
+        reject(new Error(`Windows microphone recognizer returned invalid output: ${Buffer.concat(errors).toString('utf8').slice(-1000)}`));
+        return;
       }
+      if (code === 3 && parsed.failure === 'no_speech_recognized') resolve(parsed);
+      else if (code !== 0) reject(new Error(`Windows microphone recognition failed: ${Buffer.concat(errors).toString('utf8').slice(-1000)}`));
+      else resolve(parsed);
     });
   });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  failureCode = message.includes('No speech was recognized.')
-    ? 'no_speech_recognized'
-    : 'recognizer_error';
+  failureCode = 'recognizer_error';
+}
+if (failureCode === undefined && result?.failure === 'no_speech_recognized') {
+  failureCode = 'no_speech_recognized';
 }
 const normalize = value => value.toLowerCase().replace(/[^a-z]+/g, ' ').trim();
 const transcript = result?.text;
@@ -82,6 +98,10 @@ const report = {
   expected_phrase: 'Hello world',
   ...(transcript === undefined ? {} : { transcript }),
   normalized_exact_match: transcript !== undefined && normalize(transcript) === 'hello world',
+  ...(result === undefined ? {} : {
+    audio_level_event_count: result.audio_events,
+    peak_input_level_percent: result.peak_input_level,
+  }),
   ...(result === undefined ? {} : {
     confidence: result.confidence,
     recognizer_language: result.culture,
