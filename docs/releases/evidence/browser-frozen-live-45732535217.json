@@ -1,0 +1,44 @@
+{
+  "checked_at_utc": "2026-11-26T01:13:01.298434+00:00",
+  "frozen_engine_sha256": "33242c35ce2bd51102807934b3431eca495e46618fb0828f1a57875cbbb7cd45",
+  "browser": "Microsoft Edge via packaged Playwright worker",
+  "result": {
+    "status": "ok",
+    "title": "Example Domain",
+    "trust": "untrusted_web_content",
+    "content_characters": 917,
+    "screenshot_bytes": 35482,
+    "screenshot_sha256": "b48350d6cac28eee829da32fabe674e13843f362c791316a2a92ebf63df83462",
+    "interaction": {
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/",
+      "clicked_button": "Academics",
+      "button_expanded_before_click": false,
+      "button_expanded_after_click": true,
+      "trust": "untrusted_web_content"
+    },
+    "form_fill": {
+      "url": "https://httpbin.org/forms/post",
+      "filled_fields": [
+        "custname",
+        "custemail"
+      ],
+      "submitted": false,
+      "trust": "untrusted_web_content"
+    },
+    "download": {
+      "status": "ok",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.txt",
+      "suggested_filename": "rfc9110.txt",
+      "size_bytes": 502938,
+      "sha256": "ad3b38b7806783d5066714f7ac9aadcba8cec1605a400c7380173737a8adf902",
+      "artifact_integrity_verified": true,
+      "rfc_9110_marker_verified": true
+    }
+  },
+  "cancellation": {
+    "url": "https://httpbin.org/delay/10",
+    "process_tree_terminated": true,
+    "exit_code": 1,
+    "cleanup_elapsed_ms": 80
+  }
+}
