@@ -3,6 +3,19 @@ import { useEffect, useRef, useState } from 'react';
 const SAMPLE_RATE = 16_000;
 const MAX_WAV_BYTES = 4 * 1024 * 1024;
 const MAX_DURATION_SECONDS = Math.min(600, Math.floor((MAX_WAV_BYTES - 44) / (SAMPLE_RATE * 2)));
+const MIN_CAPTURE_RMS = 0.00001;
+
+function hasMicrophoneSignal(buffer: AudioBuffer): boolean {
+  let energy = 0;
+  let sampleCount = 0;
+  for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+    for (const sample of buffer.getChannelData(channel)) {
+      energy += sample * sample;
+      sampleCount++;
+    }
+  }
+  return sampleCount > 0 && Math.sqrt(energy / sampleCount) > MIN_CAPTURE_RMS;
+}
 
 function encodePcmWav(buffer: AudioBuffer): Uint8Array {
   const frameCount = Math.floor(buffer.duration * SAMPLE_RATE);
@@ -141,10 +154,13 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
             const recordingBlob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
             context = new AudioContext();
             const decoded = await context.decodeAudioData(await recordingBlob.arrayBuffer());
+            if (!hasMicrophoneSignal(decoded)) {
+              throw new Error('No microphone signal was captured. Check the selected microphone and Windows input level, then try again.');
+            }
             const wav = encodePcmWav(decoded);
             if (mountedRef.current && !discardRef.current) onRecorded(toDataUrl(wav));
           } catch (failure) {
-            setError(failure instanceof Error && failure.message.includes('4 MiB')
+            setError(failure instanceof Error && (failure.message.includes('4 MiB') || failure.message.startsWith('No microphone signal'))
               ? failure.message
               : 'Could not convert the recording to PCM WAV. Try a shorter recording or attach a WAV file.');
           } finally {

@@ -97,7 +97,38 @@ try {
       && entry.stream.getAudioTracks().every(track => track.readyState === 'live'));
   }, selectedId);
   if (!activeCapture) throw new Error('The selected physical microphone did not produce a live capture track.');
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  const audioLevel = await page.evaluate(async () => {
+    const stream = window.__xaaPhysicalMicStreams?.at(-1)?.stream;
+    if (!stream) throw new Error('The selected microphone stream disappeared before level sampling.');
+    const AudioContextClass = window.AudioContext;
+    const context = new AudioContextClass();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    const source = context.createMediaStreamSource(stream);
+    source.connect(analyser);
+    await context.resume();
+    const samples = new Float32Array(analyser.fftSize);
+    const levels = [];
+    const deadline = performance.now() + 2000;
+    try {
+      while (performance.now() < deadline) {
+        analyser.getFloatTimeDomainData(samples);
+        let energy = 0;
+        for (const value of samples) energy += value * value;
+        levels.push(Math.sqrt(energy / samples.length));
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    } finally {
+      source.disconnect();
+      analyser.disconnect();
+      await context.close();
+    }
+    return {
+      sample_windows: levels.length,
+      peak_rms: levels.length ? Math.max(...levels) : 0,
+      mean_rms: levels.length ? levels.reduce((sum, value) => sum + value, 0) / levels.length : 0,
+    };
+  });
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
   await expect(page.getByText(/Attached: Microphone recording\.wav/)).toBeVisible({ timeout: 10000 });
   const tracksStopped = await page.evaluate(() => {
@@ -111,6 +142,11 @@ try {
     selected_device_used_for_capture: true,
     live_audio_track_observed: true,
     recording_duration_ms: 2000,
+    audio_level_diagnostic: {
+      ...audioLevel,
+      signal_above_0_01_rms: audioLevel.peak_rms > 0.01,
+      retained_audio_samples: false,
+    },
     local_wav_attachment_created: true,
     capture_tracks_stopped: true,
     audio_submitted_to_transcription: false,

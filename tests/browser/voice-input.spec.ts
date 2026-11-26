@@ -108,6 +108,15 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   const oldAudio = Buffer.from('RIFF\x24\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0}\0\0\x02\0\x10\0data\0\0\0\0', 'binary');
   let submitted: Record<string, unknown> | undefined;
   await page.addInitScript(() => {
+    const audioContextPrototype = AudioContext.prototype;
+    const decodeAudioData = audioContextPrototype.decodeAudioData;
+    const windowWithAudioFixture = window as Window & { __xaaForceSilentDecode?: boolean };
+    audioContextPrototype.decodeAudioData = function (...args: Parameters<typeof decodeAudioData>) {
+      if (windowWithAudioFixture.__xaaForceSilentDecode) {
+        return Promise.resolve(new AudioBuffer({ length: 16_000, numberOfChannels: 1, sampleRate: 16_000 }));
+      }
+      return decodeAudioData.apply(this, args);
+    };
     const getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     let deniedOnce = false;
     const microphoneRequests: MediaStreamConstraints[] = [];
@@ -204,6 +213,15 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   expect(wav.readUInt16LE(34)).toBe(16);
   expect(wav.length).toBeLessThanOrEqual(4 * 1024 * 1024);
   expect(submitted).toMatchObject({ transcription_url: 'http://127.0.0.1:8765/v1/audio/transcriptions' });
+
+  await page.getByRole('navigation', { name: 'Main sections' }).getByRole('link', { name: 'New objective' }).click();
+  await page.locator('details.advanced-options').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+  await page.evaluate(() => { (window as Window & { __xaaForceSilentDecode?: boolean }).__xaaForceSilentDecode = true; });
+  await page.getByRole('button', { name: 'Record voice' }).click();
+  await expect(page.getByText(/Recording locally/)).toBeVisible();
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(page.getByRole('alert')).toContainText('No microphone signal was captured');
 });
 
 test('a microphone permission response arriving after leaving the composer is immediately stopped', async ({ page }) => {
