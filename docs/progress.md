@@ -1,5 +1,9 @@
 # Project phase assessment (2026-11-26)
 
+## Exercise Docker recovery before the container ID is journaled (2026-11-26)
+
+Added a process-death acceptance at the create/registration boundary. A Docker CLI wrapper pauses after the daemon creates the labeled container but before the worker returns its ID; the test kills the worker group and verifies the durable session is still `creating` with no ID, then startup recovery removes the container by the saved session identity, seals the command as `not_verified`, and records no completion or replay. Focused local Docker-session/policy and integration checks pass (31 passed, 17 live-daemon cases skipped); Ruff, formatting, embedded worker syntax, and diff checks pass. The development Windows host has no Docker daemon; hosted live-Docker verification is pending.
+
 ## Add a real Docker host-sentinel isolation case (2026-11-26)
 
 Added a live-engine session scenario that places a unique sentinel file on the host, asks a command inside the Docker session to read that exact absolute path, and requires `not-visible` while confirming the host bytes remain unchanged. Ruff and formatting pass; local collection skips the case because Docker is unavailable on this Windows host. Hosted Docker run [45806572862](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45806572862) passed all 16 live-engine cases on Docker 28.0.4 with the pinned Python image; the sentinel case passed in 0.815 seconds ([JUnit](../.acceptance/hosted-docker-host-sentinel-45806572862/junit.xml), [environment](../.acceptance/hosted-docker-host-sentinel-45806572862/environment.json)). Exact-source Windows verification is still running.
