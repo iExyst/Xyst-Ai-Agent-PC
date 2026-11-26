@@ -2,7 +2,7 @@
 
 ## Reject unrepresentable LM Studio memory estimates (2026-11-26)
 
-The estimate-only LM Studio output parser now uses exact decimal arithmetic and rejects negative, non-finite, or greater-than-64-bit byte counts as malformed estimates instead of raising during API serialization or admitting corrupted values. Regression coverage checks both an oversized numeric string and the exact largest representable integer. The model-estimator suite passes 21 tests; Ruff, formatting, strict Pyright, and `git diff --check` pass. This remains estimate-only validation: it does not load a model or establish hard memory admission.
+The estimate-only LM Studio output parser now uses exact decimal arithmetic and rejects negative, non-finite, or greater-than-64-bit byte counts as malformed estimates instead of raising during API serialization or admitting corrupted values. Regression coverage checks both an oversized numeric string and the exact largest representable integer. The model-estimator suite passes 21 tests; Ruff, formatting, strict Pyright, and `git diff --check` pass. Exact-source Windows workflow [45851748541](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45851748541) passed 1,790 Python tests with 49 skipped plus the configured browser, static, type, API-contract, desktop, and recovery checks. This remains estimate-only validation: it does not load a model or establish hard memory admission.
 
 ## Bound output from the estimate-only LM Studio CLI (2026-11-26)
 
