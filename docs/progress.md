@@ -1,5 +1,9 @@
 # Project phase assessment (2026-11-26)
 
+## Specify the reusable Docker session contract (2026-11-26)
+
+The current Docker backend's lifecycle is explicitly per command: a fresh container is created for each durable `CommandIntent`, and success requires observed container removal. The inspected factory also discovers a fresh transport for each command. Added [`architecture/docker-sessions.md`](architecture/docker-sessions.md) to define the next Phase 9 vertical slice: a distinct opt-in profile, durable per-run/per-task session ownership, command-level receipts and no-replay recovery, terminal cleanup, and reviewed artifact export while preserving the existing isolated profile. This is a design boundary only; implementation and real-daemon acceptance have not started. The [Hermes matrix](parity/hermes-matrix.md#define-the-durable-docker-session-boundary-2026-11-26) keeps Docker session parity planned.
+
 ## Repeat authorized human microphone acceptance (2026-11-26)
 
 The user authorized a local speech acceptance. `npm run acceptance:windows-mic-speech` listened for up to 35 seconds through the installed Windows default microphone and System.Speech recognizer, then returned `no_speech_recognized`. The report at [`.acceptance/windows-microphone-speech-93c51566-7d17-4fce-80e5-aa5f6d64b029/report.json`](../.acceptance/windows-microphone-speech-93c51566-7d17-4fce-80e5-aa5f6d64b029/report.json) confirms no audio was retained, no network was used, and no model inference was requested. This is the third unsuccessful local attempt; human speech recognition remains unverified. The parity matrix now reflects the failed acceptance rather than claiming it has not run.
