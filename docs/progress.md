@@ -4808,3 +4808,8 @@ Added `browser_fill_form` under the existing per-run owner-approved browser-inte
 ## Preserve failed physical microphone acceptance evidence (2026-11-25)
 
 The Windows microphone-to-SAPI acceptance did not recognize the expected phrase during a local attempt. The harness previously threw before writing a report; it now records a bounded failure code (`no_speech_recognized` or `recognizer_error`) while retaining no microphone audio. The failed attempt is retained at [`.acceptance/windows-microphone-speech-89aa1dec-37d5-485f-b16a-55dfef6f3fcd/report.json`](../.acceptance/windows-microphone-speech-89aa1dec-37d5-485f-b16a-55dfef6f3fcd/report.json). `node --check scripts/windows_microphone_speech_acceptance.mjs` and `git diff --check` pass. This is an acceptance-harness reliability improvement; it does not establish human speech recognition.
+
+
+## Return an actionable error when Windows hears no speech (2026-11-25)
+
+The offline Windows recognizer now distinguishes a valid no-speech result from a missing recognizer or process failure and returns “Windows did not detect speech in this recording. Check the microphone input and try again.” The PowerShell worker reports a stable error code instead of throwing unstructured CLIXML for this expected outcome. The focused Windows speech and API voice suites pass (8 tests); Ruff and strict Pyright pass. This improves error clarity only; actual human-speech accuracy remains unverified, and the local microphone attempt recorded no recognized phrase.

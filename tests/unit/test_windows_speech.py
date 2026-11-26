@@ -83,6 +83,28 @@ async def test_windows_recognizer_rejects_empty_transcript(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_windows_recognizer_reports_no_detected_speech(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def create_process(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(
+                return_value=(b'{"error":"no_speech_recognized"}', b"")
+            ),
+            kill=lambda: None,
+            wait=AsyncMock(),
+        )
+
+    monkeypatch.setattr(windows_speech.os, "name", "nt")
+    monkeypatch.setattr(windows_speech.Path, "is_file", lambda _self: True)
+    monkeypatch.setattr(windows_speech.asyncio, "create_subprocess_exec", create_process)
+
+    with pytest.raises(TranscriptionError, match="did not detect speech.*microphone input"):
+        await windows_speech.transcribe_windows_wav(wav_bytes())
+
+
+@pytest.mark.asyncio
 async def test_cancellation_stops_windows_speech_child(monkeypatch: pytest.MonkeyPatch) -> None:
     children: list[SimpleNamespace] = []
     never_complete = asyncio.Event()

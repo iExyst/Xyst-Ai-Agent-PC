@@ -24,7 +24,10 @@ try {
     $recognizer.LoadGrammar([System.Speech.Recognition.DictationGrammar]::new())
     $recognizer.SetInputToWaveStream($audioStream)
     $result = $recognizer.Recognize([System.TimeSpan]::FromSeconds(30))
-    if ($null -eq $result -or [string]::IsNullOrWhiteSpace($result.Text)) { throw 'No speech was recognized.' }
+    if ($null -eq $result -or [string]::IsNullOrWhiteSpace($result.Text)) {
+        [Console]::Out.Write((@{error='no_speech_recognized'} | ConvertTo-Json -Compress))
+        return
+    }
     if ($result.Text.Length -gt 48000) { throw 'The recognized text exceeds the response limit.' }
     [Console]::Out.Write((@{text=$result.Text; culture=$recognizerInfo.Culture.Name} | ConvertTo-Json -Compress))
 }
@@ -122,6 +125,10 @@ async def transcribe_windows_wav(audio: bytes) -> str:
     if not isinstance(result, dict):
         raise TranscriptionError("Windows speech recognition returned no usable transcript.")
     result = cast(dict[str, object], result)
+    if result.get("error") == "no_speech_recognized":
+        raise TranscriptionError(
+            "Windows did not detect speech in this recording. Check the microphone input and try again."
+        )
     text = result.get("text")
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TRANSCRIPT_BYTES:
         raise TranscriptionError("Windows speech recognition returned no usable transcript.")
