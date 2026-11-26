@@ -257,7 +257,7 @@ async def test_live_docker_session_recovery_after_worker_process_death_never_rep
         distribution="Docker-local",
         profile_sha256="0" * 64,
         image_reference=IMAGE_REFERENCE,
-        max_seconds=45,
+        max_seconds=30,
         docker_session_reuse=True,
     )
     transport = await DockerLocalTransport.discover(request, deadline=time.monotonic() + 20)
@@ -289,7 +289,7 @@ async def test_live_docker_session_recovery_after_worker_process_death_never_rep
                 "-c",
                 "from pathlib import Path; import time; Path('/workspace/started').write_text('yes'); print('docker-crash-marker', flush=True); time.sleep(300)",
             ],
-            "max_seconds": 40,
+            "max_seconds": 30,
         },
         idempotency_key=call_id,
     )
@@ -314,7 +314,7 @@ async def main():
     grant = CommandGrant(
         backend="docker-local-v1", distribution="Docker-local",
         profile_sha256="0" * 64, image_reference=intent.image_reference,
-        max_seconds=45, docker_session_reuse=True,
+        max_seconds=30, docker_session_reuse=True,
     )
     transport = await DockerLocalTransport.discover(grant, deadline=time.monotonic() + 30)
     async def register(container_id):
