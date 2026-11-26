@@ -86,6 +86,7 @@ async def test_reusable_session_runs_sequential_commands_and_reaps_after_run_sto
         def __init__(self):
             super().__init__()
             self.registrations = []
+            self.cleanup_confirmed = False
 
         async def run(
             self,
@@ -117,6 +118,16 @@ async def test_reusable_session_runs_sequential_commands_and_reaps_after_run_sto
                 "stderr_bytes": 0,
                 "stdout_sha256": hashlib.sha256(b"").hexdigest(),
                 "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            }
+
+        async def control(self, action, intent, *, deadline):
+            self.controls.append(action)
+            return {
+                "execution_id": intent.execution_id,
+                "cleanup_confirmed": self.cleanup_confirmed,
+                "closed": self.cleanup_confirmed,
+                "manager_alive": False,
+                "outcome": None,
             }
 
     transport = SessionTransport()
@@ -151,8 +162,15 @@ async def test_reusable_session_runs_sequential_commands_and_reaps_after_run_sto
     recovery = StoppedCommandRecovery(
         store, discover=lambda _intent: asyncio.sleep(0, result=transport)
     )
+    assert await recovery.run_once() == 0
+    assert sessions.get(session.id).state == "stopping"
+    assert [item.id for item in sessions.terminal()] == [session.id]
+
+    transport.cleanup_confirmed = True
+    recovery.retry_after.clear()
     assert await recovery.run_once() == 1
     assert sessions.get(session.id).state == "closed"
+    assert sessions.terminal() == []
 
 
 async def test_controller_commits_only_registered_matching_output(workspace_tmp_path):
