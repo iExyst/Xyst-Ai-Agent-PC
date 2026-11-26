@@ -2,7 +2,7 @@
 
 ## Latest exact-source Windows package (2026-11-26)
 
-Exact-source workflow [45750618989](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45750618989) completed successfully on `30f3d39a40dee2573466335a1e4395be83cb3463`. All 58 Windows installer lifecycle checks passed, including the installed offline speech acceptance. The unsigned 0.1.1 setup artifact [15085694306](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45750618989/artifacts/15085694306) is 83,255,765 bytes; SHA-256 `956a67e8a363c6a58378e09191404f4b7bdeb96a3fddb7cf85e52b9688c229ce` matches the downloaded executable and manifest. The speech report is retained at [`.acceptance/hosted-installer-45750618989-speech/speech/report.json`](../../.acceptance/hosted-installer-45750618989-speech/speech/report.json). This verifies the hosted Windows package lifecycle; the installer is unsigned and this does not close signing, legal review, independent-machine, physical microphone, or live-model release gates.
+Exact-source workflow [45754532022](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45754532022) passed on `58348b1fe2949f9d40db8a7e8399f4619981d3be`, including the full Windows installer lifecycle and installed offline speech acceptance. The unsigned 0.1.1 setup artifact [15088555329](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45754532022/artifacts/15088555329) is 83,250,229 bytes; SHA-256 `1f7421a59d243051a7ef765bd7b67c289d4b69019a0c82cc5d641d75a9227d88` matches the downloaded executable and manifest. The installer remains unsigned; signing, legal review, independent-machine, physical microphone, and live-model release gates remain open.
 
 ## Latest exact-source package and platform acceptance (2026-11-25)
 
