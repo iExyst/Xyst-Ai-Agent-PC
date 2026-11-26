@@ -20,10 +20,12 @@ from xaa.runtime.command_controller import CommandController
 from xaa.runtime.command_recovery import StoppedCommandRecovery
 from xaa.runtime.docker_execution_policy import (
     MAX_REUSABLE_DOCKER_SESSIONS,
+    MAX_XAA_DOCKER_CONTAINERS,
     docker_create_argv,
 )
 from xaa.runtime.docker_local_transport import DockerLocalTransport, _cli_request
 from xaa.runtime.docker_session_archive import validate_session_archive
+from xaa.runtime.owned_transport import TransportError
 from xaa.runtime.states import RunState
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.runtime.tool_worker import execute_filesystem
@@ -124,6 +126,158 @@ async def test_live_docker_profile_session_budget_caps_aggregate_container_resou
             "SELECT COUNT(*) FROM docker_sessions WHERE state!='closed'"
         ).fetchone()[0]
     assert open_sessions == 0
+
+
+@pytest.mark.asyncio
+async def test_live_docker_global_budget_counts_sessions_and_active_disposable_commands_across_profiles(
+    workspace_tmp_path: Path,
+) -> None:
+    live_docker_required()
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    profiles: list[tuple[RunStore, str, str, DockerLocalTransport]] = []
+
+    async def prepare_profile(
+        index: int, *, reuse: bool
+    ) -> tuple[RunStore, str, str, DockerLocalTransport]:
+        request = CommandGrant(
+            backend="docker-local-v1",
+            distribution="Docker-local",
+            profile_sha256="0" * 64,
+            image_reference=IMAGE_REFERENCE,
+            max_seconds=30,
+            docker_session_reuse=reuse,
+        )
+        transport = await DockerLocalTransport.discover(request, deadline=time.monotonic() + 20)
+        grant = request.model_copy(update={"profile_sha256": transport.profile_sha256})
+        data = workspace_tmp_path / f"profile-{index}"
+        data.mkdir()
+        store = RunStore(data / "xaa.sqlite3")
+        run = store.create_run(
+            objective="Verify local Docker resource budget across X.A.A. data profiles",
+            acceptance_criteria=[],
+            workspace=str(project),
+            mode="workspace",
+            model=None,
+            command_grant=grant.model_dump(mode="json"),
+        )
+        run_id = str(run["id"])
+        owner = store.acquire_lease(run_id, f"docker-global-budget-{index}", seconds=180)
+        assert owner is not None
+        store.transition(run_id, RunState.PLANNING, owner=owner)
+        store.transition(run_id, RunState.RUNNING, owner=owner)
+        return store, run_id, owner, transport
+
+    async def execute(
+        profile: tuple[RunStore, str, str, DockerLocalTransport],
+        call_id: str,
+        argv: list[str],
+        *,
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        store, run_id, owner, transport = profile
+        return await CommandController(store, transport).execute(
+            run_id,
+            owner,
+            call_id,
+            {"argv": argv},
+            idempotency_key=idempotency_key,
+            deadline=time.monotonic() + 60,
+        )
+
+    disposable_task: asyncio.Task[dict[str, object]] | None = None
+    try:
+        profiles = [await prepare_profile(index, reuse=True) for index in range(4)]
+        for index, profile in enumerate(profiles[:3]):
+            outcome = await execute(
+                profile,
+                f"create-profile-session-{index}",
+                ["python3", "-I", "-c", f"print('session-{index}')"],
+                idempotency_key=f"create-profile-session-{index}",
+            )
+            assert outcome["succeeded"] is True
+        assert await profiles[0][3].active_xaa_container_count(deadline=time.monotonic() + 10) == 3
+
+        disposable = await prepare_profile(4, reuse=False)
+        profiles.append(disposable)
+        disposable_task = asyncio.create_task(
+            execute(
+                disposable,
+                "long-disposable-command",
+                ["python3", "-I", "-c", "import time; time.sleep(6); print('done')"],
+                idempotency_key="long-disposable-command",
+            )
+        )
+        inventory_deadline = time.monotonic() + 30
+        while time.monotonic() < inventory_deadline:
+            if (
+                await profiles[0][3].active_xaa_container_count(deadline=time.monotonic() + 10)
+                == MAX_XAA_DOCKER_CONTAINERS
+            ):
+                break
+            if disposable_task.done():
+                await disposable_task
+                raise AssertionError("Disposable Docker command finished before occupying a slot.")
+            await asyncio.sleep(0.1)
+        else:
+            raise AssertionError("Disposable Docker container did not enter the daemon inventory.")
+
+        with pytest.raises(TransportError, match="resource budget is full"):
+            await execute(
+                profiles[3],
+                "deny-fourth-session-while-disposable-active",
+                ["python3", "-I", "-c", "print('must-not-run')"],
+                idempotency_key="deny-fourth-session-while-disposable-active",
+            )
+        disposable_result = await disposable_task
+        disposable_task = None
+        assert disposable_result["succeeded"] is True
+        assert await profiles[0][3].active_xaa_container_count(deadline=time.monotonic() + 10) == 3
+
+        fourth_retry = await prepare_profile(5, reuse=True)
+        profiles.append(fourth_retry)
+        fourth = await execute(
+            fourth_retry,
+            "create-fourth-profile-session",
+            ["python3", "-I", "-c", "print('fourth')"],
+            idempotency_key="create-fourth-profile-session",
+        )
+        assert fourth["succeeded"] is True
+        assert (
+            await profiles[0][3].active_xaa_container_count(deadline=time.monotonic() + 10)
+            == MAX_XAA_DOCKER_CONTAINERS
+        )
+
+        final_disposable = await prepare_profile(6, reuse=False)
+        profiles.append(final_disposable)
+        with pytest.raises(TransportError, match="resource budget is full"):
+            await execute(
+                final_disposable,
+                "deny-disposable-at-session-cap",
+                ["python3", "-I", "-c", "print('must-not-run')"],
+                idempotency_key="deny-disposable-at-session-cap",
+            )
+    finally:
+        if disposable_task is not None:
+            if not disposable_task.done():
+                disposable_task.cancel()
+            await asyncio.gather(disposable_task, return_exceptions=True)
+        for store, run_id, owner, transport in profiles:
+            run = store.get_run(run_id)
+            if run is not None and run["state"] in {
+                "queued",
+                "planning",
+                "running",
+                "verifying",
+            }:
+                store.transition(run_id, RunState.FAILED, owner=owner)
+
+            async def same_live_transport(
+                _intent: CommandIntent, current_transport: DockerLocalTransport = transport
+            ) -> DockerLocalTransport:
+                return current_transport
+
+            await StoppedCommandRecovery(store, same_live_transport).run_once()
 
 
 @pytest.mark.asyncio

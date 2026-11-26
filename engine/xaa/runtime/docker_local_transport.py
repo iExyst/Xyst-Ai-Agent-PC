@@ -22,6 +22,7 @@ from xaa.runtime.command_transport import OutputCallback, SessionContainerCallba
 from xaa.runtime.docker_execution_policy import (
     DOCKER_CONTAINER_MEMORY_BYTES,
     DOCKER_CONTAINER_NANO_CPUS,
+    MAX_XAA_DOCKER_CONTAINERS,
     PROFILE_LABEL,
     SESSION_LABEL,
     docker_container_target,
@@ -32,6 +33,7 @@ from xaa.runtime.docker_execution_policy import (
     validate_local_engine_endpoint,
 )
 from xaa.runtime.docker_local_probe import PROBE_CODE
+from xaa.runtime.docker_resource_budget import docker_container_creation_lock
 from xaa.runtime.docker_session_archive import (
     MAX_SESSION_ARCHIVE_BYTES,
     validate_session_archive,
@@ -475,6 +477,30 @@ class DockerLocalTransport:
             raise TransportError("Local Docker operation failed.")
         return stdout
 
+    async def active_xaa_container_count(self, *, deadline: float) -> int:
+        """Count all daemon containers carrying X.A.A.'s fixed profile label."""
+        inventory = await self._run_cli(
+            (
+                "ps",
+                "--all",
+                "--no-trunc",
+                "--quiet",
+                "--filter",
+                f"label={PROFILE_LABEL}",
+            ),
+            deadline=deadline,
+        )
+        try:
+            container_ids = [line for line in inventory.decode("ascii").splitlines() if line]
+        except UnicodeDecodeError as exc:
+            raise TransportError("Docker returned an invalid X.A.A. container inventory.") from exc
+        if any(
+            len(container_id) != 64 or any(char not in "0123456789abcdef" for char in container_id)
+            for container_id in container_ids
+        ):
+            raise TransportError("Docker returned an invalid X.A.A. container inventory.")
+        return len(container_ids)
+
     async def _verify_command_container_profile(
         self, intent: CommandIntent, *, deadline: float
     ) -> None:
@@ -620,25 +646,42 @@ class DockerLocalTransport:
             )
             new_container = inspected is None
             if new_container:
-                create = docker_create_argv(
-                    intent,
-                    self.image_reference,
-                    endpoint=self.endpoint,
-                    windows=os.name == "nt",
-                )
-                create = (self.executable, *create[1:])
-                with tempfile.TemporaryDirectory(prefix="xaa-docker-cli-") as config:
-                    process = await asyncio.create_subprocess_exec(
-                        *create,
-                        stdin=asyncio.subprocess.DEVNULL,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        env=_safe_environment(self.executable, config),
-                        creationflags=0x08000000 if os.name == "nt" else 0,
+                async with docker_container_creation_lock(deadline=deadline):
+                    active_count = await self.active_xaa_container_count(deadline=deadline)
+                    if active_count >= MAX_XAA_DOCKER_CONTAINERS:
+                        memory_mib = (
+                            DOCKER_CONTAINER_MEMORY_BYTES
+                            * MAX_XAA_DOCKER_CONTAINERS
+                            // (1024 * 1024)
+                        )
+                        cpu_cores = (
+                            DOCKER_CONTAINER_NANO_CPUS * MAX_XAA_DOCKER_CONTAINERS / 1_000_000_000
+                        )
+                        raise TransportError(
+                            "X.A.A.'s local Docker resource budget is full "
+                            f"({MAX_XAA_DOCKER_CONTAINERS} containers, up to {memory_mib} MiB "
+                            f"and {cpu_cores:g} CPU cores across this user's profiles). "
+                            "Wait for confirmed container cleanup before starting another command."
+                        )
+                    create = docker_create_argv(
+                        intent,
+                        self.image_reference,
+                        endpoint=self.endpoint,
+                        windows=os.name == "nt",
                     )
-                    self._active[intent.execution_id] = process
-                    async with asyncio.timeout(min(15, deadline - time.monotonic())):
-                        raw_id, _ = await process.communicate()
+                    create = (self.executable, *create[1:])
+                    with tempfile.TemporaryDirectory(prefix="xaa-docker-cli-") as config:
+                        process = await asyncio.create_subprocess_exec(
+                            *create,
+                            stdin=asyncio.subprocess.DEVNULL,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                            env=_safe_environment(self.executable, config),
+                            creationflags=0x08000000 if os.name == "nt" else 0,
+                        )
+                        self._active[intent.execution_id] = process
+                        async with asyncio.timeout(min(15, deadline - time.monotonic())):
+                            raw_id, _ = await process.communicate()
                 if process.returncode != 0:
                     raise TransportError("Docker could not create the isolated command container.")
                 execution_id = raw_id.decode("ascii", errors="strict").strip()

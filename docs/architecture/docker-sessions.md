@@ -26,17 +26,30 @@ Do not add host bind mounts or arbitrary environment forwarding as an incidental
 part of session reuse. Those capabilities need independent owner grants and
 their own canonicalization, secret-redaction, and acceptance requirements.
 
-The current fixed container profile allows at most four non-closed reusable
-sessions in one X.A.A. profile database. Each container is limited to 128 MiB,
-0.5 CPU cores, and 32 processes, so the reusable-session reservation ceiling is
-512 MiB, 2 CPU cores, and 128 processes. The journal checks and inserts the
-reservation inside the same SQLite `BEGIN IMMEDIATE` transaction, serializing
-competing runs. `reserved`, `creating`, `ready`, `busy`, `stopping`, and
-`unknown` sessions all consume capacity; a slot is released only after cleanup
-is confirmed and the row becomes `closed`. Reusing an existing ready session
-does not consume another slot. This cap aggregates runs and specialists that
-share the profile database; it does not claim a machine-wide cap across separate
-profiles or disposable per-command Docker containers.
+Each profile database allows at most four non-closed reusable sessions. The
+journal checks and inserts its reservation inside the same SQLite
+`BEGIN IMMEDIATE` transaction, serializing competing runs in that database.
+`reserved`, `creating`, `ready`, `busy`, `stopping`, and `unknown` sessions
+consume a profile slot; a slot is released only after cleanup is confirmed and
+the row becomes `closed`. Reusing an existing ready session does not create a
+second container.
+
+An additional per-user local-daemon budget allows at most four X.A.A.-labeled
+containers across all X.A.A. data profiles, including both reusable sessions
+and disposable per-command containers. Before every new container creation,
+the engine takes an OS file lock shared by those profiles, inventories all
+containers carrying `com.xyst.xaa.profile` with `docker ps --all --no-trunc`,
+and creates only if fewer than four exist. Inventory errors or malformed IDs
+fail closed. Stopped containers continue to reserve capacity until Docker
+confirms their removal. Each container is limited to 128 MiB, 0.5 CPU cores,
+and 32 processes, bounding this per-user X.A.A. budget at 512 MiB, 2 CPU cores,
+and 128 processes. The Windows lock is stored under `%LOCALAPPDATA%\XAA`; the
+POSIX fallback is under `~/.xaa`.
+
+This coordinates X.A.A. processes and data profiles for one operating-system
+user. Other OS users sharing the same daemon and external clients that create
+containers directly do not share the lock or honor this budget; a true
+cross-user machine-wide limit remains open.
 
 The container workspace may persist between commands inside the session, but it
 must remain isolated from the project directory. A separate default-off owner
@@ -114,9 +127,9 @@ passed on `ad1ffc59` with 1,786 Python tests and 49 skipped, plus configured
 browser/UI, static, type, API-contract, and process-recovery checks.
 
 The wider acceptance gate remains open for installed Windows coordinator,
-grant, and artifact behavior; machine-wide resource budgets across separate
-profiles and disposable per-command containers; live daemon credential handling;
-and cleanup after every grant-revocation and failed-execution path. A focused
+grant, and artifact behavior; cross-user machine-wide resource budgets; live
+daemon credential handling; and cleanup after every grant-revocation and
+failed-execution path. A focused
 Windows unit regression verifies Docker CLI launches use a private temporary
 configuration and omit inherited Docker authentication/configuration, SSH-agent,
 cloud-secret, and user-profile environment variables; server-side daemon

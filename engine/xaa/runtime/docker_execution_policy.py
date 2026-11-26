@@ -17,6 +17,8 @@ DOCKER_CONTAINER_CPUS = "0.5"
 # while idle. Four concurrent sessions therefore bound this profile to 512 MiB
 # and 2 CPU cores of Docker resource capacity.
 MAX_REUSABLE_DOCKER_SESSIONS = 4
+# Aggregate cap across disposable commands, reusable sessions, and X.A.A. profiles.
+MAX_XAA_DOCKER_CONTAINERS = MAX_REUSABLE_DOCKER_SESSIONS
 
 
 def validate_image_reference(value: str) -> str:
