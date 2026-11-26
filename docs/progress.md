@@ -1,5 +1,9 @@
 # Project phase assessment (2026-11-26)
 
+## Refresh the locked Python license scan (2026-11-26)
+
+Re-ran `pip-licenses==5.5.5` against the current Windows environment and compared normalized name/version/license/source values with `docs/releases/dependency-inventory.md`. All 74 distinct installed package records match after the documented first-party and upstream-source overrides; the duplicate first-party `xaa-engine` row is unchanged. The six lockfile packages absent from this host remain represented in the inventory with pinned source/hash and license evidence. `scripts/verify_release_notice_coverage.py` confirms all locked packages remain referenced (Python=79, npm=5, Windows Cargo=247), and the focused notice-coverage suite passes (7 tests). Refreshed scan: [pip-licenses output](../.acceptance/dependency-inventory-refresh-20261126/pip-licenses.json). This does not verify full license text, copyright completeness, compatibility, or legal approval; third-party notices remain provisional.
+
 ## Reject unrepresentable LM Studio memory estimates (2026-11-26)
 
 The estimate-only LM Studio output parser now uses exact decimal arithmetic and rejects negative, non-finite, or greater-than-64-bit byte counts as malformed estimates instead of raising during API serialization or admitting corrupted values. Regression coverage checks both an oversized numeric string and the exact largest representable integer. The model-estimator suite passes 21 tests; Ruff, formatting, strict Pyright, and `git diff --check` pass. Exact-source Windows workflow [45851748541](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45851748541) passed 1,790 Python tests with 49 skipped plus the configured browser, static, type, API-contract, desktop, and recovery checks. This remains estimate-only validation: it does not load a model or establish hard memory admission.
