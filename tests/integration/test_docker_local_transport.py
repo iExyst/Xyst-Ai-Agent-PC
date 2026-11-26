@@ -515,8 +515,8 @@ async def test_live_docker_session_controller_persists_archive_and_recovers_stop
             ).fetchall()
         assert {str(item["task_scope"]) for item in rows} == {
             "parent",
-            "docker-task-a",
-            "docker-task-b",
+            f"{run['id']}:docker-task-a",
+            f"{run['id']}:docker-task-b",
         }
         assert all(str(item["state"]) == "closed" for item in rows)
     finally:
