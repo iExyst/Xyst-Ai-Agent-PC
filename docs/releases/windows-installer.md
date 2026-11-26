@@ -2,6 +2,8 @@
 
 ## Latest exact-source hosted installer acceptance (2026-11-26)
 
+Follow-up exact-source Windows CI [45902250323](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45902250323) passed the full Python suite and configured browser, desktop, static, type, contract, Hermes inventory and process-recovery checks on commit `8046905a`. That change narrows signing-certificate cleanup to certificates imported by the release script. No signing certificate/password is configured, so the package remains unsigned and signature verification is still open.
+
 Manual workflow [45899044400](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45899044400) passed on current branch commit `6a0f74305266400d330d3a7c1da7e54b5fa2a67c`. The unsigned 0.1.1 package passed release-notice validation, frozen and installed AppContainer checks, native recovery/onboarding and credential flows, specialist and owner-reviewed workspace operations, ACP/browser/worker checks, upgrade from 0.1.0, standard-user installation, boot/uninstall, and both user-data outcomes. The package artifact [15155557986](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45899044400/artifacts/15155557986) is preserved under [`.acceptance/hosted-installer-45899044400/`](../../.acceptance/hosted-installer-45899044400/). Its 83,278,886-byte setup has SHA-256 `4108d7af569096eb395d9f8b4b81369394ed419d69663213868e07a72e8e9007`, matching the downloaded installer and manifest. The package is unsigned; production signing, complete legal review, independent customer-machine coverage, physical human-speech recognition, and final live-model acceptance remain open.
 
 ## Latest exact-commit hosted installer acceptance (2026-11-26)
