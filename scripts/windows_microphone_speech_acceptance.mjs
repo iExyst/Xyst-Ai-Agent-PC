@@ -37,41 +37,53 @@ finally { $recognizer.Dispose() }
 const encoded = Buffer.from(program, 'utf16le').toString('base64');
 console.log('The microphone will be listened to locally for up to 35 seconds. Say “Hello world” once the listening prompt appears. The report retains only the transcript and confidence, not microphone audio.');
 
-const result = await new Promise((resolve, reject) => {
-  const child = spawn(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: environment,
+let result;
+let failureCode;
+try {
+  result = await new Promise((resolve, reject) => {
+    const child = spawn(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: environment,
+    });
+    const output = [];
+    const errors = [];
+    child.stdout.on('data', chunk => output.push(chunk));
+    child.stderr.on('data', chunk => errors.push(chunk));
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error('Windows microphone recognition exceeded its 45-second process limit.'));
+    }, 45_000);
+    child.once('error', error => { clearTimeout(timeout); reject(error); });
+    child.once('close', code => {
+      clearTimeout(timeout);
+      if (code !== 0) reject(new Error(`Windows microphone recognition failed: ${Buffer.concat(errors).toString('utf8').slice(-1000)}`));
+      else {
+        try { resolve(JSON.parse(Buffer.concat(output).toString('utf8'))); }
+        catch { reject(new Error('Windows microphone recognizer returned invalid output.')); }
+      }
+    });
   });
-  const output = [];
-  const errors = [];
-  child.stdout.on('data', chunk => output.push(chunk));
-  child.stderr.on('data', chunk => errors.push(chunk));
-  const timeout = setTimeout(() => {
-    child.kill();
-    reject(new Error('Windows microphone recognition exceeded its 45-second process limit.'));
-  }, 45_000);
-  child.once('error', error => { clearTimeout(timeout); reject(error); });
-  child.once('close', code => {
-    clearTimeout(timeout);
-    if (code !== 0) reject(new Error(`Windows microphone recognition failed: ${Buffer.concat(errors).toString('utf8').slice(-1000)}`));
-    else {
-      try { resolve(JSON.parse(Buffer.concat(output).toString('utf8'))); }
-      catch { reject(new Error('Windows microphone recognizer returned invalid output.')); }
-    }
-  });
-});
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  failureCode = message.includes('No speech was recognized.')
+    ? 'no_speech_recognized'
+    : 'recognizer_error';
+}
 const normalize = value => value.toLowerCase().replace(/[^a-z]+/g, ' ').trim();
-const transcript = result.text;
+const transcript = result?.text;
 const report = {
-  passed: normalize(transcript) === 'hello world',
+  passed: transcript !== undefined && normalize(transcript) === 'hello world',
   source: 'installed Windows default microphone',
   recognizer: 'installed Windows System.Speech recognizer',
   expected_phrase: 'Hello world',
-  transcript,
-  normalized_exact_match: normalize(transcript) === 'hello world',
-  confidence: result.confidence,
-  recognizer_language: result.culture,
+  ...(transcript === undefined ? {} : { transcript }),
+  normalized_exact_match: transcript !== undefined && normalize(transcript) === 'hello world',
+  ...(result === undefined ? {} : {
+    confidence: result.confidence,
+    recognizer_language: result.culture,
+  }),
+  ...(failureCode === undefined ? {} : { failure_code: failureCode }),
   microphone_audio_retained: false,
   network_used: false,
   model_inference_requested: false,
