@@ -9,8 +9,10 @@ from uuid import uuid4
 
 import pytest
 from xaa.runtime.command_controller import CommandController
+from xaa.runtime.command_recovery import StoppedCommandRecovery
 from xaa.runtime.states import RunState
 from xaa.storage.commands import CommandJournal
+from xaa.storage.docker_sessions import DockerSessionJournal
 from xaa.storage.runs import LeaseLost, RunStore
 from xaa.storage.skills import snapshot_digest
 
@@ -55,7 +57,7 @@ class FixtureTransport:
         }
 
 
-def setup(root, transport, *, procedure_trial=None):
+def setup(root, transport, *, procedure_trial=None, command_grant=None):
     project = root / "project"
     project.mkdir()
     (project / "fixture.txt").write_text("fixture", encoding="utf-8")
@@ -66,13 +68,91 @@ def setup(root, transport, *, procedure_trial=None):
         workspace=str(project),
         mode="workspace",
         model=None,
-        command_grant={"distribution": "Ubuntu", "profile_sha256": "a" * 64},
+        command_grant=command_grant or {"distribution": "Ubuntu", "profile_sha256": "a" * 64},
         procedure_trial=procedure_trial,
     )
     token = store.acquire_lease(record["id"], "worker", seconds=60)
     store.transition(record["id"], RunState.PLANNING, owner=token)
     store.transition(record["id"], RunState.RUNNING, owner=token)
     return CommandController(store, transport), store, record["id"], token, project
+
+
+async def test_reusable_session_runs_sequential_commands_and_reaps_after_run_stop(
+    workspace_tmp_path,
+):
+    image = "registry.example/xaa@sha256:" + "b" * 64
+
+    class SessionTransport(FixtureTransport):
+        def __init__(self):
+            super().__init__()
+            self.registrations = []
+
+        async def run(
+            self,
+            intent,
+            snapshot,
+            *,
+            deadline,
+            on_output=None,
+            on_session_container=None,
+        ):
+            if on_session_container is not None:
+                await on_session_container("c" * 64)
+                self.registrations.append(intent.docker_session_id)
+            return {
+                "execution_id": intent.execution_id,
+                "snapshot_sha256": snapshot.sha256,
+                "filter_sha256": intent.profile_sha256,
+                "termination_reason": "finished",
+                "exit_code": 0,
+                "supervisor_exit_code": 0,
+                "succeeded": True,
+                "output_complete": True,
+                "cleanup_confirmed": True,
+                "docker_session_available": True,
+                "elapsed_seconds": 0.1,
+                "stdout_b64": "",
+                "stderr_b64": "",
+                "stdout_bytes": 0,
+                "stderr_bytes": 0,
+                "stdout_sha256": hashlib.sha256(b"").hexdigest(),
+                "stderr_sha256": hashlib.sha256(b"").hexdigest(),
+            }
+
+    transport = SessionTransport()
+    grant = {
+        "backend": "docker-local-v1",
+        "distribution": "Docker-local",
+        "profile_sha256": "a" * 64,
+        "image_reference": image,
+        "max_seconds": 30,
+        "docker_session_reuse": True,
+    }
+    controller, store, run_id, token, _project = setup(
+        workspace_tmp_path, transport, command_grant=grant
+    )
+    for call_id in ("first", "second"):
+        result = await controller.execute(
+            run_id,
+            token,
+            call_id,
+            {"argv": ["fixture"]},
+            idempotency_key=call_id,
+            deadline=time.monotonic() + 15,
+        )
+        assert result["succeeded"] is True
+    assert len(transport.registrations) == 1
+    sessions = DockerSessionJournal(store)
+    session = sessions.get(transport.registrations[0])
+    assert session is not None and session.state == "ready"
+    assert session.container_id == "c" * 64
+
+    store.transition(run_id, RunState.CANCELLED, owner=token)
+    recovery = StoppedCommandRecovery(
+        store, discover=lambda _intent: asyncio.sleep(0, result=transport)
+    )
+    assert await recovery.run_once() == 1
+    assert sessions.get(session.id).state == "closed"
 
 
 async def test_controller_commits_only_registered_matching_output(workspace_tmp_path):
