@@ -125,9 +125,11 @@ while the journal remains in `creating` with no container ID. Local collection a
 The process-death acceptance also covers a command that exits and emits its
 marker while the worker is held inside the output callback, before the transport
 can return a result to the coordinator. The active-command case remains
-separate. Local unit, lint, formatting, and integration collection pass; live
-Docker and exact-source Windows CI are pending. This boundary is not verified
-until the hosted acceptance succeeds.
+separate. Hosted Docker workflow [45812311641](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45812311641)
+passed all 18 live-engine cases on Docker 28.0.4 and the pinned Python image,
+including both process-death boundaries ([JUnit evidence](../../.acceptance/hosted-docker-output-crash-45812311641/junit.xml)).
+Exact-source Windows workflow [45812311537](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45812311537)
+is still running.
 
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
