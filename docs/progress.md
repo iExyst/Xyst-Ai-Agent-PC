@@ -1,5 +1,9 @@
 # Project phase assessment (2026-11-26)
 
+## Bound output from the estimate-only LM Studio CLI (2026-11-26)
+
+The estimate-only `lms` child process now reads stdout and stderr concurrently with a 16 KiB cap on each stream. Exceeding either cap stops and reaps the child, returns a clear failed estimate, and never starts model loading. Timeout and cancellation also stop and reap the process. Focused tests pass 19 cases, including oversized output on both streams; Ruff, formatting, and Pyright pass. This is deterministic CLI-process verification only: no LM Studio model was loaded or used for inference, which remains deferred.
+
 ## Verify the live microphone meter in the exact Windows package (2026-11-26)
 
 Exact-source Windows CI [45840832629](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45840832629) passed on product commit `8406da0d`, including the voice browser flow. Exact-current installer run [45841273268](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45841273268), attempt 2, passed the installed Windows package lifecycle on the same product commit. Attempt 1 hit a hosted timeout while generating local synthetic speech; the retry passed that speech check, AppContainer command, native MCP/OAuth, recovery, upgrade, install, boot, uninstall, and explicit data-removal checks. Installer artifact [15130928294](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45841273268/artifacts/15130928294) is retained under [`.acceptance/hosted-installer-45841273268-attempt2/`](../.acceptance/hosted-installer-45841273268-attempt2/). The unsigned setup is 83,268,201 bytes and SHA-256 `42623a7c9a9ba9a309b502fb6cc1811e2794debf1ecb111f19a1bc1bcd468718`, matching its downloaded manifest. This verifies the package contains the current recorder UI; it does not close human-speech recognition, physical-microphone-to-ASR, live-model, signing/legal, or independent-machine release gates.

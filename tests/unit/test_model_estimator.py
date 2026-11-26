@@ -8,6 +8,15 @@ from xaa.providers import model_estimator
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo, ProviderError
 
 
+def _stream(data: bytes = b"", *, closed: bool = True) -> asyncio.StreamReader:
+    stream = asyncio.StreamReader()
+    if data:
+        stream.feed_data(data)
+    if closed:
+        stream.feed_eof()
+    return stream
+
+
 def test_parse_estimate_reads_memory_units_and_guardrail():
     estimate = model_estimator._parse_estimate(
         "fixture/model",
@@ -82,10 +91,13 @@ async def test_estimator_uses_estimate_only_without_loading(monkeypatch):
     calls: list[tuple[str, ...]] = []
 
     class Process:
-        returncode = 0
+        def __init__(self):
+            self.returncode = 0
+            self.stdout = _stream()
+            self.stderr = _stream(b"Estimated GPU Memory: 1.25 GB\nEstimated Total Memory: 2 GB")
 
-        async def communicate(self):
-            return b"", b"Estimated GPU Memory: 1.25 GB\nEstimated Total Memory: 2 GB"
+        async def wait(self):
+            return self.returncode
 
     async def create_subprocess_exec(*args, **kwargs):
         calls.append(args)
@@ -118,20 +130,68 @@ async def test_estimator_uses_estimate_only_without_loading(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_estimator_timeout_kills_cli(monkeypatch):
+@pytest.mark.parametrize("stream_name", ["stdout", "stderr"])
+async def test_estimator_stops_cli_when_output_exceeds_the_stream_limit(monkeypatch, stream_name):
     class Process:
-        returncode = None
-        killed = False
-
-        async def communicate(self):
-            await asyncio.sleep(1)
+        def __init__(self):
+            self.returncode = None
+            self.killed = False
+            oversized = _stream(
+                b"x" * (model_estimator.MAX_ESTIMATE_STREAM_BYTES + 1), closed=False
+            )
+            empty = _stream(closed=False)
+            self.stdout = oversized if stream_name == "stdout" else empty
+            self.stderr = oversized if stream_name == "stderr" else empty
+            self.exited = asyncio.Event()
 
         def kill(self):
             self.killed = True
             self.returncode = -9
+            self.stdout.feed_eof()
+            self.stderr.feed_eof()
+            self.exited.set()
 
         async def wait(self):
+            await self.exited.wait()
             return self.returncode
+
+    process = Process()
+
+    async def create_subprocess_exec(*args, **kwargs):
+        return process
+
+    monkeypatch.setattr(model_estimator, "_find_lms_executable", lambda: "lms")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", create_subprocess_exec)
+
+    result = await model_estimator.estimate_model_resources(
+        "fixture/model", host="http://127.0.0.1:1234"
+    )
+
+    assert result.status == "failed"
+    assert "16 KiB output limit" in result.message
+    assert process.killed
+
+
+@pytest.mark.asyncio
+async def test_estimator_timeout_kills_cli(monkeypatch):
+    class Process:
+        def __init__(self):
+            self.returncode = None
+            self.killed = False
+            self.stdout = _stream(closed=False)
+            self.stderr = _stream(closed=False)
+            self.exited = asyncio.Event()
+
+        async def wait(self):
+            await self.exited.wait()
+            return self.returncode
+
+        def kill(self):
+            self.killed = True
+            self.returncode = -9
+            self.stdout.feed_eof()
+            self.stderr.feed_eof()
+            self.exited.set()
 
     process = Process()
 
@@ -152,16 +212,18 @@ async def test_estimator_timeout_kills_cli(monkeypatch):
 @pytest.mark.asyncio
 async def test_estimator_timeout_tolerates_process_exit_racing_with_kill(monkeypatch):
     class Process:
-        returncode = None
-
-        async def communicate(self):
-            await asyncio.sleep(1)
+        def __init__(self):
+            self.returncode = None
+            self.stdout = _stream(closed=False)
+            self.stderr = _stream(closed=False)
 
         def kill(self):
             raise ProcessLookupError("process exited just before the kill")
 
         async def wait(self):
             self.returncode = 0
+            self.stdout.feed_eof()
+            self.stderr.feed_eof()
             return self.returncode
 
     process = Process()
@@ -185,19 +247,24 @@ async def test_estimator_cancellation_stops_the_cli(monkeypatch):
     started = asyncio.Event()
 
     class Process:
-        returncode = None
-        killed = False
+        def __init__(self):
+            self.returncode = None
+            self.killed = False
+            self.stdout = _stream(closed=False)
+            self.stderr = _stream(closed=False)
+            self.exited = asyncio.Event()
 
-        async def communicate(self):
+        async def wait(self):
             started.set()
-            await asyncio.Event().wait()
+            await self.exited.wait()
+            return self.returncode
 
         def kill(self):
             self.killed = True
             self.returncode = -9
-
-        async def wait(self):
-            return self.returncode
+            self.stdout.feed_eof()
+            self.stderr.feed_eof()
+            self.exited.set()
 
     process = Process()
 

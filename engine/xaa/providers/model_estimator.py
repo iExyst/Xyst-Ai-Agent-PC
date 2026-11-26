@@ -28,6 +28,33 @@ _BINARY_UNITS = {
     "GIB": 1024**3,
     "TIB": 1024**4,
 }
+MAX_ESTIMATE_STREAM_BYTES = 16 * 1024
+
+
+class _EstimateOutputTooLarge(Exception):
+    """The estimator exceeded its bounded per-stream output allowance."""
+
+
+async def _read_bounded(stream: asyncio.StreamReader) -> bytes:
+    output = bytearray()
+    while True:
+        remaining = MAX_ESTIMATE_STREAM_BYTES + 1 - len(output)
+        chunk = await stream.read(min(4096, remaining))
+        if not chunk:
+            return bytes(output)
+        output.extend(chunk)
+        if len(output) > MAX_ESTIMATE_STREAM_BYTES:
+            raise _EstimateOutputTooLarge
+
+
+async def _stop_estimator(
+    process: asyncio.subprocess.Process, tasks: tuple[asyncio.Task[object], ...]
+) -> None:
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    await _stop_process(process)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +201,7 @@ async def estimate_model_resources(
     if context_length is not None:
         arguments.extend(("--context-length", str(context_length)))
     process: asyncio.subprocess.Process | None = None
+    output_tasks: tuple[asyncio.Task[object], ...] = ()
     try:
         process = await asyncio.create_subprocess_exec(
             *arguments,
@@ -183,21 +211,49 @@ async def estimate_model_resources(
             env=_child_environment(),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout_seconds)
+        stdout_pipe = process.stdout
+        stderr_pipe = process.stderr
+        if stdout_pipe is None or stderr_pipe is None:
+            await _stop_process(process)
+            return ModelResourceEstimate(
+                model=model,
+                context_length=context_length,
+                status="failed",
+                message="LM Studio's resource estimate output pipes were unavailable.",
+            )
+        stdout_task = asyncio.create_task(_read_bounded(stdout_pipe))
+        stderr_task = asyncio.create_task(_read_bounded(stderr_pipe))
+        wait_task = asyncio.create_task(process.wait())
+        output_tasks = (stdout_task, stderr_task, wait_task)
+        stdout, stderr, _ = await asyncio.wait_for(asyncio.gather(*output_tasks), timeout_seconds)
     except TimeoutError:
         if process is not None:
-            await _stop_process(process)
+            await _stop_estimator(process, output_tasks)
         return ModelResourceEstimate(
             model=model,
             context_length=context_length,
             status="failed",
             message="LM Studio's resource estimate timed out. No model was loaded.",
         )
+    except _EstimateOutputTooLarge:
+        if process is not None:
+            await _stop_estimator(process, output_tasks)
+        return ModelResourceEstimate(
+            model=model,
+            context_length=context_length,
+            status="failed",
+            message=(
+                "LM Studio's resource estimate exceeded the 16 KiB output limit. "
+                "The estimator was stopped; no model was loaded."
+            ),
+        )
     except asyncio.CancelledError:
         if process is not None:
-            await _stop_process(process)
+            await _stop_estimator(process, output_tasks)
         raise
     except OSError:
+        if process is not None:
+            await _stop_estimator(process, output_tasks)
         return ModelResourceEstimate(
             model=model,
             context_length=context_length,
