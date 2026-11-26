@@ -23,7 +23,7 @@ from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 42
+DATABASE_SCHEMA_VERSION = 43
 
 
 def _is_normalized_relative_workspace_path(path: str) -> bool:
@@ -453,6 +453,21 @@ class RunStore:
                     updated_at TEXT NOT NULL,
                     schema_version INTEGER NOT NULL DEFAULT 1
                 );
+                CREATE TABLE IF NOT EXISTS docker_sessions (
+                    id TEXT PRIMARY KEY CHECK(length(id)=32),
+                    run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                    task_scope TEXT NOT NULL,
+                    profile_sha256 TEXT NOT NULL CHECK(length(profile_sha256)=64),
+                    image_reference TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('reserved','creating','ready','busy','stopping','closed','unknown')),
+                    container_id TEXT,
+                    active_execution_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(run_id,task_scope)
+                );
+                CREATE INDEX IF NOT EXISTS docker_sessions_state_updated
+                    ON docker_sessions(state,updated_at);
                 CREATE TABLE IF NOT EXISTS task_dependencies (
                     task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
                     depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -2328,6 +2343,18 @@ class RunStore:
                 connection.execute(
                     "UPDATE runs SET lease_owner=NULL,lease_expires_at=NULL WHERE id=?", (run_id,)
                 )
+            if destination in {
+                RunState.PAUSED,
+                RunState.BLOCKED,
+                RunState.FAILED,
+                RunState.CANCELLED,
+                RunState.WAITING_FOR_APPROVAL,
+            }:
+                connection.execute(
+                    "UPDATE docker_sessions SET state='stopping',updated_at=? WHERE run_id=? "
+                    "AND state NOT IN ('closed','unknown','stopping')",
+                    (now, run_id),
+                )
             if destination == RunState.QUEUED:
                 connection.execute(
                     "UPDATE runs SET lease_owner=NULL,lease_expires_at=NULL WHERE id=?", (run_id,)
@@ -3036,6 +3063,11 @@ class RunStore:
             connection.execute(
                 "UPDATE runs SET state=?,revision=revision+1,updated_at=? WHERE id=?",
                 (state, utc_now(), run_id),
+            )
+            connection.execute(
+                "UPDATE docker_sessions SET state='stopping',updated_at=? WHERE run_id=? "
+                "AND state NOT IN ('closed','unknown','stopping')",
+                (utc_now(), run_id),
             )
             self.record_event(
                 connection,
