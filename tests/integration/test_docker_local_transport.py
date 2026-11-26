@@ -763,7 +763,7 @@ from xaa.runtime.docker_local_transport import DockerLocalTransport
 from xaa.storage.runs import RunStore
 
 async def main():
-    store = RunStore(sys.argv[1])
+    store = RunStore(pathlib.Path(sys.argv[1]))
     async def discover(intent):
         transport = await DockerLocalTransport.discover(intent, deadline=time.monotonic() + 20)
         transport.executable = sys.argv[2]

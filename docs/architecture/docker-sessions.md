@@ -139,9 +139,11 @@ the session container removed but before the worker receives the close result.
 Recovery should seal the durable `stopping` row as `closed` without replaying
 the already finished command. The first hosted attempt passed 18 other live
 cases but hit a test assertion against a field absent from the public command
-result; the test now checks the durable session state. Local unit and static
-checks pass; retry live-engine and exact-source Windows verification are
-pending.
+result; the test now checks the durable session state. The second attempt
+passed those 18 cases but caught a worker fixture passing a string instead of
+a `Path` to `RunStore`, before cleanup began. That fixture is corrected. Local
+unit and static checks pass; retry live-engine and exact-source Windows
+verification are pending.
 
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
