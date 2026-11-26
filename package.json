@@ -14,6 +14,7 @@
     "test:native:voice": "node scripts/native_voice_smoke.mjs",
     "test:native:physical-mic": "node scripts/native_physical_microphone_smoke.mjs",
     "acceptance:windows-speech": "uv run python scripts/windows_speech_acceptance.py",
+    "acceptance:windows-mic-speech": "node scripts/windows_microphone_speech_acceptance.mjs",
     "test:native:windows-speech": "node scripts/native_windows_speech_smoke.mjs",
     "test:native:skill-readiness": "node scripts/native_skill_readiness_smoke.mjs",
     "test:native:restart": "node scripts/native_restart_smoke.mjs",
