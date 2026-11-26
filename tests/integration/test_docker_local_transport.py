@@ -308,7 +308,9 @@ async def test_live_docker_session_controller_persists_archive_and_recovers_stop
     )
     transport = await DockerLocalTransport.discover(profile_request, deadline=time.monotonic() + 20)
     grant = profile_request.model_copy(update={"profile_sha256": transport.profile_sha256})
-    store = RunStore(workspace_tmp_path / "coordinator.sqlite3")
+    data = workspace_tmp_path / "data"
+    data.mkdir()
+    store = RunStore(data / "coordinator.sqlite3")
     run = store.create_run(
         objective="Verify reviewed Docker session artifacts",
         acceptance_criteria=[],
