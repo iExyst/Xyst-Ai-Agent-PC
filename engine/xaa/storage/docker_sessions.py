@@ -10,6 +10,11 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from xaa.runtime.command_contracts import CommandIntent
+from xaa.runtime.docker_execution_policy import (
+    DOCKER_CONTAINER_MEMORY_BYTES,
+    DOCKER_CONTAINER_NANO_CPUS,
+    MAX_REUSABLE_DOCKER_SESSIONS,
+)
 from xaa.storage.runs import RunStore, utc_now
 
 DockerSessionState = Literal[
@@ -107,6 +112,21 @@ class DockerSessionJournal:
             if existing.state != "ready":
                 raise RuntimeError("Docker session is not ready for another command.")
             return existing
+        active_sessions = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM docker_sessions WHERE state!='closed'"
+            ).fetchone()[0]
+        )
+        if active_sessions >= MAX_REUSABLE_DOCKER_SESSIONS:
+            memory_mib = (
+                DOCKER_CONTAINER_MEMORY_BYTES * MAX_REUSABLE_DOCKER_SESSIONS // (1024 * 1024)
+            )
+            cpu_cores = DOCKER_CONTAINER_NANO_CPUS * MAX_REUSABLE_DOCKER_SESSIONS / 1_000_000_000
+            raise RuntimeError(
+                "Docker reusable-session resource budget is full for this profile "
+                f"({MAX_REUSABLE_DOCKER_SESSIONS} sessions, up to {memory_mib} MiB and "
+                f"{cpu_cores:g} CPU cores). Wait for confirmed cleanup or disable session reuse."
+            )
         now = utc_now()
         value = {
             "id": uuid4().hex,

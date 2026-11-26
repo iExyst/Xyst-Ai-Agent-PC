@@ -18,7 +18,10 @@ import pytest
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
 from xaa.runtime.command_controller import CommandController
 from xaa.runtime.command_recovery import StoppedCommandRecovery
-from xaa.runtime.docker_execution_policy import docker_create_argv
+from xaa.runtime.docker_execution_policy import (
+    MAX_REUSABLE_DOCKER_SESSIONS,
+    docker_create_argv,
+)
 from xaa.runtime.docker_local_transport import DockerLocalTransport, _cli_request
 from xaa.runtime.docker_session_archive import validate_session_archive
 from xaa.runtime.states import RunState
@@ -36,6 +39,91 @@ IMAGE_REFERENCE = os.environ.get("XAA_DOCKER_IMAGE_DIGEST", "")
 def live_docker_required() -> None:
     if not IMAGE_REFERENCE:
         pytest.skip("Set XAA_DOCKER_IMAGE_DIGEST to a locally available repository@sha256 digest.")
+
+
+@pytest.mark.asyncio
+async def test_live_docker_profile_session_budget_caps_aggregate_container_resources(
+    workspace_tmp_path: Path,
+) -> None:
+    live_docker_required()
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    request = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        max_seconds=10,
+        docker_session_reuse=True,
+    )
+    transport = await DockerLocalTransport.discover(request, deadline=time.monotonic() + 20)
+    grant = request.model_copy(update={"profile_sha256": transport.profile_sha256})
+    data = workspace_tmp_path / "data"
+    data.mkdir()
+    store = RunStore(data / "session-budget.sqlite3")
+    owned_runs: list[tuple[str, str]] = []
+    for index in range(MAX_REUSABLE_DOCKER_SESSIONS + 1):
+        run = store.create_run(
+            objective="Verify bounded aggregate Docker session resources",
+            acceptance_criteria=[],
+            workspace=str(project),
+            mode="workspace",
+            model=None,
+            command_grant=grant.model_dump(mode="json"),
+        )
+        run_id = str(run["id"])
+        owner = store.acquire_lease(run_id, f"docker-session-budget-{index}", seconds=120)
+        assert owner is not None
+        store.transition(run_id, RunState.PLANNING, owner=owner)
+        store.transition(run_id, RunState.RUNNING, owner=owner)
+        owned_runs.append((run_id, owner))
+
+    controller = CommandController(store, transport)
+    sessions = DockerSessionJournal(store)
+
+    async def same_live_transport(_intent: CommandIntent) -> DockerLocalTransport:
+        return transport
+
+    try:
+        for index, (run_id, owner) in enumerate(owned_runs[:MAX_REUSABLE_DOCKER_SESSIONS]):
+            outcome = await controller.execute(
+                run_id,
+                owner,
+                f"create-budget-session-{index}",
+                {"argv": ["python3", "-I", "-c", f"print('session-{index}')"]},
+                idempotency_key=f"create-budget-session-{index}",
+                deadline=time.monotonic() + 30,
+            )
+            assert outcome["succeeded"] is True
+        with store.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM docker_sessions WHERE state!='closed' ORDER BY created_at"
+            ).fetchall()
+        assert len(rows) == MAX_REUSABLE_DOCKER_SESSIONS
+        assert all(row["state"] == "ready" and row["container_id"] for row in rows)
+
+        overflow_run_id, overflow_owner = owned_runs[MAX_REUSABLE_DOCKER_SESSIONS]
+        with pytest.raises(RuntimeError, match="resource budget is full"):
+            await controller.execute(
+                overflow_run_id,
+                overflow_owner,
+                "deny-over-budget-session",
+                {"argv": ["python3", "-I", "-c", "print('must-not-run')"]},
+                idempotency_key="deny-over-budget-session",
+                deadline=time.monotonic() + 30,
+            )
+        assert len(sessions.terminal()) == 0
+    finally:
+        for run_id, owner in owned_runs:
+            run = store.get_run(run_id)
+            if run is not None and run["state"] in {"queued", "planning", "running", "verifying"}:
+                store.transition(run_id, RunState.FAILED, owner=owner)
+        await StoppedCommandRecovery(store, same_live_transport).run_once()
+    with store.connection() as connection:
+        open_sessions = connection.execute(
+            "SELECT COUNT(*) FROM docker_sessions WHERE state!='closed'"
+        ).fetchone()[0]
+    assert open_sessions == 0
 
 
 @pytest.mark.asyncio

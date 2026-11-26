@@ -20,6 +20,8 @@ from xaa.runtime.cleanup import finish_cleanup
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
 from xaa.runtime.command_transport import OutputCallback, SessionContainerCallback
 from xaa.runtime.docker_execution_policy import (
+    DOCKER_CONTAINER_MEMORY_BYTES,
+    DOCKER_CONTAINER_NANO_CPUS,
     PROFILE_LABEL,
     SESSION_LABEL,
     docker_container_target,
@@ -185,10 +187,10 @@ def _require_container_policy(container: dict[str, Any], *, network_access: bool
         "CapDrop": ["ALL"],
         "SecurityOpt": ["no-new-privileges=true"],
         "PidsLimit": 32,
-        "Memory": 134217728,
-        "MemorySwap": 134217728,
+        "Memory": DOCKER_CONTAINER_MEMORY_BYTES,
+        "MemorySwap": DOCKER_CONTAINER_MEMORY_BYTES,
         "ShmSize": 33554432,
-        "NanoCpus": 500000000,
+        "NanoCpus": DOCKER_CONTAINER_NANO_CPUS,
     }
     if any(host.get(key) != value for key, value in expected_host.items()):
         raise PermissionError("Docker did not apply the required container isolation limits.")

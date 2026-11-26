@@ -26,6 +26,18 @@ Do not add host bind mounts or arbitrary environment forwarding as an incidental
 part of session reuse. Those capabilities need independent owner grants and
 their own canonicalization, secret-redaction, and acceptance requirements.
 
+The current fixed container profile allows at most four non-closed reusable
+sessions in one X.A.A. profile database. Each container is limited to 128 MiB,
+0.5 CPU cores, and 32 processes, so the reusable-session reservation ceiling is
+512 MiB, 2 CPU cores, and 128 processes. The journal checks and inserts the
+reservation inside the same SQLite `BEGIN IMMEDIATE` transaction, serializing
+competing runs. `reserved`, `creating`, `ready`, `busy`, `stopping`, and
+`unknown` sessions all consume capacity; a slot is released only after cleanup
+is confirmed and the row becomes `closed`. Reusing an existing ready session
+does not consume another slot. This cap aggregates runs and specialists that
+share the profile database; it does not claim a machine-wide cap across separate
+profiles or disposable per-command Docker containers.
+
 The container workspace may persist between commands inside the session, but it
 must remain isolated from the project directory. A separate default-off owner
 grant can export a tar archive after a successful command. The archive is capped
@@ -55,8 +67,10 @@ after an ambiguous result.
 Run transitions durably mark sessions for cleanup; the stopped-run recovery
 worker removes labeled containers and closes records only after observing
 removal. An unconfirmed container remains a durable cleanup obligation. Current
-acceptance does not yet prove every crash point, app shutdown edge, or aggregate
-session resource budget.
+acceptance does not yet prove every crash point or app shutdown edge. Aggregate
+reusable-session reservations are capped per profile as described above; a
+machine-wide cap across independent profiles and disposable containers remains
+outside this session budget.
 
 ## Acceptance status
 

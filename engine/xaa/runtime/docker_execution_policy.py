@@ -10,6 +10,13 @@ _IMAGE_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,254}@sha256:[a-f0-9]{64
 _EXECUTION_ID = re.compile(r"^[a-f0-9]{32}$")
 SESSION_LABEL = "com.xyst.xaa.session"
 PROFILE_LABEL = "com.xyst.xaa.profile"
+DOCKER_CONTAINER_MEMORY_BYTES = 128 * 1024 * 1024
+DOCKER_CONTAINER_NANO_CPUS = 500_000_000
+DOCKER_CONTAINER_CPUS = "0.5"
+# A reusable session can hold up to the container's full configured limit even
+# while idle. Four concurrent sessions therefore bound this profile to 512 MiB
+# and 2 CPU cores of Docker resource capacity.
+MAX_REUSABLE_DOCKER_SESSIONS = 4
 
 
 def validate_image_reference(value: str) -> str:
@@ -90,11 +97,11 @@ def docker_create_argv(
         "--pids-limit",
         "32",
         "--memory",
-        "134217728",
+        str(DOCKER_CONTAINER_MEMORY_BYTES),
         "--memory-swap",
-        "134217728",
+        str(DOCKER_CONTAINER_MEMORY_BYTES),
         "--cpus",
-        "0.5",
+        DOCKER_CONTAINER_CPUS,
         "--user",
         "65534:65534",
         "--tmpfs",
