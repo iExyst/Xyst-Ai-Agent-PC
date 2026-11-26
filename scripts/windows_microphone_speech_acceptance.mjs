@@ -49,7 +49,10 @@ try {
     const output = [];
     const errors = [];
     child.stdout.on('data', chunk => output.push(chunk));
-    child.stderr.on('data', chunk => errors.push(chunk));
+    child.stderr.on('data', chunk => {
+      errors.push(chunk);
+      process.stderr.write(chunk);
+    });
     const timeout = setTimeout(() => {
       child.kill();
       reject(new Error('Windows microphone recognition exceeded its 45-second process limit.'));

@@ -1,5 +1,9 @@
 # Project phase assessment (2026-11-26)
 
+## Make the local Windows speech acceptance prompt visible (2026-11-26)
+
+The local Windows speech acceptance harness buffered the recognizer's listening prompt in a hidden PowerShell child, so the person at the microphone could not reliably tell when recognition started. It now streams the recognizer prompt to the active terminal. Reran the authorized acceptance with the prompt visible; the installed Windows recognizer still returned `no_speech_recognized` for “Hello world”. The report retains no audio, uses no network, and requests no model inference: [report](../.acceptance/windows-microphone-speech-571616fa-3fde-485c-a8c5-dfb54250a3b4/report.json). This clarifies the acceptance procedure but does not close physical-microphone-to-ASR acceptance; synthetic capture and offline error handling remain verified separately.
+
 ## Package the reusable Docker session resource cap (2026-11-26)
 
 Exact-current installer run [45833968183](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45833968183) passed on commit `99574a76`. The unsigned 0.1.1 x64 package passed frozen and installed AppContainer execution, native onboarding/OAuth/recovery, specialist/workspace review, backup/restore, upgrade from 0.1.0, standard-user installation, boot/uninstall, and explicit data removal. Installer artifact [15126981756](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45833968183/artifacts/15126981756) is preserved under [`.acceptance/hosted-installer-45833968183/`](../.acceptance/hosted-installer-45833968183/); its 83,270,703-byte setup has SHA-256 `214bed771c346ca27160bcb7c6d5f4e3b0087a1f16e0631ebeb690d4107d30e8`, matching the downloaded manifest. Desktop and bundled-engine hashes match the manifest. The package remains unsigned and this is not a live Docker test; the real-engine four-session budget is verified separately in run 45830773729.
