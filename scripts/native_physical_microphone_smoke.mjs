@@ -89,6 +89,8 @@ try {
   await microphone.selectOption(selectedId);
   await page.getByRole('button', { name: 'Record voice', exact: true }).click();
   await expect(page.getByText(/Recording locally/)).toBeVisible({ timeout: 10000 });
+  const inputMeter = page.getByRole('meter', { name: 'Microphone input level', exact: true });
+  await expect(inputMeter).toBeVisible();
   const activeCapture = await page.evaluate(expectedId => {
     const entry = window.__xaaPhysicalMicStreams?.at(-1);
     return Boolean(entry
@@ -129,8 +131,20 @@ try {
       mean_rms: levels.length ? levels.reduce((sum, value) => sum + value, 0) / levels.length : 0,
     };
   });
+  const visibleInputLevel = await inputMeter.evaluate(element => element.value);
+  const visibleInputStatus = await page.locator('.voice-capture-meter > span').textContent();
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
-  await expect(page.getByText(/Attached: Microphone recording\.wav/)).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('button', { name: 'Record voice', exact: true })).toBeEnabled({ timeout: 10000 });
+  const attachmentCreated = await page.getByText(/Attached: Microphone recording\.wav/).isVisible();
+  const silentCaptureRejected = await page.getByRole('alert')
+    .filter({ hasText: 'No microphone signal was captured' }).isVisible();
+  const signalDetected = audioLevel.peak_rms > 0.00001;
+  if (signalDetected && !attachmentCreated) {
+    throw new Error('The microphone produced signal, but the app did not create its local WAV attachment.');
+  }
+  if (!signalDetected && !silentCaptureRejected) {
+    throw new Error('The microphone was silent, but the app did not show its no-signal error.');
+  }
   const tracksStopped = await page.evaluate(() => {
     const tracks = window.__xaaPhysicalMicStreams?.at(-1)?.stream.getTracks() ?? [];
     return tracks.length > 0 && tracks.every(track => track.readyState === 'ended');
@@ -144,10 +158,16 @@ try {
     recording_duration_ms: 2000,
     audio_level_diagnostic: {
       ...audioLevel,
-      signal_above_0_01_rms: audioLevel.peak_rms > 0.01,
+      signal_detected: signalDetected,
       retained_audio_samples: false,
     },
-    local_wav_attachment_created: true,
+    live_input_meter: {
+      visible: true,
+      normalized_value: visibleInputLevel,
+      status: visibleInputStatus,
+    },
+    local_wav_attachment_created: attachmentCreated,
+    silent_capture_rejected: silentCaptureRejected,
     capture_tracks_stopped: true,
     audio_submitted_to_transcription: false,
     model_inference_requested: false,

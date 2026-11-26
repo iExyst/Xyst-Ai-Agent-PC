@@ -189,6 +189,10 @@ test('microphone capture is converted locally to a bounded PCM WAV attachment', 
   await expect(page.getByRole('button', { name: 'Start objective', exact: true })).toBeDisabled();
   await expect(page.getByLabel('Voice input (PCM WAV, up to 4 MiB and 10 minutes)')).toBeDisabled();
   await expect(page.getByText(/Recording locally/)).toBeVisible();
+  const inputMeter = page.getByRole('meter', { name: 'Microphone input level' });
+  await expect(inputMeter).toBeVisible();
+  await expect.poll(() => inputMeter.evaluate(element => element.value)).toBeGreaterThan(0);
+  await expect(page.getByText(/Microphone signal detected|No input yet/)).toBeVisible();
   // Give the browser more than one MediaRecorder timeslice to deliver data
   // before stopping; sub-second recordings were flaky on hosted Windows Edge.
   await page.waitForTimeout(1500);

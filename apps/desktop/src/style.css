@@ -700,6 +700,8 @@ html{background:var(--night);color-scheme:dark}
 .voice-capture-note,.voice-capture-error{margin:0;padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.5}
 .voice-capture-note{background:var(--panel);border:1px solid var(--line);color:var(--muted)!important}
 .voice-capture-note.is-recording{color:#f0c1c2!important;border-color:#623d43;background:#2a1d21}
+.voice-capture-meter{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,180px);align-items:center;gap:12px;color:var(--muted);font-size:11px}
+.voice-capture-meter meter{width:100%;height:10px;accent-color:var(--accent)}
 .voice-capture-error{color:#ffd3d3!important;border:1px solid #694146;background:#2b1d21}
 @media(max-width:560px){.voice-capture-controls,.voice-capture-device{align-items:stretch;flex-direction:column}.voice-capture-device>label{max-width:none}.voice-capture-controls>.voice-capture-record,.voice-capture-controls>.voice-capture-stop{width:100%}.voice-capture-header{align-items:flex-start}}
 body{

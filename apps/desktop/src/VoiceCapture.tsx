@@ -77,16 +77,70 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [microphoneId, setMicrophoneId] = useState('');
   const [microphoneStatus, setMicrophoneStatus] = useState('');
+  const [inputRms, setInputRms] = useState(0);
   const streamRef = useRef<MediaStream | undefined>(undefined);
   const recorderRef = useRef<MediaRecorder | undefined>(undefined);
   const chunksRef = useRef<Blob[]>([]);
   const timeoutRef = useRef<number | undefined>(undefined);
+  const meterTimerRef = useRef<number | undefined>(undefined);
+  const meterContextRef = useRef<AudioContext | undefined>(undefined);
+  const meterSourceRef = useRef<MediaStreamAudioSourceNode | undefined>(undefined);
+  const meterAnalyserRef = useRef<AnalyserNode | undefined>(undefined);
   const discardRef = useRef(false);
   const mountedRef = useRef(false);
+
+  function stopLevelMeter() {
+    if (meterTimerRef.current !== undefined) window.clearInterval(meterTimerRef.current);
+    meterTimerRef.current = undefined;
+    meterSourceRef.current?.disconnect();
+    meterSourceRef.current = undefined;
+    meterAnalyserRef.current = undefined;
+    const context = meterContextRef.current;
+    meterContextRef.current = undefined;
+    if (context && context.state !== 'closed') void context.close().catch(() => {});
+    if (mountedRef.current) setInputRms(0);
+  }
+
+  async function startLevelMeter(stream: MediaStream) {
+    let context: AudioContext | undefined;
+    let source: MediaStreamAudioSourceNode | undefined;
+    try {
+      context = new AudioContext();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      source = context.createMediaStreamSource(stream);
+      source.connect(analyser);
+      await context.resume();
+      if (!mountedRef.current || streamRef.current !== stream) {
+        source.disconnect();
+        await context.close();
+        return;
+      }
+      meterContextRef.current = context;
+      meterSourceRef.current = source;
+      meterAnalyserRef.current = analyser;
+      const samples = new Float32Array(analyser.fftSize);
+      const measure = () => {
+        if (!mountedRef.current || meterAnalyserRef.current !== analyser) return;
+        analyser.getFloatTimeDomainData(samples);
+        let energy = 0;
+        for (const sample of samples) energy += sample * sample;
+        setInputRms(Math.sqrt(energy / samples.length));
+      };
+      measure();
+      meterTimerRef.current = window.setInterval(measure, 120);
+    } catch {
+      // Metering is diagnostic only; a browser that cannot create an
+      // AudioContext can still record through MediaRecorder.
+      source?.disconnect();
+      if (context && context.state !== 'closed') void context.close().catch(() => {});
+    }
+  }
 
   function releaseMicrophone() {
     if (timeoutRef.current !== undefined) window.clearTimeout(timeoutRef.current);
     timeoutRef.current = undefined;
+    stopLevelMeter();
     streamRef.current?.getTracks().forEach(track => track.stop());
     streamRef.current = undefined;
     recorderRef.current = undefined;
@@ -99,6 +153,7 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
       mountedRef.current = false;
       discardRef.current = true;
       if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+      stopLevelMeter();
       streamRef.current?.getTracks().forEach(track => track.stop());
       if (timeoutRef.current !== undefined) window.clearTimeout(timeoutRef.current);
       onCaptureBusy(false);
@@ -132,6 +187,7 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
         return;
       }
       streamRef.current = stream;
+      await startLevelMeter(stream);
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
       recorder.ondataavailable = event => { if (event.data.size) chunksRef.current.push(event.data); };
@@ -237,6 +293,10 @@ export function VoiceCapture({ onRecorded, onCaptureBusy, disabled }: { onRecord
         : <button type="button" className="voice-capture-stop" disabled={disabled} onClick={stop}><span aria-hidden="true">■</span>Stop recording</button>}
     </div>
     {microphoneStatus && <p className="voice-capture-note" role="status">{microphoneStatus} Choose a device or keep System default.</p>}
+    {recording && <div className="voice-capture-meter">
+      <span>{inputRms > MIN_CAPTURE_RMS ? 'Microphone signal detected' : 'No input yet — speak or check the selected device and Windows input level.'}</span>
+      <meter aria-label="Microphone input level" min={0} max={0.1} value={Math.min(0.1, inputRms)} />
+    </div>}
     {recording && <p className="voice-capture-note is-recording" role="status">Recording locally. Stop when you’re done; the 4 MiB limit stops capture automatically.</p>}
     {error && <p className="voice-capture-error" role="alert">{error}</p>}
   </section>;
