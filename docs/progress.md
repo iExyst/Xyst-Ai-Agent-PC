@@ -2,7 +2,7 @@
 
 ## Bound output from the estimate-only LM Studio CLI (2026-11-26)
 
-The estimate-only `lms` child process now reads stdout and stderr concurrently with a 16 KiB cap on each stream. Exceeding either cap stops and reaps the child, returns a clear failed estimate, and never starts model loading. Timeout and cancellation also stop and reap the process. Focused tests pass 19 cases, including oversized output on both streams; Ruff, formatting, and Pyright pass. This is deterministic CLI-process verification only: no LM Studio model was loaded or used for inference, which remains deferred.
+The estimate-only `lms` child process now reads stdout and stderr concurrently with a 16 KiB cap on each stream. Exceeding either cap stops and reaps the child, returns a clear failed estimate, and never starts model loading. Timeout and cancellation also stop and reap the process. Focused tests pass 19 cases, including oversized output on both streams; Ruff, formatting, and Pyright pass. Exact-source Windows workflow [45848223722](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45848223722) passed 1,788 Python tests with 49 skipped, plus configured browser, static, type, API-contract, and recovery checks. This is deterministic CLI-process verification only: no LM Studio model was loaded or used for inference, which remains deferred.
 
 ## Verify the live microphone meter in the exact Windows package (2026-11-26)
 
