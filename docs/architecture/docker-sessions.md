@@ -74,14 +74,14 @@ passed all 13 live-engine transport cases, including archive content, receipt, a
 ([JUnit evidence](../../.acceptance/hosted-docker-session-45783624096/docker-local-acceptance-45783624096/junit.xml)). The newer hosted Docker run [45787095885](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45787095885)
 passed 14 live-engine cases, adding the SQLite-backed command controller, repeated session commands, archived artifact receipt and contents, and stopped-run recovery
 ([JUnit evidence](../../.acceptance/hosted-docker-coordinator-45787095885/docker-local-acceptance-45787095885/junit.xml)).
-Exact-source Windows CI [45783615691](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45783615691)
-passed on commit `fdc35f09` with 1,783 Python tests and all configured browser, static, type, desktop, API-contract, and process-recovery checks. The wider acceptance gate is still open. In particular,
-real-engine evidence does not yet cover cross-run/task isolation through the
+Exact-source Windows CI [45790438139](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45790438139)
+passed on commit `c576d845` with 1,783 Python tests and 43 skipped and all configured browser, static, type, desktop, API-contract, and process-recovery checks. The wider acceptance gate is still open. In particular,
+real-engine evidence does not yet cover cross-task isolation through the
 coordinator, host sentinels and Docker credential isolation, crash points during
 reservation, container creation, active execution, output receipt, or close, app
 restart through the installed Windows coordinator, aggregate session resource
 budgets, and cleanup after every grant-revocation and failed-execution path.
-The controller scenario reuses the journaled session across commands and exercises run-stop recovery. The installed Windows coordinator and desktop grant/artifact path still require acceptance.
+The controller scenario reuses the journaled session across commands, verifies a second run receives a separate session with no access to the first run’s private file, and exercises run-stop recovery. The installed Windows coordinator and desktop grant/artifact path still require acceptance.
 Session changes must not be copied into the project directly and should reach
 it only through owner review.
 
