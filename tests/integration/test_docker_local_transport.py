@@ -8,14 +8,21 @@ import os
 import tarfile
 import tempfile
 import time
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
+from xaa.runtime.command_controller import CommandController
+from xaa.runtime.command_recovery import StoppedCommandRecovery
 from xaa.runtime.docker_execution_policy import docker_create_argv
 from xaa.runtime.docker_local_transport import DockerLocalTransport, _cli_request
 from xaa.runtime.docker_session_archive import validate_session_archive
+from xaa.runtime.states import RunState
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
+from xaa.storage.commands import command_artifact_root
+from xaa.storage.docker_sessions import DockerSessionJournal
+from xaa.storage.runs import RunStore
 
 IMAGE_REFERENCE = os.environ.get("XAA_DOCKER_IMAGE_DIGEST", "")
 
@@ -279,6 +286,111 @@ async def test_live_docker_session_exports_bounded_archive_without_project_integ
             assert extracted is not None and extracted.read() == b"owner review only"
     finally:
         await transport.control("cleanup", intent, deadline=time.monotonic() + 15)
+
+
+@pytest.mark.asyncio
+async def test_live_docker_session_controller_persists_archive_and_recovers_stopped_run(
+    workspace_tmp_path: Path,
+) -> None:
+    live_docker_required()
+    project = workspace_tmp_path / "project"
+    project.mkdir()
+    source = project / "source.txt"
+    source.write_text("original project", encoding="utf-8")
+    profile_request = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        max_seconds=30,
+        docker_session_reuse=True,
+        docker_session_export=True,
+    )
+    transport = await DockerLocalTransport.discover(profile_request, deadline=time.monotonic() + 20)
+    grant = profile_request.model_copy(update={"profile_sha256": transport.profile_sha256})
+    store = RunStore(workspace_tmp_path / "coordinator.sqlite3")
+    run = store.create_run(
+        objective="Verify reviewed Docker session artifacts",
+        acceptance_criteria=[],
+        workspace=str(project),
+        mode="workspace",
+        model=None,
+        command_grant=grant.model_dump(mode="json"),
+    )
+    owner = store.acquire_lease(run["id"], "live-docker-coordinator", seconds=120)
+    assert owner is not None
+    store.transition(run["id"], RunState.PLANNING, owner=owner)
+    store.transition(run["id"], RunState.RUNNING, owner=owner)
+    controller = CommandController(store, transport)
+    sessions = DockerSessionJournal(store)
+
+    async def same_live_transport(_intent: CommandIntent) -> DockerLocalTransport:
+        return transport
+
+    try:
+        first = await controller.execute(
+            run["id"],
+            owner,
+            "create-session-file",
+            {
+                "argv": [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; Path('/workspace/session.txt').write_text('owner review', encoding='utf-8')",
+                ]
+            },
+            idempotency_key="create-session-file",
+            deadline=time.monotonic() + 45,
+        )
+        assert first["succeeded"] is True
+        assert first["session_archive_artifact_id"]
+        with store.connection() as connection:
+            row = connection.execute(
+                "SELECT id FROM docker_sessions WHERE run_id=?", (run["id"],)
+            ).fetchone()
+        assert row is not None
+        session_id = str(row["id"])
+        session = sessions.get(session_id)
+        assert session is not None and session.state == "ready"
+
+        second = await controller.execute(
+            run["id"],
+            owner,
+            "read-session-file",
+            {
+                "argv": [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; print(Path('/workspace/session.txt').read_text(encoding='utf-8'))",
+                ]
+            },
+            idempotency_key="read-session-file",
+            deadline=time.monotonic() + 45,
+        )
+        assert second["succeeded"] is True
+        assert second["session_archive_artifact_id"]
+        assert source.read_text(encoding="utf-8") == "original project"
+
+        artifact_record = store.get_artifact(second["session_archive_artifact_id"])
+        assert artifact_record is not None
+        archive_path = command_artifact_root(store) / artifact_record["storage_key"]
+        archive_bytes = archive_path.read_bytes()
+        receipt = validate_session_archive(archive_bytes)
+        assert receipt.sha256 == artifact_record["sha256"]
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:") as archive:
+            extracted = archive.extractfile("session.txt")
+            assert extracted is not None and extracted.read() == b"owner review"
+
+        store.transition(run["id"], RunState.FAILED, owner=owner)
+        assert await StoppedCommandRecovery(store, same_live_transport).run_once() == 1
+        session = sessions.get(session_id)
+        assert session is not None and session.state == "closed"
+    finally:
+        current = store.get_run(run["id"])
+        if current is not None and current["state"] == "running":
+            store.transition(run["id"], RunState.FAILED, owner=owner)
+        if current is not None and current["state"] in {"running", "failed", "cancelled"}:
+            await StoppedCommandRecovery(store, same_live_transport).run_once()
 
 
 @pytest.mark.asyncio
