@@ -13,7 +13,7 @@ test('system monitor shows local capacity and inference queue without exposing r
       samples++;
       const currentFirst={...firstAdapter,memory_free_bytes:(samples===1?6:5)*1024**3,utilization_percent:samples===1?24:40};
       const currentSecond={...secondAdapter,memory_free_bytes:(samples===1?4:3)*1024**3,utilization_percent:samples===1?80:95};
-      return route.fulfill({headers,json:{sampled_at:'2026-11-14T17:00:00Z',platform:'win32',logical_processors:16,cpu_percent:42.5,memory_total_bytes:32*1024**3,memory_available_bytes:8*1024**3,memory_used_percent:75,disk_total_bytes:2*1024**4,disk_free_bytes:512*1024**3,queue_active:true,queue_waiting:2,queue_reserved_weight:640,queue_max_reserved_weight:2_000_000,queue_max_pending:16,gpu_devices:[...(samples===1?[currentFirst,currentSecond]:[currentSecond,currentFirst]),{name:'AMD Radeon(TM) Graphics',memory_total_bytes:2*1024**3,memory_free_bytes:1536*1024**2,utilization_percent:0},{name:'Intel Arc Graphics',memory_total_bytes:8*1024**3,memory_free_bytes:7*1024**3,utilization_percent:null}],accelerator_telemetry_available:true}});
+      return route.fulfill({headers,json:{sampled_at:'2026-11-14T17:00:00Z',platform:'win32',logical_processors:16,cpu_percent:42.5,memory_total_bytes:32*1024**3,memory_available_bytes:8*1024**3,memory_used_percent:75,disk_total_bytes:2*1024**4,disk_free_bytes:512*1024**3,queue_active:samples===1,queue_other_process_active:samples===1?false:true,queue_waiting:2,queue_reserved_weight:640,queue_max_reserved_weight:2_000_000,queue_max_pending:16,gpu_devices:[...(samples===1?[currentFirst,currentSecond]:[currentSecond,currentFirst]),{name:'AMD Radeon(TM) Graphics',memory_total_bytes:2*1024**3,memory_free_bytes:1536*1024**2,utilization_percent:0},{name:'Intel Arc Graphics',memory_total_bytes:8*1024**3,memory_free_bytes:7*1024**3,utilization_percent:null}],accelerator_telemetry_available:true}});
     }
     if(path==='/runs/latest-unfinished')return route.fulfill({headers,json:null});
     if(path==='/runs')return route.fulfill({headers,json:{items:[],next_cursor:null}});
@@ -30,6 +30,7 @@ test('system monitor shows local capacity and inference queue without exposing r
   await expect(page.getByRole('region',{name:'Memory'})).toContainText('75.0% used');
   await expect(page.getByRole('region',{name:'Profile drive'})).toContainText('75.0% used');
   await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('2 waiting');
+  await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('Working');
   await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('640 estimated queue weight');
   await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('weight units');
   await expect(page.locator('.system-monitor-note')).toContainText('do not predict model tokenization or GPU memory requirements');
@@ -47,6 +48,8 @@ test('system monitor shows local capacity and inference queue without exposing r
   await expect(page.locator('.system-monitor-updated')).toHaveCount(0);
   await page.getByRole('button',{name:'Refresh now'}).click();
   await expect(page.locator('.system-monitor-updated')).toContainText('System monitor updated');
+  await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('Working in another X.A.A. process');
+  await expect(page.getByRole('region',{name:'Inference queue'})).toContainText('Another X.A.A. process currently holds the local inference slot.');
   await expect(nvidiaAdapterOne).toContainText('40% active');
   await expect(nvidiaAdapterTwo).toContainText('95% active');
   const adapterOneTrace=await nvidiaAdapterOne.locator('polyline').getAttribute('points');

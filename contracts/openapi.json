@@ -7334,6 +7334,17 @@
             "title": "Queue Max Reserved Weight",
             "type": "integer"
           },
+          "queue_other_process_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Other Process Active"
+          },
           "queue_reserved_weight": {
             "minimum": 0.0,
             "title": "Queue Reserved Weight",
@@ -7360,6 +7371,7 @@
           "disk_total_bytes",
           "disk_free_bytes",
           "queue_active",
+          "queue_other_process_active",
           "queue_waiting",
           "queue_reserved_weight",
           "queue_max_reserved_weight",

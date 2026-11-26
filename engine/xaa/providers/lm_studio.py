@@ -17,7 +17,11 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from xaa.providers.contracts import TokenUsage, public_assistant_message, validate_completion
-from xaa.providers.inference_queue import InferenceQueue, InferenceQueueError
+from xaa.providers.inference_queue import (
+    InferenceQueue,
+    InferenceQueueError,
+    InferenceQueueSnapshot,
+)
 from xaa.providers.model_estimator import ModelResourceEstimate, estimate_model_resources
 from xaa.providers.streaming import CompletionAssembler
 from xaa.providers.tool_schemas import prepare_tools
@@ -133,7 +137,7 @@ class LMStudioProvider:
             transport=transport,
         )
 
-    def inference_queue_snapshot(self) -> dict[str, int | bool]:
+    def inference_queue_snapshot(self) -> InferenceQueueSnapshot:
         """Return queue counters for local resource observability."""
         return self._inference_queue.snapshot()
 

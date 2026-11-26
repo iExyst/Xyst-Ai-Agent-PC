@@ -19,6 +19,8 @@ from itertools import islice
 from pathlib import Path
 from typing import Any, cast
 
+from xaa.providers.inference_queue import InferenceQueueSnapshot
+
 
 def _filetime_value(value: Any) -> int:
     return (int(value.dwHighDateTime) << 32) | int(value.dwLowDateTime)
@@ -765,7 +767,7 @@ class SystemResourceMonitor:
             return None
         return round(max(0.0, min(100.0, (total_delta - idle_delta) * 100 / total_delta)), 1)
 
-    def snapshot(self, queue: dict[str, int | bool]) -> dict[str, Any]:
+    def snapshot(self, queue: InferenceQueueSnapshot) -> dict[str, Any]:
         now = time.monotonic()
         current_cpu = _cpu_times()
         cpu_percent: float | None = None
@@ -805,6 +807,7 @@ class SystemResourceMonitor:
             "disk_total_bytes": disk_total,
             "disk_free_bytes": disk_free,
             "queue_active": bool(queue["active"]),
+            "queue_other_process_active": queue.get("other_process_active"),
             "queue_waiting": int(queue["waiting"]),
             "queue_reserved_weight": int(queue["reserved_weight"]),
             "queue_max_reserved_weight": int(queue["max_reserved_weight"]),

@@ -501,6 +501,7 @@ def test_monitor_reports_cpu_memory_disk_queue_and_missing_gpu(
     assert second["memory_used_percent"] == 75.0
     assert second["disk_free_bytes"] == 6_000
     assert second["queue_active"] is True
+    assert second["queue_other_process_active"] is None
     assert second["queue_waiting"] == 2
     assert second["queue_reserved_weight"] == 640
     assert second["accelerator_telemetry_available"] is False

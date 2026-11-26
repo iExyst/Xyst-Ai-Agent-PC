@@ -170,6 +170,7 @@ asyncio.run(main())
         assert ready_path.exists()
 
         timed_queue = InferenceQueue(process_lock_path=lock_path, wait_timeout=0.05)
+        assert timed_queue.snapshot()["other_process_active"] is True
         with pytest.raises(InferenceQueueTimeout, match="Timed out waiting"):
             async with timed_queue.slot(1):
                 pytest.fail("entered while another process held the inference lock")
@@ -188,6 +189,7 @@ asyncio.run(main())
         await asyncio.wait_for(process.wait(), 3)
         await asyncio.wait_for(task, 3)
         assert entered.is_set()
+        assert queue.snapshot()["other_process_active"] is False
         assert queue.waiting == 0
         assert queue.reserved_weight == 0
         assert queue.active is False
@@ -241,6 +243,11 @@ async def test_read_timeout_is_actionable_and_releases_queue_for_successor():
         assert result["choices"][0]["message"]["content"] == "READY"
     finally:
         await provider.close()
+
+
+def test_queue_process_activity_is_unknown_without_a_shared_lock_path():
+    queue = InferenceQueue()
+    assert queue.snapshot()["other_process_active"] is None
 
 
 @pytest.mark.parametrize("streamed", [False, True])

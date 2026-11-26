@@ -320,6 +320,7 @@ class SystemResourceSnapshot(BaseModel):
     disk_total_bytes: int | None = Field(ge=1)
     disk_free_bytes: int | None = Field(ge=0)
     queue_active: bool
+    queue_other_process_active: bool | None
     queue_waiting: int = Field(ge=0)
     queue_reserved_weight: int = Field(ge=0)
     queue_max_reserved_weight: int = Field(ge=1)

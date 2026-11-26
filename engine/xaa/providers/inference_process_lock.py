@@ -74,6 +74,22 @@ def release_inference_process_lock(stream: BinaryIO) -> None:
     _unlock(stream)
 
 
+def other_process_holds_inference_lock(path: Path | None, *, locally_active: bool) -> bool | None:
+    """Return whether another process owns the slot, or ``None`` if unavailable."""
+    if locally_active:
+        return False
+    if path is None:
+        return None
+    try:
+        stream = _try_lock(path)
+    except OSError:
+        return None
+    if stream is None:
+        return True
+    _unlock(stream)
+    return False
+
+
 async def acquire_inference_process_lock(path: Path, *, deadline: float) -> BinaryIO:
     """Acquire a nonblocking OS file lock, waiting cooperatively until deadline."""
     while time.monotonic() < deadline:

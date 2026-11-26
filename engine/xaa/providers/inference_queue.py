@@ -6,9 +6,11 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TypedDict
 
 from xaa.providers.inference_process_lock import (
     acquire_inference_process_lock,
+    other_process_holds_inference_lock,
     release_inference_process_lock,
 )
 
@@ -23,6 +25,17 @@ class InferenceQueueFull(InferenceQueueError):
 
 class InferenceQueueTimeout(InferenceQueueError):
     """A request exceeded its queue-wait deadline before reaching LM Studio."""
+
+
+class InferenceQueueSnapshot(TypedDict):
+    """Privacy-safe process-local counters and shared-slot activity."""
+
+    active: bool
+    other_process_active: bool | None
+    waiting: int
+    reserved_weight: int
+    max_reserved_weight: int
+    max_pending: int
 
 
 class InferenceQueue:
@@ -67,10 +80,13 @@ class InferenceQueue:
         """Whether one operation currently owns the serialized provider slot."""
         return self._active
 
-    def snapshot(self) -> dict[str, int | bool]:
+    def snapshot(self) -> InferenceQueueSnapshot:
         """Expose bounded queue counters without request contents or model IDs."""
         return {
             "active": self._active,
+            "other_process_active": other_process_holds_inference_lock(
+                self.process_lock_path, locally_active=self._active
+            ),
             "waiting": self._waiting,
             "reserved_weight": self._reserved_weight,
             "max_reserved_weight": self.max_reserved_weight,

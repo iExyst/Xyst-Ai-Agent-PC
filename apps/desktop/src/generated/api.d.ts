@@ -4928,6 +4928,8 @@ export interface components {
             queue_max_pending: number;
             /** Queue Max Reserved Weight */
             queue_max_reserved_weight: number;
+            /** Queue Other Process Active */
+            queue_other_process_active: boolean | null;
             /** Queue Reserved Weight */
             queue_reserved_weight: number;
             /** Queue Waiting */

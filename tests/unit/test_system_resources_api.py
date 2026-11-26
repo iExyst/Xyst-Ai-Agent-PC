@@ -28,6 +28,7 @@ def test_system_resource_endpoint_requires_local_api_authentication(
     snapshot = response.json()
     assert snapshot["logical_processors"] >= 1
     assert snapshot["queue_active"] is False
+    assert snapshot["queue_other_process_active"] is None
     assert snapshot["queue_waiting"] == 0
     assert snapshot["queue_reserved_weight"] == 0
     assert snapshot["queue_max_reserved_weight"] == 2_000_000
