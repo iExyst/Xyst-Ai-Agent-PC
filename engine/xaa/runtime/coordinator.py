@@ -28,6 +28,8 @@ from xaa.providers.streaming import StreamAssemblyError
 from xaa.runtime.browser import (
     BROWSER_DOWNLOAD_METADATA,
     BROWSER_DOWNLOAD_TOOL,
+    BROWSER_FORM_FILL_METADATA,
+    BROWSER_FORM_FILL_TOOL,
     BROWSER_INTERACTION_METADATA,
     BROWSER_INTERACTION_TOOL,
     BROWSER_METADATA,
@@ -36,6 +38,7 @@ from xaa.runtime.browser import (
     BROWSER_TOOL,
     run_approved_browser,
     run_approved_browser_download,
+    run_approved_browser_form_fill,
     run_approved_browser_interaction,
     run_approved_browser_submission,
 )
@@ -1153,6 +1156,24 @@ class Coordinator:
                     "This run has no user-approved browser-interaction permission and hostnames."
                 )
             return await run_approved_browser_interaction(
+                self.store,
+                run_id,
+                token,
+                call["id"],
+                arguments,
+                run["approved_web_hosts"],
+                deadline=deadline,
+            )
+        if name == "browser_fill_form":
+            if (
+                not run.get("approved_browser_interaction")
+                or not run.get("approved_browser")
+                or not run.get("approved_web_hosts")
+            ):
+                raise PermissionError(
+                    "This run has no user-approved browser-interaction permission and hostnames."
+                )
+            return await run_approved_browser_form_fill(
                 self.store,
                 run_id,
                 token,
@@ -2345,6 +2366,12 @@ class Coordinator:
             )
             tools.append(download_tool)
         if run.get("approved_browser_interaction") and approved_web_hosts:
+            fill_tool = json.loads(json.dumps(BROWSER_FORM_FILL_TOOL))
+            fill_tool["function"]["parameters"] = BROWSER_FORM_FILL_METADATA["input_schema"]
+            fill_tool["function"]["description"] += (
+                " Approved exact hostnames: " + ", ".join(approved_web_hosts) + "."
+            )
+            tools.append(fill_tool)
             interaction_tool = json.loads(json.dumps(BROWSER_INTERACTION_TOOL))
             interaction_tool["function"]["parameters"] = BROWSER_INTERACTION_METADATA[
                 "input_schema"

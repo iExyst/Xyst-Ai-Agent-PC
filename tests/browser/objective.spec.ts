@@ -148,7 +148,7 @@ test('connect, submit an objective and render its saved events', async ({ page }
   await page.getByLabel('Public web hosts approved for this run (optional)').fill('docs.example.org, standards.example.org');
   await page.getByLabel('Allow Brave web search for this next run').check();
   const browserReadGrant = page.getByLabel('Allow managed browser reads for this next run');
-  const browserInteractionGrant = page.getByLabel('Allow one browser button click per tool action for this next run');
+  const browserInteractionGrant = page.getByLabel('Allow browser form filling and one button click per tool action for this next run');
   const browserSubmissionGrant = page.getByLabel('Allow one browser form submission per tool action for this next run');
   const browserDownloadGrant = page.getByLabel('Allow managed browser downloads for this next run');
   await expect(browserSubmissionGrant).toBeDisabled();

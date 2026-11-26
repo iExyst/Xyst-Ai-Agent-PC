@@ -40,6 +40,29 @@ class BrowserFormSubmission(BaseModel):
     values: list[BrowserFormValue] = Field(min_length=1, max_length=20)
     submitter_label: str = Field(min_length=1, max_length=200)
 
+    @field_validator("values")
+    @classmethod
+    def validate_values(cls, value: list[BrowserFormValue]) -> list[BrowserFormValue]:
+        if sum(len(item.value.encode("utf-8")) for item in value) > 32 * 1024:
+            raise ValueError("Form values exceed the 32 KiB limit.")
+        return value
+
+
+class BrowserFormFilling(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    form_index: int = Field(ge=0, lt=20)
+    values: list[BrowserFormValue] = Field(min_length=1, max_length=20)
+
+    @field_validator("values")
+    @classmethod
+    def validate_values(cls, value: list[BrowserFormValue]) -> list[BrowserFormValue]:
+        names = [item.name for item in value]
+        if len(names) != len(set(names)):
+            raise ValueError("Form field names must be unique.")
+        if sum(len(item.value.encode("utf-8")) for item in value) > 32 * 1024:
+            raise ValueError("Form values exceed the 32 KiB limit.")
+        return value
+
 
 class BrowserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -50,6 +73,7 @@ class BrowserRequest(BaseModel):
     screenshot: bool = False
     inspect_forms: bool = False
     submission: BrowserFormSubmission | None = None
+    filling: BrowserFormFilling | None = None
     download_link_name: str | None = Field(default=None, min_length=1, max_length=200)
     download_directory: str | None = Field(default=None, min_length=1, max_length=2048)
 
@@ -65,9 +89,16 @@ class BrowserRequest(BaseModel):
                 "Browser download link and managed destination must be supplied together."
             )
         if self.button_name is not None and (
-            self.links or self.submission is not None or self.download_link_name is not None
+            self.links
+            or self.submission is not None
+            or self.filling is not None
+            or self.download_link_name is not None
         ):
             raise ValueError("A button interaction must be the only page action in this request.")
+        if self.filling is not None and (
+            self.links or self.submission is not None or self.download_link_name is not None
+        ):
+            raise ValueError("A form fill must be the only page action in this request.")
         return self
 
     @field_validator("links")
@@ -300,6 +331,61 @@ async def _submit_visible_form(
     return [item.name for item in submission.values]
 
 
+async def _fill_visible_form(page: Any, filling: BrowserFormFilling) -> list[str]:
+    forms = page.locator("form")
+    visible_forms: list[Any] = []
+    for index in range(await forms.count()):
+        form = forms.nth(index)
+        if await form.is_visible():
+            visible_forms.append(form)
+            if len(visible_forms) >= 20:
+                break
+    if filling.form_index >= len(visible_forms):
+        raise ValueError("The requested visible form does not exist.")
+    form = visible_forms[filling.form_index]
+    filled: list[str] = []
+    for item in filling.values:
+        escaped_name = item.name.replace("\\", "\\\\").replace('"', '\\"')
+        control = form.locator(f'[name="{escaped_name}"]')
+        if await control.count() != 1 or not await control.is_visible():
+            raise ValueError("Each supplied field name must match one visible form control.")
+        details = await control.evaluate(
+            """element => ({
+              tag: element.tagName.toLowerCase(),
+              type: (element.type || '').toLowerCase(),
+              disabled: element.disabled === true,
+              readOnly: element.readOnly === true,
+              multiple: element.multiple === true
+            })"""
+        )
+        if details["disabled"] or details["readOnly"]:
+            raise PermissionError("Disabled and read-only form fields cannot be filled.")
+        if details["tag"] == "textarea":
+            await control.fill(item.value, timeout=5000)
+        elif details["tag"] == "select":
+            if details["multiple"]:
+                raise PermissionError("Multiple-choice fields cannot be filled.")
+            await control.select_option(label=item.value, timeout=5000)
+        elif details["tag"] == "input" and details["type"] in {
+            "text",
+            "email",
+            "search",
+            "tel",
+            "url",
+            "number",
+            "date",
+            "time",
+            "month",
+            "week",
+            "datetime-local",
+        }:
+            await control.fill(item.value, timeout=5000)
+        else:
+            raise PermissionError("This form control type is not allowed for filling.")
+        filled.append(item.name)
+    return filled
+
+
 async def resolve_public(host: str) -> list[str]:
     loop = asyncio.get_running_loop()
     answers = await loop.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
@@ -490,6 +576,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         await link.click(timeout=8000)
                         await page.wait_for_load_state("domcontentloaded", timeout=10000)
                     clicked_button: str | None = None
+                    filled_fields: list[str] | None = None
                     button_expanded_before: bool | None = None
                     button_expanded: bool | None = None
                     if request.button_name is not None:
@@ -526,6 +613,10 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         expanded_value = await button.get_attribute("aria-expanded")
                         if expanded_value in {"true", "false"}:
                             button_expanded = expanded_value == "true"
+                    if request.filling is not None:
+                        await page.wait_for_load_state("load", timeout=10000)
+                        filled_fields = await _fill_visible_form(page, request.filling)
+                        await page.wait_for_timeout(100)
                     if blocked_main_navigations["count"] or blocked_main_hosts:
                         raise PermissionError(
                             "Browser blocked a top-level navigation outside the approved host list."
@@ -630,6 +721,7 @@ async def run(request: BrowserRequest) -> dict[str, Any]:
                         "truncated": len(text) >= MAX_PAGE_TEXT,
                         "submitted": submitted_fields is not None,
                         "submitted_fields": submitted_fields,
+                        "filled_fields": filled_fields,
                         "clicked_button": clicked_button,
                         "button_expanded_before": button_expanded_before,
                         "button_expanded": button_expanded,

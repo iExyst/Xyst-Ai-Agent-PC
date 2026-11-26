@@ -69,6 +69,37 @@ def main() -> None:
         or interaction["button_expanded_before"] == interaction["button_expanded"]
     ):
         raise RuntimeError("Frozen browser worker did not verify that the button state changed.")
+    fill_request = {
+        "url": "https://httpbin.org/forms/post",
+        "approved_hosts": ["httpbin.org"],
+        "filling": {
+            "form_index": 0,
+            "values": [
+                {"name": "custname", "value": "XAA frozen fill-only diagnostic"},
+                {"name": "custemail", "value": "fill-only@example.invalid"},
+            ],
+        },
+    }
+    fill_completed = subprocess.run(
+        [str(executable.resolve()), "--browser-worker"],
+        input=json.dumps(fill_request, separators=(",", ":")).encode(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=60,
+        check=False,
+        creationflags=0x08000000,
+    )
+    if fill_completed.returncode != 0 or len(fill_completed.stdout) > 1_048_576:
+        raise RuntimeError("Frozen browser fill worker exited without a bounded result.")
+    fill_response = WorkerResult.model_validate_json(fill_completed.stdout)
+    if not fill_response.ok:
+        raise RuntimeError(fill_response.error or "Frozen browser fill worker failed.")
+    form_fill = fill_response.result
+    if (
+        form_fill.get("filled_fields") != ["custname", "custemail"]
+        or form_fill.get("submitted") is not False
+    ):
+        raise RuntimeError("Frozen browser worker did not complete a fill-only action.")
     download = verify_packaged_browser_download(executable.resolve(strict=True))
     cancel_request = {
         "url": "https://httpbin.org/delay/10",
@@ -128,6 +159,12 @@ def main() -> None:
                 "button_expanded_before_click": interaction["button_expanded_before"],
                 "button_expanded_after_click": interaction["button_expanded"],
                 "trust": interaction["trust"],
+            },
+            "form_fill": {
+                "url": form_fill["url"],
+                "filled_fields": form_fill["filled_fields"],
+                "submitted": form_fill["submitted"],
+                "trust": form_fill["trust"],
             },
             "download": download,
         },

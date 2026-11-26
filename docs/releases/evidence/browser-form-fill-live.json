@@ -1,0 +1,37 @@
+{
+  "checked_at_utc": "2026-11-26T00:48:20.221833+00:00",
+  "browser": "managed Microsoft Edge worker subprocess",
+  "approved_hosts": [
+    "httpbin.org"
+  ],
+  "grants": {
+    "browser_read": true,
+    "browser_interaction": true,
+    "form_submission": false
+  },
+  "result": {
+    "status": "ok",
+    "url": "https://httpbin.org/forms/post",
+    "title": "",
+    "filled_fields": [
+      "custname",
+      "custemail"
+    ],
+    "submitted": false,
+    "trust": "untrusted_web_content",
+    "content_characters": 207,
+    "journal_tool": "browser.fill_form",
+    "journal_field_names": [
+      "custname",
+      "custemail"
+    ],
+    "field_values_in_journal": false,
+    "journal_state": "completed"
+  },
+  "elapsed_ms": 2041,
+  "source_sha256": {
+    "browser.py": "dd2a6858474417a9b1c262f7b7d41175c022b77e3d916c7b6fc902e7b73c98e8",
+    "browser_worker.py": "780e04164e78b665c9ecd7a605692777696046b43954e62da0e93423063be576",
+    "coordinator.py": "512c5fe571801e91e126011a72f0106b6d6f5a0a0f986f0e2126f3bd88faa255"
+  }
+}

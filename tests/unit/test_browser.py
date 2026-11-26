@@ -18,12 +18,14 @@ from xaa.runtime import browser as browser_runtime
 from xaa.runtime import browser_worker
 from xaa.runtime.browser import (
     BROWSER_DOWNLOAD_METADATA,
+    BROWSER_FORM_FILL_METADATA,
     BROWSER_INTERACTION_METADATA,
     BROWSER_METADATA,
     BROWSER_SUBMIT_METADATA,
     MAX_WORKER_BYTES,
     BrowserArguments,
     BrowserDownloadArguments,
+    BrowserFormFillArguments,
     BrowserInteractionArguments,
     BrowserOutput,
     BrowserSubmitArguments,
@@ -175,6 +177,95 @@ def test_browser_interaction_is_one_explicitly_granted_non_form_button_click() -
         )
 
 
+def test_browser_form_fill_is_bounded_and_uses_the_interaction_grant() -> None:
+    arguments = BrowserFormFillArguments(
+        url="https://docs.example.com/search",
+        form_index=0,
+        values=[{"name": "q", "value": "public query"}],
+    )
+    assert arguments.values[0].value == "public query"
+    assert BROWSER_FORM_FILL_METADATA["name"] == "browser.fill_form"
+    assert BROWSER_FORM_FILL_METADATA["permissions"] == ["web.browser.interact"]
+    assert BROWSER_FORM_FILL_METADATA["effect"] == "external_page_interaction"
+    assert BROWSER_FORM_FILL_METADATA["limits"]["total_value_bytes"] == 32 * 1024
+    with pytest.raises(ValueError, match="unique"):
+        BrowserFormFillArguments(
+            url="https://docs.example.com/search",
+            form_index=0,
+            values=[{"name": "q", "value": "one"}, {"name": "q", "value": "two"}],
+        )
+    with pytest.raises(ValueError, match="32 KiB"):
+        BrowserFormFillArguments(
+            url="https://docs.example.com/search",
+            form_index=0,
+            values=[{"name": f"q{index}", "value": "x" * 4096} for index in range(9)],
+        )
+    with pytest.raises(ValueError, match="only page action"):
+        browser_worker.BrowserRequest(
+            url="https://docs.example.com/search",
+            approved_hosts=["docs.example.com"],
+            filling={"form_index": 0, "values": [{"name": "q", "value": "search"}]},
+            links=["Continue"],
+        )
+
+
+@pytest.mark.asyncio
+async def test_browser_form_fill_fills_visible_scalar_fields_without_returning_values() -> None:
+    state: dict[str, str] = {}
+
+    class FakeControl:
+        async def count(self) -> int:
+            return 1
+
+        async def is_visible(self) -> bool:
+            return True
+
+        async def evaluate(self, _: str) -> dict[str, Any]:
+            return {
+                "tag": "input",
+                "type": "search",
+                "disabled": False,
+                "readOnly": False,
+                "multiple": False,
+            }
+
+        async def fill(self, value: str, *, timeout: int) -> None:
+            assert timeout == 5000
+            state["q"] = value
+
+    class FakeForm:
+        async def is_visible(self) -> bool:
+            return True
+
+        def locator(self, selector: str) -> FakeControl:
+            assert selector == '[name="q"]'
+            return FakeControl()
+
+    class FakeForms:
+        async def count(self) -> int:
+            return 1
+
+        def nth(self, index: int) -> FakeForm:
+            assert index == 0
+            return FakeForm()
+
+    class FakePage:
+        def locator(self, selector: str) -> FakeForms:
+            assert selector == "form"
+            return FakeForms()
+
+    fields = await browser_worker._fill_visible_form(
+        FakePage(),
+        browser_worker.BrowserFormFilling(
+            form_index=0,
+            values=[{"name": "q", "value": "private sample"}],
+        ),
+    )
+    assert fields == ["q"]
+    assert state == {"q": "private sample"}
+    assert "private sample" not in json.dumps(fields)
+
+
 def test_browser_contract_bounds_the_model_facing_result() -> None:
     assert BROWSER_METADATA["output_size_bytes"] == MAX_WORKER_BYTES
     assert BROWSER_METADATA["limits"]["tool_result_bytes"] == MAX_WORKER_BYTES
@@ -309,6 +400,66 @@ async def test_browser_interaction_journals_the_owner_granted_click(
             ("browser-interaction-call",),
         ).fetchone()
     assert row is not None and row[0] == "browser.interact" and row[1] == "completed"
+    assert json.loads(row[2]) == result
+
+
+@pytest.mark.asyncio
+async def test_browser_form_fill_journal_omits_values_and_returns_page_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    store = RunStore(tmp_path / "browser-form-fill.sqlite3")
+    run = store.create_run(
+        objective="Search a public page",
+        acceptance_criteria=[],
+        workspace=None,
+        mode="observe",
+        model=None,
+        approved_web_hosts=["docs.example.com"],
+        approved_browser=True,
+        approved_browser_interaction=True,
+    )
+    token = store.acquire_lease(run["id"], "browser-form-fill-test", seconds=30)
+    assert token is not None
+
+    async def fill_worker(payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        assert payload["filling"]["values"] == [{"name": "q", "value": "private sample"}]
+        assert timeout > 0
+        return {
+            "url": payload["url"],
+            "title": "Search results",
+            "content": "Results for the entered query",
+            "filled_fields": ["q"],
+        }
+
+    monkeypatch.setattr(browser_runtime, "_execute_worker", fill_worker)
+    result = await browser_runtime.run_approved_browser_form_fill(
+        store,
+        run["id"],
+        token,
+        "browser-form-fill-call",
+        {
+            "url": "https://docs.example.com/search",
+            "form_index": 0,
+            "values": [{"name": "q", "value": "private sample"}],
+        },
+        ["docs.example.com"],
+        deadline=time.monotonic() + 5,
+    )
+    assert result["status"] == "ok"
+    assert result["filled_fields"] == ["q"]
+    assert result["content"] == "Results for the entered query"
+    with closing(sqlite3.connect(tmp_path / "browser-form-fill.sqlite3")) as connection:
+        row = connection.execute(
+            "SELECT tool_name, arguments, result FROM tool_calls WHERE provider_call_id=?",
+            ("browser-form-fill-call",),
+        ).fetchone()
+    assert row is not None and row[0] == "browser.fill_form"
+    assert json.loads(row[1]) == {
+        "url": "https://docs.example.com/search",
+        "form_index": 0,
+        "field_names": ["q"],
+    }
+    assert "private sample" not in row[1]
     assert json.loads(row[2]) == result
 
 
@@ -1097,4 +1248,5 @@ def test_browser_tool_requires_distinct_run_grant_and_hosts(workspace_tmp_path) 
         for tool in coordinator._tools(run["id"], interaction_run)
     }
     assert interaction_tools["browser_click_button"] == BROWSER_INTERACTION_METADATA["input_schema"]
+    assert interaction_tools["browser_fill_form"] == BROWSER_FORM_FILL_METADATA["input_schema"]
     assert "browser_submit_form" not in interaction_tools
