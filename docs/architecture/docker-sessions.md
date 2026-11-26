@@ -6,8 +6,8 @@ explicit, default-off `docker_session_reuse` grant for a durable run/task
 session. The grant retains X.A.A.'s restricted container policy; it does not
 enable host mounts, arbitrary environment forwarding, or direct project writes.
 The implementation is present in the command journal, Docker transport,
-stopped-run recovery worker, and desktop consent control. This contract also
-records the acceptance needed before the behavior can be marked verified.
+stopped-run recovery worker, and desktop consent control. It is implemented and
+available only by owner grant; full Hermes session parity remains unverified.
 
 ## Contract boundary
 
@@ -54,28 +54,25 @@ removal. An unconfirmed container remains a durable cleanup obligation. Current
 acceptance does not yet prove every crash point, app shutdown edge, or aggregate
 session resource budget.
 
-## Acceptance gate
+## Acceptance status
 
-Before marking reusable Docker sessions implemented, use a real local Docker
-daemon and the pinned image to verify:
+Hosted Docker run [45778101064](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45778101064)
+passed all 12 live-engine cases using Docker 28.0.4 and the pinned Python image
+([JUnit evidence](../../.acceptance/hosted-docker-session-45778101064/junit.xml)).
+The tested slice covers sequential-command workspace persistence, isolation
+between distinct session IDs, default-denied network and the explicit bridge
+grant, timeout and cancellation cleanup, bounded command output, process/CPU
+limits, manager-restart cleanup without command replay, and orphan cleanup.
 
-1. Two sequential commands in one run observe a deliberate file and working
-   directory change made by the first command; a different run and specialist
-   cannot observe either session.
-2. The image root remains read-only, only bounded private writable mounts exist,
-   resource and network policy matches the saved grant, and host sentinels and
-   Docker credentials remain inaccessible.
-3. Command cancellation and timeout stop the active exec without replay; crash
-   tests cover reservation, container creation, active exec, output receipt,
-   session close, and app restart.
-4. Normal completion, cancellation, failed execution, grant revocation, and
-   restart all close containers or retain an explicit unresolved cleanup state.
-5. Session output can be exported only as a bounded, verified run artifact and
-   reaches the project only through the existing owner-reviewed integration
-   path.
+The wider acceptance gate is still open. In particular, real-engine evidence
+does not yet cover cross-run/task isolation through the coordinator, host
+sentinels and Docker credential isolation, crash points during reservation,
+container creation, active execution, output receipt, or close, app restart
+through the installed Windows coordinator, aggregate session resource budgets,
+and cleanup after every grant-revocation and failed-execution path. A bounded,
+digest-checked archive export is not implemented; session changes must not be
+copied into the project directly and should reach it only through owner review.
 
-Hosted Linux Docker CI can provide repeatable daemon acceptance, but Windows
-installer acceptance must also verify the installed coordinator and recovery
-path. Until those checks pass, the Hermes Docker session capability remains
-planned and the disposable X.A.A. backend remains the only enabled Docker
-profile.
+The disposable-per-command profile remains the default. Reusable sessions are
+available only when the owner opts in, and they should not be described as full
+Hermes parity until the remaining acceptance and export gates pass.
