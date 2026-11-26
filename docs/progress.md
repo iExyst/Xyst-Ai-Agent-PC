@@ -14,7 +14,7 @@ Extended live Docker acceptance through `CommandController`, SQLite run and comm
 
 The user authorized a local speech acceptance. `npm run acceptance:windows-mic-speech` listened for up to 35 seconds through the installed Windows default microphone and System.Speech recognizer, then returned `no_speech_recognized`. The report at [`.acceptance/windows-microphone-speech-93c51566-7d17-4fce-80e5-aa5f6d64b029/report.json`](../.acceptance/windows-microphone-speech-93c51566-7d17-4fce-80e5-aa5f6d64b029/report.json) confirms no audio was retained, no network was used, and no model inference was requested. This is the third unsuccessful local attempt; human speech recognition remains unverified. The parity matrix now reflects the failed acceptance rather than claiming it has not run.
 
-This is a gate-based status, not a weighted completion percentage. Evidence is intentionally scoped to the behavior that was exercised; a passing slice does not close a wider phase gate.
+Overall completion is estimated at roughly 57% from the phase assessments below. This is a rough progress estimate rather than a release-readiness claim: final live-model acceptance and the Phase 9 and Phase 10 gates remain open. Evidence is scoped to the behavior exercised; a passing slice does not close a wider phase gate.
 
 | Goal phase | Current assessment | Evidence and remaining gate |
 | --- | --- | --- |
