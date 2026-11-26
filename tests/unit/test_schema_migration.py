@@ -10,6 +10,52 @@ from xaa.storage.schedules import ScheduleStore, parse_local_time
 from xaa.storage.tasks import TaskStore
 
 
+def test_schema_forty_two_adds_docker_session_journal_without_data_loss(workspace_tmp_path):
+    database = workspace_tmp_path / "schema-forty-two-docker-sessions.sqlite3"
+    store = RunStore(database)
+    run = store.create_run(
+        objective="Preserve a run when adding Docker session recovery",
+        acceptance_criteria=["Retain existing run history"],
+        workspace=None,
+        mode="observe",
+        model=None,
+    )
+    run_events = store.list_events(run["id"])
+
+    with store.connection() as connection:
+        connection.execute("DROP TABLE docker_sessions")
+        connection.execute("PRAGMA user_version=42")
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    migrated = RunStore(database)
+    assert migrated.get_run(run["id"]) == run
+    assert migrated.list_events(run["id"]) == run_events
+    owner = migrated.acquire_lease(run["id"], "schema-migration")
+    assert owner is not None
+
+    from xaa.storage.docker_sessions import DockerSessionJournal
+
+    session = DockerSessionJournal(migrated).reserve(
+        run["id"],
+        owner,
+        task_id=None,
+        profile_sha256="a" * 64,
+        image_reference="python:3.12-slim@sha256:" + "b" * 64,
+    )
+    assert session.state == "reserved"
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert (
+            connection.execute(
+                "SELECT state FROM docker_sessions WHERE id=?", (session.id,)
+            ).fetchone()[0]
+            == "reserved"
+        )
+
+
 def test_schema_forty_one_adds_original_artifact_filename_without_data_loss(workspace_tmp_path):
     database = workspace_tmp_path / "schema-forty-artifact-filename.sqlite3"
     store = RunStore(database)
