@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import json
 import os
 import tempfile
 import time
@@ -10,7 +11,7 @@ from uuid import uuid4
 import pytest
 from xaa.runtime.command_contracts import CommandGrant, CommandIntent
 from xaa.runtime.docker_execution_policy import docker_create_argv
-from xaa.runtime.docker_local_transport import DockerLocalTransport
+from xaa.runtime.docker_local_transport import DockerLocalTransport, _cli_request
 from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot
 
 IMAGE_REFERENCE = os.environ.get("XAA_DOCKER_IMAGE_DIGEST", "")
@@ -19,6 +20,72 @@ IMAGE_REFERENCE = os.environ.get("XAA_DOCKER_IMAGE_DIGEST", "")
 def live_docker_required() -> None:
     if not IMAGE_REFERENCE:
         pytest.skip("Set XAA_DOCKER_IMAGE_DIGEST to a locally available repository@sha256 digest.")
+
+
+@pytest.mark.asyncio
+async def test_live_docker_bridge_access_requires_the_explicit_grant() -> None:
+    live_docker_required()
+    grant = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="0" * 64,
+        image_reference=IMAGE_REFERENCE,
+        docker_network_access=True,
+    )
+    transport = await DockerLocalTransport.discover(grant, deadline=time.monotonic() + 20)
+    code, stdout, _stderr = await _cli_request(
+        transport.executable,
+        transport.endpoint,
+        ("network", "inspect", "bridge", "--format", "{{json .IPAM.Config}}"),
+        deadline=time.monotonic() + 10,
+    )
+    assert code == 0
+    configs = json.loads(stdout)
+    assert isinstance(configs, list) and configs and isinstance(configs[0], dict)
+    gateway = configs[0].get("Gateway")
+    assert isinstance(gateway, str) and gateway
+
+    async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            request = await reader.read(32)
+            writer.write(b"bridge-grant:" + request)
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    server = await asyncio.start_server(respond, "0.0.0.0", 0)
+    port = server.sockets[0].getsockname()[1]
+    intent = CommandIntent(
+        argv=[
+            "python3",
+            "-I",
+            "-c",
+            f"import socket; s=socket.create_connection(({gateway!r},{port}),timeout=5); s.sendall(b'xaa'); print(s.recv(64).decode()); s.close()",
+        ],
+        max_seconds=10,
+        execution_id=uuid4().hex,
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256=transport.profile_sha256,
+        image_reference=IMAGE_REFERENCE,
+        docker_network_access=True,
+        workspace="docker-live-bridge-network",
+    )
+    try:
+        result = await transport.run(
+            intent,
+            WorkspaceSnapshot((), (), ()),
+            deadline=time.monotonic() + 20,
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+    assert result["succeeded"] is True
+    assert result["cleanup_confirmed"] is True
+    assert (
+        base64.b64decode(result["stdout_b64"], validate=True).decode().strip() == "bridge-grant:xaa"
+    )
 
 
 @pytest.mark.asyncio

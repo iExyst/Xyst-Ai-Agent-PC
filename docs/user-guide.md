@@ -33,7 +33,7 @@ If LM Studio requires authentication, save its token through **LM Studio setup**
 3. Choose an operating mode:
    - **Observe** allows workspace reads and does not grant file edits.
    - **Workspace** allows supported file creation and edits within the selected workspace. New files require an existing parent directory and do not overwrite an existing destination.
-4. Grant optional capabilities only for the next run. Isolated commands require Workspace mode and a passing sandbox readiness check; the command runs against a private copy, has no network access, and its changes are discarded. Browser, web-search and MCP tools have separate per-run controls.
+4. Grant optional capabilities only for the next run. Isolated commands require Workspace mode and a passing sandbox readiness check; the command runs against a private copy and its changes are discarded. WSL and Windows AppContainer commands have no network access. Docker commands also deny networking by default; a separate unchecked **Allow this run’s Docker commands to use the bridge network** option grants Docker bridge networking for that run only. Bridge networking can reach external and other hosts, so enable it only when the command needs it. Browser, web-search and MCP tools have separate per-run controls.
 5. Watch the saved run state and events. You can pause, resume or cancel a run from the desktop. The CLI has matching run-control commands.
 6. Inspect the answer, task candidates, file evidence, command results and validation artifacts. A candidate is not an accepted result. Use final review to accept or reject it. For code changes, select current successful project-validation evidence when the run requests it.
 

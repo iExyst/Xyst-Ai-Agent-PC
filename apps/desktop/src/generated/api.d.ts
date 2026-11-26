@@ -2621,6 +2621,11 @@ export interface components {
             backend: "wsl-bubblewrap-v1" | "windows-appcontainer-v1" | "docker-local-v1" | "ssh-wsl-bubblewrap-v1";
             /** Distribution */
             distribution: string;
+            /**
+             * Docker Network Access
+             * @default false
+             */
+            docker_network_access: boolean;
             /** Image Reference */
             image_reference?: string | null;
             /**

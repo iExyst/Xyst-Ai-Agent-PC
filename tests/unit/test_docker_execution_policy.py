@@ -80,6 +80,15 @@ def test_docker_grant_persists_exact_immutable_image_and_explains_scope() -> Non
     assert grant.model_dump(mode="json")["image_reference"] == IMAGE
     description = command_tool_description(grant)
     assert IMAGE in description and "Network is denied" in description
+    network_grant = CommandGrant(
+        backend="docker-local-v1",
+        distribution="Docker-local",
+        profile_sha256="c" * 64,
+        image_reference=IMAGE,
+        docker_network_access=True,
+    )
+    assert "bridge-network access is owner-approved" in command_tool_description(network_grant)
+    assert network_grant.model_dump(mode="json")["docker_network_access"] is True
     with pytest.raises(ValueError, match="pinned image"):
         CommandGrant(
             backend="docker-local-v1",
@@ -93,9 +102,36 @@ def test_docker_grant_persists_exact_immutable_image_and_explains_scope() -> Non
             profile_sha256="c" * 64,
             image_reference=IMAGE,
         )
+    with pytest.raises(ValueError, match="only for the Docker backend"):
+        CommandGrant(
+            backend="wsl-bubblewrap-v1",
+            distribution="Ubuntu-24.04",
+            profile_sha256="c" * 64,
+            docker_network_access=True,
+        )
+
+
+def test_docker_network_mode_is_bound_to_the_saved_intent() -> None:
+    command = docker_create_argv(
+        intent(docker_network_access=True), IMAGE, endpoint=LINUX_ENDPOINT, windows=False
+    )
+    assert command[command.index("--network") + 1] == "bridge"
+    default_command = docker_create_argv(intent(), IMAGE, endpoint=LINUX_ENDPOINT, windows=False)
+    assert default_command[default_command.index("--network") + 1] == "none"
+    with pytest.raises(ValueError, match="only for the Docker backend"):
+        CommandIntent(
+            execution_id="f" * 32,
+            argv=["python", "--version"],
+            backend="wsl-bubblewrap-v1",
+            distribution="Ubuntu-24.04",
+            profile_sha256="c" * 64,
+            docker_network_access=True,
+            workspace="fixture",
+        )
 
 
 def test_docker_intent_cannot_change_the_granted_image() -> None:
+    transport = DockerLocalTransport("docker", LINUX_ENDPOINT, IMAGE, "c" * 64)
     with pytest.raises(PermissionError, match="saved backend grant"):
         docker_create_argv(
             intent(image_reference="registry.example/xaa/python@sha256:" + "d" * 64),
@@ -103,6 +139,12 @@ def test_docker_intent_cannot_change_the_granted_image() -> None:
             endpoint=LINUX_ENDPOINT,
             windows=False,
         )
+    with pytest.raises(PermissionError, match="does not match the Docker image profile"):
+        transport.require_intent(intent(docker_network_access=True))
+    network_transport = DockerLocalTransport(
+        "docker", LINUX_ENDPOINT, IMAGE, "c" * 64, docker_network_access=True
+    )
+    network_transport.require_intent(intent(docker_network_access=True))
 
 
 def test_only_explicit_local_daemon_endpoints_are_allowed() -> None:
@@ -217,6 +259,11 @@ def test_docker_container_inspect_must_confirm_requested_isolation() -> None:
     unsafe["HostConfig"]["NetworkMode"] = "bridge"
     with pytest.raises(PermissionError, match="isolation limits"):
         _require_container_policy(unsafe)
+    _require_container_policy(unsafe, network_access=True)
+
+    unsafe["HostConfig"]["NetworkMode"] = "host"
+    with pytest.raises(PermissionError, match="isolation limits"):
+        _require_container_policy(unsafe, network_access=True)
 
     unsafe = json.loads(json.dumps(container))
     unsafe["Mounts"][0] = {"Type": "bind", "Destination": "/tmp"}

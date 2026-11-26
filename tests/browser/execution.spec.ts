@@ -61,16 +61,16 @@ test('sandbox selection checks controls without granting a run, including unavai
   await expect(page.getByRole('button',{name:'Check sandbox',exact:true})).toBeDisabled();
 });
 
-test('Docker setup requires a pinned local image and sends it for server isolation checks',async({page})=>{
-  const imageReference=`registry.example/xaa/python@sha256:${'b'.repeat(64)}`;let checks=0;let runCreates=0;
+test('Docker setup checks a pinned image and network access is a separate run grant',async({page})=>{
+  const imageReference=`registry.example/xaa/python@sha256:${'b'.repeat(64)}`;let checks=0;const grants:unknown[]=[];let modelsAvailable=false;
   await page.route('http://127.0.0.1:8765/**',async route=>{
     const req=route.request();const path=new URL(req.url()).pathname;
     const headers={'access-control-allow-origin':'http://127.0.0.1:5173','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,OPTIONS'};
     if(req.method()==='OPTIONS')return route.fulfill({status:204,headers});
     if(path==='/runs/latest-unfinished')return route.fulfill({json:null,headers});
     if(path==='/providers')return route.fulfill({json:[{id:'lm-studio',status:'connected'}],headers});
-    if(path==='/models')return route.fulfill({status:503,headers});
-    if(path==='/runs'&&req.method()==='POST')runCreates++;
+    if(path==='/models')return modelsAvailable?route.fulfill({json:[{id:'fixture/model'}],headers}):route.fulfill({status:503,headers});
+    if(path==='/runs'&&req.method()==='POST'){grants.push(req.postDataJSON().command_grant);return route.fulfill({status:409,json:{detail:'fixture rejection'},headers});}
     if(path==='/runs')return route.fulfill({json:{items:[],next_cursor:null},headers});
     if(path==='/memory'||path==='/skills')return route.fulfill({json:[],headers});
     if(path==='/execution/readiness'){
@@ -87,7 +87,28 @@ test('Docker setup requires a pinned local image and sends it for server isolati
   await page.getByLabel('Local Docker image digest').fill(imageReference);
   await page.getByRole('button',{name:'Check sandbox',exact:true}).click();
   await expect(page.getByText('Sandbox check passed.',{exact:true})).toBeVisible();
-  expect(checks).toBe(1);expect(runCreates).toBe(0);
+  expect(checks).toBe(1);
+  modelsAvailable=true;await navigateMainSection(page,'Model setup');
+  await page.getByRole('button',{name:'Refresh models',exact:true}).click();
+  await page.getByLabel('Local model or compatible provider model').selectOption('fixture/model');
+  await navigateMainSection(page,'New objective');
+  await page.getByLabel('Workspace path').fill('C:\\fixture');
+  await navigateMainSection(page,'Settings');await page.getByLabel('Workspace permissions').selectOption('workspace');
+  await navigateMainSection(page,'New objective');
+  await page.locator('details.advanced-options').evaluate(element=>{(element as HTMLDetailsElement).open=true;});
+  const commandPermission=page.getByLabel('Allow isolated commands for this next run');
+  const networkPermission=page.getByLabel("Allow this run's Docker commands to use the bridge network");
+  await expect(networkPermission).toBeDisabled();
+  await commandPermission.check();
+  await expect(networkPermission).toBeEnabled();
+  await page.getByLabel('Objective',{exact:true}).fill('Check the Docker network grant');
+  await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await expect.poll(()=>grants.length).toBe(1);
+  expect(grants[0]).toMatchObject({backend:'docker-local-v1',docker_network_access:false});
+  await networkPermission.check();
+  await page.getByRole('button',{name:'Start objective',exact:true}).click();
+  await expect.poll(()=>grants.length).toBe(2);
+  expect(grants[1]).toMatchObject({backend:'docker-local-v1',docker_network_access:true});
 });
 
 test('SSH setup sends the selected Windows alias and identity for pinned-host checks',async({page})=>{

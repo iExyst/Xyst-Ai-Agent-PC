@@ -531,6 +531,7 @@ class CommandJournal:
                 distribution=grant.distribution,
                 profile_sha256=grant.profile_sha256,
                 image_reference=grant.image_reference,
+                docker_network_access=grant.docker_network_access,
                 ssh_identity_file=grant.ssh_identity_file,
                 workspace=workspace,
                 procedure_environment_digest=(

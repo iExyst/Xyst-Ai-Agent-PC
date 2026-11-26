@@ -34,7 +34,7 @@ from xaa.runtime.workspace_snapshot import SnapshotFile, WorkspaceSnapshot, chec
 
 MAX_OUTPUT_BYTES = 1024 * 1024
 MAX_CLI_RESPONSE_BYTES = 256 * 1024
-POLICY_VERSION = "xaa-docker-local-v1"
+POLICY_VERSION = "xaa-docker-local-v2"
 EXECUTION_LABEL = "com.xyst.xaa.execution"
 
 
@@ -142,7 +142,7 @@ def _snapshot_tar(snapshot: WorkspaceSnapshot) -> bytes:
     return value
 
 
-def _require_container_policy(container: dict[str, Any]) -> None:
+def _require_container_policy(container: dict[str, Any], *, network_access: bool = False) -> None:
     """Fail closed unless the daemon reports the limits we requested."""
     config_value = container.get("Config")
     host_value = container.get("HostConfig")
@@ -173,7 +173,7 @@ def _require_container_policy(container: dict[str, Any]) -> None:
     if {path: mount_options(options) for path, options in tmpfs.items()} != expected_tmpfs:
         raise PermissionError("Docker did not apply the private bounded workspace mounts.")
     expected_host = {
-        "NetworkMode": "none",
+        "NetworkMode": "bridge" if network_access else "none",
         "IpcMode": "private",
         "ReadonlyRootfs": True,
         "CapDrop": ["ALL"],
@@ -212,6 +212,7 @@ class DockerLocalTransport:
     endpoint: str
     image_reference: str
     profile_sha256: str
+    docker_network_access: bool = False
     _control_only: bool = False
     _active: dict[str, asyncio.subprocess.Process] = field(
         default_factory=lambda: dict[str, asyncio.subprocess.Process]()
@@ -242,6 +243,7 @@ class DockerLocalTransport:
                 endpoint,
                 image_reference,
                 authority.profile_sha256,
+                authority.docker_network_access,
                 _control_only=True,
             )
         image = await cls._inspect_image(executable, endpoint, image_reference, deadline=deadline)
@@ -272,7 +274,13 @@ class DockerLocalTransport:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
-        return cls(executable, endpoint, image_reference, profile)
+        return cls(
+            executable,
+            endpoint,
+            image_reference,
+            profile,
+            docker_network_access=authority.docker_network_access,
+        )
 
     @staticmethod
     async def _inspect_info(executable: str, endpoint: str, *, deadline: float) -> dict[str, Any]:
@@ -343,6 +351,7 @@ class DockerLocalTransport:
             or intent.distribution != "Docker-local"
             or intent.image_reference != self.image_reference
             or intent.profile_sha256 != self.profile_sha256
+            or intent.docker_network_access != self.docker_network_access
         ):
             raise PermissionError("Execution grant does not match the Docker image profile.")
 
@@ -365,6 +374,7 @@ class DockerLocalTransport:
             distribution="Docker-local",
             profile_sha256=self.profile_sha256,
             image_reference=self.image_reference,
+            docker_network_access=self.docker_network_access,
             workspace="application-owned-readiness-fixture",
         )
         try:
@@ -596,7 +606,7 @@ class DockerLocalTransport:
             inspected = await self._inspect_container(intent, deadline=deadline)
             if inspected is None:
                 raise TransportError("Docker command container disappeared before policy review.")
-            _require_container_policy(inspected)
+            _require_container_policy(inspected, network_access=intent.docker_network_access)
             await self._verify_command_container_profile(intent, deadline=deadline)
             copy = docker_copy_argv(
                 intent,

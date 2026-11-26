@@ -600,6 +600,7 @@ def test_docker_command_intent_inherits_persisted_image_digest(workspace_tmp_pat
             "profile_sha256": "a" * 64,
             "image_reference": image,
             "max_seconds": 10,
+            "docker_network_access": True,
         },
     )
     journal = CommandJournal(store)
@@ -612,4 +613,5 @@ def test_docker_command_intent_inherits_persisted_image_digest(workspace_tmp_pat
     )
     assert intent.backend == "docker-local-v1"
     assert intent.image_reference == image
+    assert intent.docker_network_access is True
     assert journal.grant(run, owner=owner).image_reference == image

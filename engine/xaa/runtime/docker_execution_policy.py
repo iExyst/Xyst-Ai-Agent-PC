@@ -54,7 +54,7 @@ def docker_create_argv(
         "--label",
         f"com.xyst.xaa.execution={intent.execution_id}",
         "--network",
-        "none",
+        "bridge" if intent.docker_network_access else "none",
         "--ipc",
         "private",
         "--shm-size",
