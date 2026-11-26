@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -74,15 +75,24 @@ def _memory_bytes(value: str, unit: str) -> int:
     multiplier = _DECIMAL_UNITS.get(unit.upper(), _BINARY_UNITS.get(unit.upper()))
     if multiplier is None:
         raise ValueError("Unsupported memory unit.")
-    return round(float(value) * multiplier)
+    try:
+        byte_value = Decimal(value) * multiplier
+    except InvalidOperation as exc:
+        raise ValueError("Invalid memory estimate.") from exc
+    if not byte_value.is_finite() or byte_value < 0 or byte_value > 2**63 - 1:
+        raise ValueError("Memory estimate is outside the supported range.")
+    return int(byte_value.to_integral_value(rounding=ROUND_HALF_EVEN))
 
 
 def _parse_estimate(
     model: str, context_length: int | None, output: str
 ) -> ModelResourceEstimate | None:
     memory: dict[str, int] = {}
-    for label, value, unit in _MEMORY_LINE.findall(output[:16_384]):
-        memory[label.lower()] = _memory_bytes(value, unit)
+    try:
+        for label, value, unit in _MEMORY_LINE.findall(output[:16_384]):
+            memory[label.lower()] = _memory_bytes(value, unit)
+    except (OverflowError, ValueError):
+        return None
     if not memory:
         return None
     normalized = output.casefold()

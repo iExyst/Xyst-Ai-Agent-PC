@@ -47,6 +47,21 @@ def test_parse_estimate_rejects_unrecognized_output():
     assert model_estimator._parse_estimate("fixture/model", None, "done") is None
 
 
+def test_parse_estimate_rejects_unrepresentable_memory_value():
+    output = f"Estimated Total Memory: {'9' * 1000} B"
+
+    assert model_estimator._parse_estimate("fixture/model", None, output) is None
+
+
+def test_parse_estimate_preserves_large_representable_integer_precision():
+    estimate = model_estimator._parse_estimate(
+        "fixture/model", None, "Estimated Total Memory: 9223372036854775807 B"
+    )
+
+    assert estimate is not None
+    assert estimate.estimated_total_memory_bytes == 2**63 - 1
+
+
 @pytest.mark.skipif(model_estimator.os.name != "nt", reason="Windows LM Studio install path")
 def test_find_lms_from_default_windows_install_when_path_is_restricted(monkeypatch, tmp_path):
     binary = tmp_path / ".lmstudio" / "bin" / "lms.exe"
