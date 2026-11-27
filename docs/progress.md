@@ -1,3 +1,7 @@
+## Run source and installer verification independently (2026-11-27)
+
+The `source` dispatch was queued behind the unrelated installer job because both shared a workflow-level concurrency key. The workflow now includes the selected acceptance in manual-run concurrency groups, allowing source verification and package acceptance to run in parallel while keeping duplicate runs of the same selection serialized. Workflow YAML parsing and diff checks pass locally; a new source run is pending.
+
 ## Add a source-only hosted verification option (2026-11-27)
 
 The manual Engine checks workflow previously skipped its full Windows source job on every dispatch, including `acceptance=all`; this left product changes validated only by the installer selection unless the workflow was triggered by a qualifying push or pull request. Added a `source` dispatch selection that runs the Windows source job without rebuilding the installer. Workflow YAML parsing and `git diff --check` pass locally. This makes exact-source Python, browser, static, contract and recovery checks available for the A2A commit; its result is pending.
