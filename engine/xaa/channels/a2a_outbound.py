@@ -30,8 +30,7 @@ def validate_agent_card_url(value: str) -> str:
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
-        or not parsed.path
-        or not parsed.path.startswith("/")
+        or (parsed.path and not parsed.path.startswith("/"))
     ):
         raise ValueError("Agent Card URL must be an HTTPS URL without user info or query data.")
     try:
@@ -147,7 +146,12 @@ class A2AOutboundClient:
         json_body: Mapping[str, object] | None = None,
     ) -> dict[str, Any]:
         try:
-            async with client.stream(method, url, json=json_body) as response:
+            async with client.stream(
+                method,
+                url,
+                json=json_body,
+                headers={"A2A-Version": "1.0"},
+            ) as response:
                 if response.is_redirect:
                     raise A2AOutboundError("The peer redirected an A2A request.")
                 response.raise_for_status()

@@ -21,6 +21,10 @@ def test_outbound_agent_card_url_requires_clean_https_origin(value: str) -> None
         validate_agent_card_url(value)
 
 
+def test_outbound_agent_card_accepts_a_valid_origin_root() -> None:
+    assert validate_agent_card_url("https://agent.example.test") == "https://agent.example.test"
+
+
 @pytest.mark.asyncio
 async def test_outbound_client_rejects_cross_origin_interface_before_sending() -> None:
     posted = False
@@ -89,6 +93,7 @@ async def test_outbound_client_does_not_follow_redirects_or_forward_credentials(
         "agent.example.test",
     ]
     assert all(request.headers.get("authorization") == f"Bearer {token}" for request in requests)
+    assert requests[1].headers.get("a2a-version") == "1.0"
 
 
 @pytest.mark.asyncio

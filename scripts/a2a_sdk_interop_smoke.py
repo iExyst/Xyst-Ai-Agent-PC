@@ -127,6 +127,11 @@ async def _report_http_error(response: httpx.Response) -> None:
 async def _run() -> dict[str, object]:
     sdk_client = cast(Any, import_module("a2a.client"))
     sdk_types = cast(Any, import_module("a2a.types"))
+    sdk_helpers = cast(Any, import_module("a2a.helpers"))
+    sdk_executor_module = cast(Any, import_module("a2a.server.agent_execution"))
+    sdk_handlers = cast(Any, import_module("a2a.server.request_handlers"))
+    sdk_routes = cast(Any, import_module("a2a.server.routes"))
+    sdk_tasks = cast(Any, import_module("a2a.server.tasks"))
     A2ACardResolver = sdk_client.A2ACardResolver
     ClientConfig = sdk_client.ClientConfig
     create_client = sdk_client.create_client
@@ -136,6 +141,35 @@ async def _run() -> dict[str, object]:
     Role = sdk_types.Role
     SendMessageRequest = sdk_types.SendMessageRequest
     TaskState = sdk_types.TaskState
+    AgentCard = sdk_types.AgentCard
+    AgentCapabilities = sdk_types.AgentCapabilities
+    AgentInterface = sdk_types.AgentInterface
+    AgentSkill = sdk_types.AgentSkill
+    TaskStateEnum = sdk_types.TaskState
+
+    class _SdkPeerExecutor(sdk_executor_module.AgentExecutor):
+        async def execute(self, context: Any, event_queue: Any) -> None:
+            if context.current_task:
+                task = context.current_task
+            else:
+                task = sdk_helpers.new_task_from_user_message(context.message)
+                await event_queue.enqueue_event(task)
+            updater = sdk_tasks.TaskUpdater(
+                event_queue=event_queue, task_id=task.id, context_id=task.context_id
+            )
+            text = sdk_helpers.get_message_text(context.message)
+            await updater.add_artifact(
+                parts=[
+                    sdk_helpers.new_text_part(
+                        text=f"Independent SDK peer received: {text}", media_type="text/plain"
+                    )
+                ]
+            )
+            await updater.update_status(state=TaskStateEnum.TASK_STATE_COMPLETED)
+
+        async def cancel(self, context: Any, event_queue: Any) -> None:
+            raise NotImplementedError("The local independent-peer fixture does not cancel tasks.")
+
     with tempfile.TemporaryDirectory(prefix="xaa-a2a-sdk-") as temporary:
         database = Path(temporary) / "runs.sqlite3"
         peer_database = Path(temporary) / "peer-runs.sqlite3"
@@ -171,6 +205,7 @@ async def _run() -> dict[str, object]:
             a2a_outbound_client=A2AOutboundClient(verify=tls_context),
         )
         owner_listener_port = _free_port()
+        sdk_peer_port = _free_port()
         with store.connection() as connection:
             connection.execute(
                 "UPDATE provider_profiles SET selected_model='fixture/a2a-sdk' WHERE id='lm-studio'"
@@ -200,12 +235,77 @@ async def _run() -> dict[str, object]:
                 access_log=False,
             )
         )
+        sdk_peer_card = AgentCard(
+            name="Independent SDK fixture",
+            description="Deterministic A2A interoperability fixture",
+            version="1.0.0",
+            default_input_modes=["text/plain"],
+            default_output_modes=["text/plain"],
+            capabilities=AgentCapabilities(streaming=False),
+            supported_interfaces=[
+                AgentInterface(
+                    protocol_binding="JSONRPC",
+                    url=f"https://127.0.0.1:{sdk_peer_port}",
+                    protocol_version="1.0",
+                )
+            ],
+            skills=[
+                AgentSkill(
+                    id="deterministic-echo",
+                    name="Deterministic echo",
+                    description="Returns the submitted text in a test artifact",
+                    input_modes=["text/plain"],
+                    output_modes=["text/plain"],
+                    tags=["test", "deterministic"],
+                )
+            ],
+        )
+        sdk_peer_handler = sdk_handlers.DefaultRequestHandler(
+            agent_executor=_SdkPeerExecutor(),
+            task_store=sdk_tasks.InMemoryTaskStore(),
+            agent_card=sdk_peer_card,
+        )
+        starlette = cast(Any, import_module("starlette.applications"))
+        starlette_responses = cast(Any, import_module("starlette.responses"))
+        sdk_peer_app = starlette.Starlette(
+            routes=[
+                *sdk_routes.create_agent_card_routes(sdk_peer_card),
+                *sdk_routes.create_jsonrpc_routes(sdk_peer_handler, "/"),
+            ]
+        )
+
+        async def require_sdk_peer_token(scope: Any, receive: Any, send: Any) -> None:
+            if scope["type"] == "http" and scope.get("path") != "/.well-known/agent-card.json":
+                headers = {key.lower(): value for key, value in scope.get("headers", [])}
+                if headers.get(b"authorization") != f"Bearer {PEER_TOKEN}".encode():
+                    response = starlette_responses.JSONResponse(
+                        {"error": "unauthorized"}, status_code=401
+                    )
+                    await response(scope, receive, send)
+                    return
+            await sdk_peer_app(scope, receive, send)
+
+        sdk_peer_server = uvicorn.Server(
+            uvicorn.Config(
+                require_sdk_peer_token,
+                host="127.0.0.1",
+                port=sdk_peer_port,
+                log_level="error",
+                access_log=False,
+                ssl_certfile=str(certificate_path),
+                ssl_keyfile=str(private_key_path),
+            )
+        )
         peer_server_task = asyncio.create_task(
             peer_server.serve(), name="a2a-sdk-acceptance-peer-api"
+        )
+        sdk_peer_server_task = asyncio.create_task(
+            sdk_peer_server.serve(), name="a2a-sdk-independent-peer"
         )
         server_task = asyncio.create_task(server.serve(), name="a2a-sdk-acceptance-api")
         try:
             await _wait_started(peer_server, peer_server_task)
+            await _wait_started(sdk_peer_server, sdk_peer_server_task)
             await _wait_started(server, server_task)
             listener_row = None
             with store.connection() as connection:
@@ -215,13 +315,6 @@ async def _run() -> dict[str, object]:
             if listener_row is None:
                 raise RuntimeError("A2A listener settings were not available.")
             peer_url = f"https://127.0.0.1:{int(listener_row['port'])}"
-            with peer_store.connection() as connection:
-                peer_listener_row = connection.execute(
-                    "SELECT port FROM a2a_listener_settings WHERE id=1"
-                ).fetchone()
-            if peer_listener_row is None:
-                raise RuntimeError("The external A2A peer listener settings were not available.")
-            remote_peer_url = f"https://127.0.0.1:{int(peer_listener_row['port'])}"
             async with httpx.AsyncClient(
                 headers={"Authorization": f"Bearer {PEER_TOKEN}"},
                 timeout=15,
@@ -286,8 +379,8 @@ async def _run() -> dict[str, object]:
                 peer = await owner_client.post(
                     "/channels/a2a/peers",
                     json={
-                        "name": "Local SDK acceptance peer",
-                        "agent_card_url": f"{remote_peer_url}/.well-known/agent-card.json",
+                        "name": "Independent official SDK peer",
+                        "agent_card_url": f"https://127.0.0.1:{sdk_peer_port}/.well-known/agent-card.json",
                         "bearer_token": PEER_TOKEN,
                     },
                 )
@@ -301,7 +394,10 @@ async def _run() -> dict[str, object]:
                     f"/channels/a2a/peers/{peer.json()['id']}/tasks", json=outbound_body
                 )
                 if outbound.status_code != 202 or outbound.json()["state"] != "sent":
-                    raise AssertionError("The configured A2A peer task was not accepted.")
+                    raise AssertionError(
+                        f"The configured A2A peer task was not accepted: "
+                        f"{outbound.status_code} {outbound.text}"
+                    )
                 duplicate = await owner_client.post(
                     f"/channels/a2a/peers/{peer.json()['id']}/tasks", json=outbound_body
                 )
@@ -328,22 +424,26 @@ async def _run() -> dict[str, object]:
                 remote_task = cast(dict[str, Any], poll_body.get("remote_task") or {})
                 remote_task_status = cast(dict[str, Any], remote_task.get("status") or {})
                 remote_status = remote_task_status.get("state")
-                if remote_status != "TASK_STATE_INPUT_REQUIRED":
-                    remote_run = peer_store.get_run(str(outbound.json()["remote_task_id"]))
-                    diagnostic = (
-                        f"run_state={remote_run['state']},model={remote_run['model']}"
-                        if remote_run is not None
-                        else "remote run was not found"
-                    )
+                if remote_status != "TASK_STATE_COMPLETED":
                     raise AssertionError(
-                        f"Unexpected outbound A2A peer state: {remote_status!r}; {diagnostic}; "
+                        f"Unexpected outbound A2A peer state: {remote_status!r}; "
                         f"poll_error={poll_body.get('error')!r}."
                     )
                 remote_history = cast(list[Any], remote_task.get("history") or [])
-                if len(remote_history) != 2:
-                    raise AssertionError(
-                        "Outbound A2A polling did not return durable task history."
-                    )
+                if not remote_history:
+                    raise AssertionError("The independent A2A SDK peer returned no task history.")
+                remote_artifacts = cast(list[Any], remote_task.get("artifacts") or [])
+                if not remote_artifacts:
+                    raise AssertionError("The independent A2A SDK peer returned no task artifact.")
+                first_artifact = cast(dict[str, Any], remote_artifacts[0])
+                artifact_parts = cast(list[Any], first_artifact.get("parts") or [])
+                if not artifact_parts:
+                    raise AssertionError("The independent A2A SDK artifact contained no text part.")
+                first_part = cast(dict[str, Any], artifact_parts[0])
+                if first_part.get("text") != (
+                    "Independent SDK peer received: Return the deterministic acceptance response."
+                ):
+                    raise AssertionError("The independent A2A SDK peer returned unexpected text.")
                 return {
                     "sdk": "a2a-sdk==1.3.1",
                     "protocol_version": card.supported_interfaces[0].protocol_version,
@@ -358,14 +458,17 @@ async def _run() -> dict[str, object]:
                     "outbound_task_poll_state": remote_status,
                     "outbound_task_history_count": len(remote_history),
                     "outbound_idempotent_replay": duplicate.json()["id"] == outbound.json()["id"],
-                    "outbound_separate_peer_instance": True,
+                    "outbound_peer_implementation": "official a2a-sdk==1.3.1 server",
+                    "outbound_peer_task_artifact_text": first_part["text"],
                     "live_model_inference": False,
                 }
         finally:
             server.should_exit = True
             peer_server.should_exit = True
+            sdk_peer_server.should_exit = True
             await server_task
             await peer_server_task
+            await sdk_peer_server_task
 
 
 def main() -> None:
