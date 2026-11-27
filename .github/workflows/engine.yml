@@ -20,10 +20,11 @@ on:
   workflow_dispatch:
     inputs:
       acceptance:
-        description: Run all acceptances or one focused package, Docker, WSL, or credential check
+        description: Run all acceptances, source verification, or one focused package, Docker, WSL, or credential check
         type: choice
         options:
           - all
+          - source
           - windows-installer
           - docker-local
           - wsl-workspace-slice
@@ -45,7 +46,7 @@ permissions:
 
 jobs:
   windows:
-    if: github.event_name != 'workflow_dispatch'
+    if: github.event_name != 'workflow_dispatch' || inputs.acceptance == 'source'
     runs-on: windows-latest
     env:
       UV_CACHE_DIR: .uv-cache
