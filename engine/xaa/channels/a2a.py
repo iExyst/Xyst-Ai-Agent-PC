@@ -24,6 +24,7 @@ DOCUMENT_MEDIA_TYPES = {
     "text/markdown",
     "text/plain",
 }
+LOCAL_AUDIO_MEDIA_TYPES = {"audio/wav"}
 IMAGE_MEDIA_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 _IDENTIFIER = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _METHODS = {
@@ -148,7 +149,7 @@ def _validate_message(params: dict[str, Any], request_id: str | int) -> None:
                     "A2A attachments must contain inline raw bytes; remote file URLs are not fetched.",
                     request_id=request_id,
                 )
-            if media_type not in IMAGE_MEDIA_TYPES | DOCUMENT_MEDIA_TYPES:
+            if media_type not in IMAGE_MEDIA_TYPES | DOCUMENT_MEDIA_TYPES | LOCAL_AUDIO_MEDIA_TYPES:
                 raise InvalidA2ARequest(
                     "This A2A endpoint does not support the attachment media type.",
                     request_id=request_id,
@@ -159,7 +160,7 @@ def _validate_message(params: dict[str, Any], request_id: str | int) -> None:
             attachment_parts += 1
             if attachment_parts > 1:
                 raise InvalidA2ARequest(
-                    "Only one A2A image or document attachment is supported per task.",
+                    "Only one A2A image, document or audio attachment is supported per task.",
                     request_id=request_id,
                 )
             try:
@@ -181,7 +182,7 @@ def _validate_message(params: dict[str, Any], request_id: str | int) -> None:
                 )
             continue
         raise InvalidA2ARequest(
-            "This A2A endpoint accepts text/plain and one inline image or document only.",
+            "This A2A endpoint accepts text/plain and one inline image, document or WAV audio part.",
             request_id=request_id,
         )
     text = extract_text(message)
@@ -214,7 +215,7 @@ def extract_image_data_url(message: Mapping[str, Any]) -> str | None:
 def extract_document_attachment(
     message: Mapping[str, Any],
 ) -> tuple[bytes, str, str | None] | None:
-    """Decode one bounded inline document; never dereference a peer-supplied URL."""
+    """Decode one bounded inline document or WAV; never dereference peer URLs."""
     raw_parts = message.get("parts")
     if not isinstance(raw_parts, list):
         return None
@@ -224,18 +225,20 @@ def extract_document_attachment(
         part = cast(dict[str, Any], value)
         media_type = part.get("mediaType")
         encoded = part.get("raw")
-        if not isinstance(media_type, str) or media_type not in DOCUMENT_MEDIA_TYPES:
+        if not isinstance(media_type, str) or media_type not in (
+            DOCUMENT_MEDIA_TYPES | LOCAL_AUDIO_MEDIA_TYPES
+        ):
             continue
         if "raw" not in part:
             continue
         if not isinstance(encoded, str):
-            raise TypeError("A2A document attachment must contain inline raw bytes.")
+            raise TypeError("A2A file attachment must contain inline raw bytes.")
         try:
             content = base64.b64decode(encoded, validate=True)
         except (ValueError, binascii.Error):
-            raise ValueError("A2A document attachment bytes are invalid.") from None
+            raise ValueError("A2A file attachment bytes are invalid.") from None
         if not content or len(content) > MAX_A2A_ATTACHMENT_BYTES:
-            raise ValueError("A2A document attachment must be between 1 byte and 4 MiB.")
+            raise ValueError("A2A file attachment must be between 1 byte and 4 MiB.")
         filename = part.get("filename")
         return content, media_type, filename if isinstance(filename, str) else None
     return None
