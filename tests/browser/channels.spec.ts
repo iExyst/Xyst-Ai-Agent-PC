@@ -23,6 +23,8 @@ test('save Telegram token securely, pair an account and clear the credential',as
   let status:any={configured:false,bot_username:null,linked_users:0,processed_updates:0,deliveries:{},unknown_deliveries:[]};
   let emailStatus:any={configured:false,address:null,processed_messages:0,deliveries:{},unknown_deliveries:[]};
   let webhookStatus:any={configured:false};
+  let a2aStatus:any={configured:false};
+  let a2aListener:any={enabled:false,bind_address:'127.0.0.1',port:8766,allow_network:false,listening:false};
   let identityBindings:any[]=[
     {id:'telegram-binding',channel:'telegram',account_id:'bot-1',external_identity:'456',session_id:'telegram-session',session_channel:'telegram',identity_link_id:null,authorized:true,title:'Telegram history',link_created_at:null},
     {id:'email-binding',channel:'email',account_id:'mailbox-1',external_identity:'owner@example.test',session_id:'email-session',session_channel:'email',identity_link_id:null,authorized:true,title:'Email history',link_created_at:null},
@@ -116,6 +118,22 @@ test('save Telegram token securely, pair an account and clear the credential',as
       webhookStatus={configured:false};
       return route.fulfill({json:webhookStatus,headers});
     }
+    if(path==='/channels/a2a'&&request.method()==='GET')return route.fulfill({json:a2aStatus,headers});
+    if(path==='/channels/a2a/listener'&&request.method()==='GET')return route.fulfill({json:a2aListener,headers});
+    if(path==='/channels/a2a/credential'&&request.method()==='POST'){
+      a2aStatus={configured:true};
+      return route.fulfill({json:{configured:true,secret:'one-time-a2a-peer-secret-with-at-least-32-characters'},headers});
+    }
+    if(path==='/channels/a2a/credential'&&request.method()==='DELETE'){
+      a2aStatus={configured:false};a2aListener={...a2aListener,enabled:false,listening:false};
+      return route.fulfill({status:204,headers});
+    }
+    if(path==='/channels/a2a/listener'&&request.method()==='PUT'){
+      const body=request.postDataJSON();
+      expect(body.allow_network).toBe(true);expect(body.bind_address).toBe('0.0.0.0');expect(body.port).toBe(9876);
+      a2aListener={...body,listening:body.enabled};
+      return route.fulfill({json:a2aListener,headers});
+    }
     return route.fulfill({json:{status:'ok'},headers});
   });
   await page.goto('/');
@@ -128,6 +146,15 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByRole('heading',{level:2})).toBeVisible();
   expect(await visibleTextContrastFailures(page)).toEqual([]);
   await expect(panel.getByText('Discord (private DMs)',{exact:true})).toHaveCount(0);
+  await panel.getByRole('button',{name:'Create A2A peer credential'}).click();
+  await expect(panel.getByRole('region',{name:'New A2A peer credential'})).toContainText('one-time-a2a-peer-secret-with-at-least-32-characters');
+  await panel.getByLabel('A2A listener port').fill('9876');
+  await panel.getByLabel('Allow connections from other devices on this network').check();
+  await panel.getByRole('button',{name:'Enable A2A listener'}).click();
+  await expect(panel.getByText('A2A listener is listening · 0.0.0.0:9876')).toBeVisible();
+  await panel.getByRole('button',{name:'Disable A2A listener'}).click();
+  await expect(panel.getByText('A2A listener is stopped · 0.0.0.0:9876')).toBeVisible();
+  await panel.getByRole('button',{name:'Clear A2A peer credential'}).click();
   await panel.getByLabel('First authorized account').selectOption('telegram-binding');
   await panel.getByLabel('Second account from another channel').selectOption('email-binding');
   await panel.getByRole('radio',{name:/telegram · 456/}).check();

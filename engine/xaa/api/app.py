@@ -8,6 +8,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -33,6 +34,9 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from starlette.middleware.cors import CORSMiddleware
 
 from xaa.api.contracts import (
+    A2ACredentialRecord,
+    A2AListenerSettings,
+    A2AListenerStatus,
     ArtifactRecord,
     CLIChatSessionRecord,
     CLIChatSessionSettings,
@@ -60,6 +64,7 @@ from xaa.api.contracts import (
     WorkspaceWriteReconciliationItem,
 )
 from xaa.channels import a2a as a2a_channel
+from xaa.channels.a2a_listener import A2AListener
 from xaa.channels.email import EmailConfig, EmailService, EmailStore
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identity
@@ -184,6 +189,8 @@ from xaa.storage.specialist_profiles import (
 from xaa.storage.tasks import TaskStore
 from xaa.storage.trajectory import export_trajectory
 from xaa.version import APP_VERSION
+
+logger = logging.getLogger(__name__)
 
 SCANNED_PAGE_OCR_TOKEN_RESERVATION = 4_608
 
@@ -1096,11 +1103,28 @@ def create_app(
             # Configure at construction time so health checks and requests share this client.
             provider.openai_compatible = OpenAICompatibleProvider(compatible_endpoint, token)
 
+    a2a_listener: A2AListener
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         await provider.configure_endpoint(endpoint)
         supervisor.start()
         schedule_service.start()
+        with run_store.connection() as connection:
+            a2a_settings = connection.execute(
+                "SELECT enabled,bind_address,port FROM a2a_listener_settings WHERE id=1"
+            ).fetchone()
+        if a2a_settings is not None and a2a_settings["enabled"]:
+            try:
+                peer_token = credential_store.get("a2a-inbound") if credential_store else None
+                if peer_token is not None:
+                    await a2a_listener.configure(
+                        str(a2a_settings["bind_address"]), int(a2a_settings["port"])
+                    )
+            except (KeyringError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+                logger.warning(
+                    "Could not restore the configured A2A listener: %s", type(exc).__name__
+                )
         if telegram_service is not None:
             telegram_service.start()
         if email_service is not None:
@@ -1110,6 +1134,7 @@ def create_app(
             await telegram_service.close()
         if email_service is not None:
             await email_service.close()
+        await a2a_listener.close()
         await schedule_service.close()
         await supervisor.close()
         await mcp_manager.close()
@@ -1117,6 +1142,7 @@ def create_app(
         await provider.close()
 
     app = FastAPI(title="X.A.A. Local API", version=APP_VERSION, lifespan=lifespan)
+    a2a_listener = A2AListener(app)
 
     def managed_plugin_is_referenced(
         connection: sqlite3.Connection, managed_root: Path, package_name: str
@@ -3557,8 +3583,80 @@ def create_app(
                 status_code=503, detail="Could not read the OS credential."
             ) from exc
 
-    @app.post("/channels/a2a/credential")
-    def create_a2a_credential(_: None = Depends(authenticate)) -> dict[str, object]:
+    def current_a2a_listener_status() -> A2AListenerStatus:
+        with run_store.connection() as connection:
+            row = connection.execute(
+                "SELECT enabled,bind_address,port,allow_network "
+                "FROM a2a_listener_settings WHERE id=1"
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=503, detail="A2A listener settings are unavailable.")
+        bind_address = str(row["bind_address"])
+        if bind_address not in {"127.0.0.1", "0.0.0.0"}:
+            raise HTTPException(status_code=503, detail="A2A listener address is invalid.")
+        return A2AListenerStatus(
+            enabled=bool(row["enabled"]),
+            bind_address=cast(Literal["127.0.0.1", "0.0.0.0"], bind_address),
+            port=int(row["port"]),
+            allow_network=bool(row["allow_network"]),
+            listening=a2a_listener.running,
+        )
+
+    @app.get("/channels/a2a/listener", response_model=A2AListenerStatus)
+    def a2a_listener_status(_: None = Depends(authenticate)) -> A2AListenerStatus:
+        return current_a2a_listener_status()
+
+    @app.put("/channels/a2a/listener", response_model=A2AListenerStatus)
+    async def update_a2a_listener(
+        payload: A2AListenerSettings, _: None = Depends(authenticate)
+    ) -> A2AListenerStatus:
+        if payload.bind_address == "0.0.0.0" and not payload.allow_network:
+            raise HTTPException(
+                status_code=422,
+                detail="Confirm network access before listening on all interfaces.",
+            )
+        if payload.bind_address == "127.0.0.1" and payload.allow_network:
+            raise HTTPException(
+                status_code=422,
+                detail="Network access confirmation requires the all-interfaces address.",
+            )
+        if payload.enabled:
+            if credential_store is None:
+                raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+            try:
+                if credential_store.get("a2a-inbound") is None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Create an A2A peer credential before enabling the listener.",
+                    )
+            except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=503, detail="Could not read the OS credential."
+                ) from exc
+            try:
+                await a2a_listener.configure(payload.bind_address, payload.port)
+            except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Could not bind the A2A listener; check the address and port.",
+                ) from exc
+        else:
+            await a2a_listener.close()
+        with run_store.connection() as connection:
+            connection.execute(
+                "UPDATE a2a_listener_settings SET enabled=?,bind_address=?,port=?,allow_network=? "
+                "WHERE id=1",
+                (
+                    int(payload.enabled),
+                    payload.bind_address,
+                    payload.port,
+                    int(payload.allow_network),
+                ),
+            )
+        return current_a2a_listener_status()
+
+    @app.post("/channels/a2a/credential", response_model=A2ACredentialRecord)
+    def create_a2a_credential(_: None = Depends(authenticate)) -> A2ACredentialRecord:
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
         secret = secrets.token_urlsafe(48)
@@ -3568,36 +3666,26 @@ def create_app(
             raise HTTPException(
                 status_code=503, detail="Could not save the OS credential."
             ) from exc
-        return {"configured": True, "secret": secret}
+        return A2ACredentialRecord(configured=True, secret=secret)
 
     @app.delete("/channels/a2a/credential", status_code=204)
-    def delete_a2a_credential(_: None = Depends(authenticate)) -> Response:
+    async def delete_a2a_credential(_: None = Depends(authenticate)) -> Response:
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        await a2a_listener.close()
         try:
             credential_store.delete("a2a-inbound")
         except (KeyringError, OSError, RuntimeError, ValueError) as exc:
             raise HTTPException(
                 status_code=503, detail="Could not clear the OS credential."
             ) from exc
+        with run_store.connection() as connection:
+            connection.execute("UPDATE a2a_listener_settings SET enabled=0 WHERE id=1")
         return Response(status_code=204)
 
     @app.get("/.well-known/agent-card.json")
     def a2a_agent_card(request: Request) -> dict[str, object]:
-        server_value = request.scope.get("server")
-        if not isinstance(server_value, (tuple, list)):
-            raise HTTPException(status_code=503, detail="A2A server address is unavailable.")
-        server_items = cast(tuple[object, ...] | list[object], server_value)
-        if len(server_items) != 2:
-            raise HTTPException(status_code=503, detail="A2A server address is unavailable.")
-        host_value: object = server_items[0]
-        port_value: object = server_items[1]
-        if not isinstance(host_value, str) or not isinstance(port_value, int):
-            raise HTTPException(status_code=503, detail="A2A server address is invalid.")
-        host = host_value
-        port = port_value
-        authority = f"[{host}]" if ":" in host and not host.startswith("[") else host
-        endpoint = f"http://{authority}:{port}/a2a"
+        endpoint = str(request.base_url).rstrip("/") + "/a2a"
         return {
             "name": "Xyst AI Agent",
             "description": "Authenticated text tasks handled by the X.A.A. shared run coordinator.",

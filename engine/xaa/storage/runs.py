@@ -23,7 +23,7 @@ from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 43
+DATABASE_SCHEMA_VERSION = 44
 
 
 def _is_normalized_relative_workspace_path(path: str) -> bool:
@@ -722,6 +722,14 @@ class RunStore:
                     details TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS a2a_listener_settings (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+                    bind_address TEXT NOT NULL DEFAULT '127.0.0.1',
+                    port INTEGER NOT NULL DEFAULT 8766 CHECK(port BETWEEN 1024 AND 65535),
+                    allow_network INTEGER NOT NULL DEFAULT 0 CHECK(allow_network IN (0,1))
+                );
+                INSERT OR IGNORE INTO a2a_listener_settings(id) VALUES(1);
                 CREATE TABLE IF NOT EXISTS telegram_pairing_codes (
                     code_hash TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,

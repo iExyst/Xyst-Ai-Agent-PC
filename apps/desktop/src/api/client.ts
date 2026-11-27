@@ -28,6 +28,9 @@ export type TelegramChannelStatus = components['schemas']['TelegramCredentialSta
 export type EmailChannelStatus = components['schemas']['EmailCredentialStatus'];
 export type WebhookChannelStatus = components['schemas']['WebhookChannelStatus'];
 export type WebhookCredential = components['schemas']['WebhookCredentialRecord'];
+export type A2ACredential = components['schemas']['A2ACredentialRecord'];
+export type A2AListenerSettings = components['schemas']['A2AListenerSettings'];
+export type A2AListenerStatus = components['schemas']['A2AListenerStatus'];
 export type ChannelIdentityBinding = components['schemas']['ChannelIdentityBinding'];
 export type CredentialStatus = components['schemas']['LMStudioCredentialStatus'];
 export type MCPTool = components['schemas']['MCPToolResponse'];
@@ -382,6 +385,22 @@ export class EngineClient {
   emailStatus(): Promise<EmailChannelStatus> { return this.#request('/channels/email'); }
 
   webhookStatus(): Promise<WebhookChannelStatus> { return this.#request('/channels/webhook'); }
+
+  a2aStatus(): Promise<{configured:boolean}> { return this.#request('/channels/a2a'); }
+
+  a2aListenerStatus(): Promise<A2AListenerStatus> { return this.#request('/channels/a2a/listener'); }
+
+  createA2ACredential(): Promise<A2ACredential> {
+    return this.#request('/channels/a2a/credential',{method:'POST',body:JSON.stringify({})});
+  }
+
+  clearA2ACredential(): Promise<void> {
+    return this.#request('/channels/a2a/credential',{method:'DELETE'});
+  }
+
+  updateA2AListener(input:A2AListenerSettings): Promise<A2AListenerStatus> {
+    return this.#request('/channels/a2a/listener',{method:'PUT',body:JSON.stringify(input)});
+  }
 
   createWebhookCredential(): Promise<WebhookCredential> {
     return this.#request('/channels/webhook/credential',{method:'POST',body:JSON.stringify({})});

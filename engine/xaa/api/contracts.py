@@ -114,9 +114,31 @@ class WebhookCredentialRecord(BaseModel):
     secret: str = Field(min_length=32, max_length=128)
 
 
+class A2ACredentialRecord(BaseModel):
+    configured: bool
+    secret: str = Field(min_length=32, max_length=128)
+
+
 class WebhookReceipt(BaseModel):
     run_id: str
     state: RunState
+
+
+class A2AListenerSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    enabled: bool
+    bind_address: Literal["127.0.0.1", "0.0.0.0"] = "127.0.0.1"
+    port: int = Field(default=8766, ge=1024, le=65535)
+    allow_network: bool = False
+
+
+class A2AListenerStatus(BaseModel):
+    enabled: bool
+    bind_address: Literal["127.0.0.1", "0.0.0.0"]
+    port: int = Field(ge=1024, le=65535)
+    allow_network: bool
+    listening: bool
 
 
 class RunSummary(BaseModel):

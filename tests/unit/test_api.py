@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import socket
 import sqlite3
 import threading
 import time
+import urllib.error
+import urllib.request
 import zipfile
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -2144,6 +2147,117 @@ def test_a2a_text_ingress_is_authenticated_deduplicated_and_restart_queryable(wo
         assert task_lookup.json()["result"]["contextId"] == "fixture-context"
         assert client.delete("/channels/a2a/credential", headers=owner_headers).status_code == 204
         assert client.post("/a2a", json=rpc, headers=peer_headers).status_code == 404
+
+
+def test_a2a_listener_is_opt_in_persistent_and_filters_the_owner_api(workspace_tmp_path):
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    database = workspace_tmp_path / "a2a-listener.sqlite3"
+    credentials = Credentials()
+    store = RunStore(database)
+    app = create_app(
+        TextReplyProvider(), SecretStr(TOKEN), store=store, credential_store=credentials
+    )
+    owner_headers = {"Authorization": f"Bearer {TOKEN}"}
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    with TestClient(app) as client:
+        initial = client.get("/channels/a2a/listener", headers=owner_headers)
+        assert initial.status_code == 200
+        assert initial.json() == {
+            "enabled": False,
+            "bind_address": "127.0.0.1",
+            "port": 8766,
+            "allow_network": False,
+            "listening": False,
+        }
+        unconfirmed = client.put(
+            "/channels/a2a/listener",
+            headers=owner_headers,
+            json={
+                "enabled": True,
+                "bind_address": "0.0.0.0",
+                "port": port,
+                "allow_network": False,
+            },
+        )
+        assert unconfirmed.status_code == 422
+        without_credential = client.put(
+            "/channels/a2a/listener",
+            headers=owner_headers,
+            json={"enabled": True, "bind_address": "127.0.0.1", "port": port},
+        )
+        assert without_credential.status_code == 409
+        peer_secret = client.post("/channels/a2a/credential", headers=owner_headers).json()[
+            "secret"
+        ]
+        enabled = client.put(
+            "/channels/a2a/listener",
+            headers=owner_headers,
+            json={"enabled": True, "bind_address": "127.0.0.1", "port": port},
+        )
+        assert enabled.status_code == 200, enabled.text
+        assert enabled.json()["listening"] is True
+        base = f"http://127.0.0.1:{port}"
+        with urllib.request.urlopen(f"{base}/.well-known/agent-card.json", timeout=2) as response:
+            card = json.loads(response.read())
+        assert card["supportedInterfaces"][0]["url"] == f"{base}/a2a"
+        with pytest.raises(urllib.error.HTTPError) as owner_api:
+            urllib.request.urlopen(f"{base}/channels/a2a", timeout=2)
+        assert owner_api.value.code == 404
+        request = urllib.request.Request(
+            f"{base}/a2a",
+            data=json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "method": "GetTask", "params": {"id": "missing"}}
+            ).encode(),
+            headers={
+                "Authorization": f"Bearer {peer_secret}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=2) as response:
+            result = json.loads(response.read())
+        assert result["error"]["code"] == -32001
+        assert client.get("/channels/a2a/listener", headers=owner_headers).json()["listening"]
+
+    restarted = create_app(
+        TextReplyProvider(),
+        SecretStr(TOKEN),
+        store=RunStore(database),
+        credential_store=credentials,
+    )
+    with TestClient(restarted) as client:
+        restored = client.get("/channels/a2a/listener", headers=owner_headers)
+        assert restored.status_code == 200
+        assert restored.json()["enabled"] is True
+        assert restored.json()["listening"] is True
+        disabled = client.put(
+            "/channels/a2a/listener",
+            headers=owner_headers,
+            json={"enabled": False, "bind_address": "127.0.0.1", "port": port},
+        )
+        assert disabled.status_code == 200
+        assert disabled.json()["listening"] is False
+        with store.connection() as connection:
+            assert (
+                connection.execute(
+                    "SELECT enabled FROM a2a_listener_settings WHERE id=1"
+                ).fetchone()["enabled"]
+                == 0
+            )
 
 
 @pytest.mark.parametrize(

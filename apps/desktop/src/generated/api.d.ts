@@ -119,6 +119,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/a2a/listener": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A2A Listener Status */
+        get: operations["a2a_listener_status_channels_a2a_listener_get"];
+        /** Update A2A Listener */
+        put: operations["update_a2a_listener_channels_a2a_listener_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/email": {
         parameters: {
             query?: never;
@@ -2500,6 +2518,50 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** A2ACredentialRecord */
+        A2ACredentialRecord: {
+            /** Configured */
+            configured: boolean;
+            /** Secret */
+            secret: string;
+        };
+        /** A2AListenerSettings */
+        A2AListenerSettings: {
+            /**
+             * Allow Network
+             * @default false
+             */
+            allow_network: boolean;
+            /**
+             * Bind Address
+             * @default 127.0.0.1
+             * @enum {string}
+             */
+            bind_address: "127.0.0.1" | "0.0.0.0";
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Port
+             * @default 8766
+             */
+            port: number;
+        };
+        /** A2AListenerStatus */
+        A2AListenerStatus: {
+            /** Allow Network */
+            allow_network: boolean;
+            /**
+             * Bind Address
+             * @enum {string}
+             */
+            bind_address: "127.0.0.1" | "0.0.0.0";
+            /** Enabled */
+            enabled: boolean;
+            /** Listening */
+            listening: boolean;
+            /** Port */
+            port: number;
+        };
         /** ArtifactRecord */
         ArtifactRecord: {
             /**
@@ -5593,9 +5655,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["A2ACredentialRecord"];
                 };
             };
         };
@@ -5615,6 +5675,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    a2a_listener_status_channels_a2a_listener_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AListenerStatus"];
+                };
+            };
+        };
+    };
+    update_a2a_listener_channels_a2a_listener_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2AListenerSettings"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AListenerStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

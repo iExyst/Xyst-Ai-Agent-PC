@@ -1,6 +1,100 @@
 {
   "components": {
     "schemas": {
+      "A2ACredentialRecord": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "secret": {
+            "maxLength": 128,
+            "minLength": 32,
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "secret"
+        ],
+        "title": "A2ACredentialRecord",
+        "type": "object"
+      },
+      "A2AListenerSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_network": {
+            "default": false,
+            "title": "Allow Network",
+            "type": "boolean"
+          },
+          "bind_address": {
+            "default": "127.0.0.1",
+            "enum": [
+              "127.0.0.1",
+              "0.0.0.0"
+            ],
+            "title": "Bind Address",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "port": {
+            "default": 8766,
+            "maximum": 65535.0,
+            "minimum": 1024.0,
+            "title": "Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "A2AListenerSettings",
+        "type": "object"
+      },
+      "A2AListenerStatus": {
+        "properties": {
+          "allow_network": {
+            "title": "Allow Network",
+            "type": "boolean"
+          },
+          "bind_address": {
+            "enum": [
+              "127.0.0.1",
+              "0.0.0.0"
+            ],
+            "title": "Bind Address",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "listening": {
+            "title": "Listening",
+            "type": "boolean"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1024.0,
+            "title": "Port",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "bind_address",
+          "port",
+          "allow_network",
+          "listening"
+        ],
+        "title": "A2AListenerStatus",
+        "type": "object"
+      },
       "ArtifactRecord": {
         "properties": {
           "created_at": {
@@ -8798,9 +8892,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Create A2A Credential Channels A2A Credential Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/A2ACredentialRecord"
                 }
               }
             },
@@ -8813,6 +8905,70 @@
           }
         ],
         "summary": "Create A2A Credential"
+      }
+    },
+    "/channels/a2a/listener": {
+      "get": {
+        "operationId": "a2a_listener_status_channels_a2a_listener_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2AListenerStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "A2A Listener Status"
+      },
+      "put": {
+        "operationId": "update_a2a_listener_channels_a2a_listener_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A2AListenerSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2AListenerStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update A2A Listener"
       }
     },
     "/channels/email": {

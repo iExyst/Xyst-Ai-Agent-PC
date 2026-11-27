@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import type {ChannelIdentityBinding,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
+import type {A2AListenerStatus,ChannelIdentityBinding,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 import {InlineConfirmation} from './InlineConfirmation.tsx';
 
 export function ChannelsPanel({client}:{client:EngineClient}) {
@@ -13,6 +13,11 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [error,setError]=useState('');
   const [email,setEmail]=useState<EmailChannelStatus>();
   const [webhook,setWebhook]=useState<WebhookChannelStatus>();
+  const [a2a,setA2a]=useState<{configured:boolean}>();
+  const [a2aListener,setA2aListener]=useState<A2AListenerStatus>();
+  const [a2aSecret,setA2aSecret]=useState('');
+  const [a2aNetwork,setA2aNetwork]=useState(false);
+  const [a2aPort,setA2aPort]=useState('8766');
   const [identityBindings,setIdentityBindings]=useState<ChannelIdentityBinding[]>([]);
   const [identitySource,setIdentitySource]=useState('');
   const [identityTarget,setIdentityTarget]=useState('');
@@ -30,7 +35,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [authservId,setAuthservId]=useState('');
 
   async function refresh() {
-    try {setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setIdentityBindings(await client.channelIdentityBindings());setError('');}
+    try {setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setA2a(await client.a2aStatus());const listener=await client.a2aListenerStatus();setA2aListener(listener);setA2aNetwork(listener.allow_network);setA2aPort(String(listener.port));setIdentityBindings(await client.channelIdentityBindings());setError('');}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not read Telegram status.');}
   }
   useEffect(()=>{void refresh();void client.emailStatus().then(setEmail).catch(failure=>setError(String(failure)));},[client]);
@@ -138,6 +143,29 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function createA2ACredential() {
+    setBusy(true);setError('');
+    try {const result=await client.createA2ACredential();setA2a({configured:result.configured});setA2aSecret(result.secret);}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not create the A2A peer credential.');}
+    finally {setBusy(false);}
+  }
+
+  async function clearA2ACredential() {
+    setBusy(true);setError('');
+    try {await client.clearA2ACredential();setA2a({configured:false});setA2aSecret('');await refresh();}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not clear the A2A peer credential.');}
+    finally {setBusy(false);}
+  }
+
+  async function saveA2AListener(enabled:boolean) {
+    const port=Number(a2aPort);
+    if(!Number.isInteger(port)||port<1024||port>65535){setError('Choose an A2A port from 1024 through 65535.');return;}
+    setBusy(true);setError('');
+    try {setA2aListener(await client.updateA2AListener({enabled,bind_address:a2aNetwork?'0.0.0.0':'127.0.0.1',port,allow_network:a2aNetwork}));}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not update the A2A listener.');}
+    finally {setBusy(false);}
+  }
+
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
     <h3>Cross-channel identity links</h3>
@@ -179,6 +207,24 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
         })}</ul>}
       </>;
     })()}
+    <h3>Agent-to-agent (A2A)</h3>
+    <p>A2A text requests use the shared coordinator in Observe mode with no workspace or tool grants. The peer secret is stored in Windows Credential Manager and shown once when created.</p>
+    <div className="controls">
+      {!a2a?.configured&&<button type="button" onClick={()=>void createA2ACredential()} disabled={busy}>Create A2A peer credential</button>}
+      {a2a?.configured&&<button type="button" onClick={()=>void clearA2ACredential()} disabled={busy}>Clear A2A peer credential</button>}
+    </div>
+    {a2aSecret&&<section aria-label="New A2A peer credential"><p>Copy this secret to the connecting peer now. X.A.A. will not show it again.</p><code>{a2aSecret}</code></section>}
+    {a2a?.configured&&<>
+      <label htmlFor="a2a-listener-port">A2A listener port</label>
+      <input id="a2a-listener-port" type="number" min={1024} max={65535} value={a2aPort} onChange={event=>setA2aPort(event.target.value)} disabled={busy}/>
+      <label htmlFor="a2a-network-access"><input id="a2a-network-access" type="checkbox" checked={a2aNetwork} onChange={event=>setA2aNetwork(event.target.checked)} disabled={busy}/> Allow connections from other devices on this network</label>
+      <p>Network access opens a dedicated listener protected by the A2A secret. Only the Agent Card and A2A task endpoint are reachable; the owner API stays on loopback. Windows Firewall may still need an inbound rule.</p>
+      <div className="controls">
+        <button type="button" onClick={()=>void saveA2AListener(true)} disabled={busy}>{a2aListener?.listening?'Apply A2A listener settings':'Enable A2A listener'}</button>
+        {a2aListener?.enabled&&<button type="button" onClick={()=>void saveA2AListener(false)} disabled={busy}>Disable A2A listener</button>}
+      </div>
+      {a2aListener&&<p role="status">A2A listener {a2aListener.listening?'is listening':'is stopped'} · {a2aListener.bind_address}:{a2aListener.port}</p>}
+    </>}
     <h3>Telegram (private chats)</h3>
     <p>Connect a bot token from BotFather. X.A.A. stores it in Windows Credential Manager. A paired private Telegram account can submit objectives as Observe-mode runs and receive their final answers.</p>
     <p>Pairing is required before messages can create runs. Group chats and unpaired users are ignored. An unclear send result is recorded without automatic retry.</p>
