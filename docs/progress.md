@@ -1,3 +1,7 @@
+## Regenerate TypeScript API contracts for A2A (2026-11-27)
+
+The first exact-source Windows run [45985829064](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45985829064) passed pinned-source, Ruff, Pyright and API/OpenAPI checks but failed `npm run contracts:check`: the generated desktop TypeScript declarations did not include the new OpenAPI A2A endpoints. Regenerated `apps/desktop/src/generated/api.d.ts`; local contracts check, TypeScript check, all 19 API-client tests, OpenAPI contract export and type audit pass. Hosted exact-source retry is pending.
+
 ## Run source and installer verification independently (2026-11-27)
 
 The `source` dispatch was queued behind the unrelated installer job because both shared a workflow-level concurrency key. The workflow now includes the selected acceptance in manual-run concurrency groups, allowing source verification and package acceptance to run in parallel while keeping duplicate runs of the same selection serialized. Workflow YAML parsing and diff checks pass locally; a new source run is pending.
