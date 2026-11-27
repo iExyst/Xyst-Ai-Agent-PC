@@ -108,7 +108,37 @@ def launch_recovery(
     )
 
 
+def launch_dst_tick(database: Path, instant: datetime) -> list[str]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--tick-dst",
+            str(database),
+            instant.isoformat(),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=30,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"DST scheduler process failed ({result.returncode}): {result.stderr}")
+    dispatched = json.loads(result.stdout)
+    if not isinstance(dispatched, list) or any(not isinstance(item, str) for item in dispatched):
+        raise RuntimeError("DST scheduler process returned an invalid dispatch list.")
+    return dispatched
+
+
 def main() -> None:
+    if "--tick-dst" in sys.argv:
+        index = sys.argv.index("--tick-dst")
+        store = RunStore(Path(sys.argv[index + 1]))
+        instant = datetime.fromisoformat(sys.argv[index + 2])
+        dispatched = ScheduleService(store, lambda _run_id: None).tick(instant)
+        print(json.dumps(dispatched))
+        return
+
     if "--recover" in sys.argv:
         index = sys.argv.index("--recover")
         asyncio.run(
@@ -173,10 +203,49 @@ def main() -> None:
         "model_inference_requested": False,
         "evidence": str(root),
     }
+    dst_database = root / "dst-fall-back.sqlite3"
+    dst_store = RunStore(dst_database)
+    dst_schedule = ScheduleStore(dst_store).create(
+        objective="Run once at the fall-back wall time.",
+        acceptance_criteria=["Do not duplicate the repeated wall time after restart."],
+        workspace=None,
+        model="diagnostic-no-inference",
+        start_at=datetime(2025, 11, 2, 1, 30),
+        frequency="daily",
+        timezone="America/New_York",
+        missed_run_policy="run_once",
+        max_iterations=1,
+        max_seconds=30,
+    )
+    first_fall_back = launch_dst_tick(dst_database, datetime(2025, 11, 2, 5, 45, tzinfo=UTC))
+    repeated_hour_after_restart = launch_dst_tick(
+        dst_database, datetime(2025, 11, 2, 6, 0, tzinfo=UTC)
+    )
+    dst_saved = ScheduleStore(RunStore(dst_database)).get(dst_schedule["id"])
+    dst_passed = (
+        len(first_fall_back) == 1
+        and repeated_hour_after_restart == []
+        and dst_saved is not None
+        and len(dst_saved["executions"]) == 1
+        and dst_saved["recurrence"]["next_at"] == "2025-11-03T01:30"
+    )
+    report["dst_fall_back_process_restart"] = {
+        "passed": dst_passed,
+        "timezone": "America/New_York",
+        "first_0130_utc": "2025-11-02T05:45:00+00:00",
+        "repeated_0100_utc_after_restart": "2025-11-02T06:00:00+00:00",
+        "dispatches_before_restart": len(first_fall_back),
+        "dispatches_after_restart": len(repeated_hour_after_restart),
+        "execution_count": len(dst_saved["executions"]) if dst_saved is not None else None,
+        "next_local_occurrence": (
+            dst_saved["recurrence"]["next_at"] if dst_saved is not None else None
+        ),
+    }
+    report["passed"] = passed and dst_passed
     (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
-    if not passed:
-        raise RuntimeError("Scheduled restart dispatch was not exactly once.")
+    if not report["passed"]:
+        raise RuntimeError("Scheduled recovery or fall-back restart was not exactly once.")
 
 
 if __name__ == "__main__":
