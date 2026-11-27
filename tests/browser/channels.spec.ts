@@ -25,6 +25,9 @@ test('save Telegram token securely, pair an account and clear the credential',as
   let webhookStatus:any={configured:false};
   let a2aStatus:any={configured:false};
   let a2aListener:any={enabled:false,bind_address:'127.0.0.1',port:8766,allow_network:false,listening:false};
+  let a2aOutboundPeers:any[]=[];
+  let a2aOutboundTasks:any[]=[];
+  let a2aOutboundSendCount=0;
   let identityBindings:any[]=[
     {id:'telegram-binding',channel:'telegram',account_id:'bot-1',external_identity:'456',session_id:'telegram-session',session_channel:'telegram',identity_link_id:null,authorized:true,title:'Telegram history',link_created_at:null},
     {id:'email-binding',channel:'email',account_id:'mailbox-1',external_identity:'owner@example.test',session_id:'email-session',session_channel:'email',identity_link_id:null,authorized:true,title:'Email history',link_created_at:null},
@@ -120,6 +123,21 @@ test('save Telegram token securely, pair an account and clear the credential',as
     }
     if(path==='/channels/a2a'&&request.method()==='GET')return route.fulfill({json:a2aStatus,headers});
     if(path==='/channels/a2a/listener'&&request.method()==='GET')return route.fulfill({json:a2aListener,headers});
+    if(path==='/channels/a2a/peers'&&request.method()==='GET')return route.fulfill({json:a2aOutboundPeers,headers});
+    if(path==='/channels/a2a/outbound-tasks'&&request.method()==='GET')return route.fulfill({json:a2aOutboundTasks,headers});
+    if(path==='/channels/a2a/peers'&&request.method()==='POST'){
+      const body=request.postDataJSON();expect(body.name).toBe('Fixture peer');expect(body.agent_card_url).toBe('https://agent.example.test/.well-known/agent-card.json');expect(body.bearer_token).toBe('p'.repeat(40));
+      const peer={id:'fixture-peer',name:body.name,agent_card_url:body.agent_card_url,configured:true,created_at:new Date().toISOString()};a2aOutboundPeers=[peer];
+      return route.fulfill({status:201,json:peer,headers});
+    }
+    if(path==='/channels/a2a/peers/fixture-peer/tasks'&&request.method()==='POST'){
+      const body=request.postDataJSON();expect(body.text).toBe('Review the fixture task.');expect(body.idempotency_key).toMatch(/^[a-f0-9]{32}$/);a2aOutboundSendCount++;
+      const task={id:'local-task-1',peer_id:'fixture-peer',idempotency_key:body.idempotency_key,state:'sent',remote_task_id:'remote-task-1',remote_context_id:'context-1',remote_task:{id:'remote-task-1',status:{state:'TASK_STATE_SUBMITTED'}},error:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+      a2aOutboundTasks=[task];return route.fulfill({status:202,json:task,headers});
+    }
+    if(path==='/channels/a2a/outbound-tasks/local-task-1'&&request.method()==='GET'){
+      return route.fulfill({json:{...a2aOutboundTasks[0],remote_task:{...a2aOutboundTasks[0].remote_task,status:{state:'TASK_STATE_COMPLETED'}}},headers});
+    }
     if(path==='/channels/a2a/credential'&&request.method()==='POST'){
       a2aStatus={configured:true};
       return route.fulfill({json:{configured:true,secret:'one-time-a2a-peer-secret-with-at-least-32-characters'},headers});
@@ -158,6 +176,18 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByText('A2A listener is listening · 0.0.0.0:9876')).toBeVisible();
   await panel.getByRole('button',{name:'Disable A2A listener'}).click();
   await expect(panel.getByText('A2A listener is stopped · 0.0.0.0:9876')).toBeVisible();
+  await panel.getByLabel('Peer name').fill('Fixture peer');
+  await panel.getByLabel('HTTPS Agent Card URL').fill('https://agent.example.test/.well-known/agent-card.json');
+  await panel.getByLabel('Peer bearer token').fill('p'.repeat(40));
+  await panel.getByRole('button',{name:'Add authorized peer'}).click();
+  await expect(panel.getByLabel('Send task to')).toHaveValue('fixture-peer');
+  await panel.getByLabel('Task text').fill('Review the fixture task.');
+  await panel.getByRole('button',{name:'Send task to selected peer'}).click();
+  await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_SUBMITTED');
+  await expect(panel.getByRole('region',{name:'Saved outbound A2A tasks'})).toContainText('remote-task-1');
+  expect(a2aOutboundSendCount).toBe(1);
+  await panel.getByRole('button',{name:'Refresh remote task'}).click();
+  await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_COMPLETED');
   await panel.getByRole('button',{name:'Clear A2A peer credential'}).click();
   await panel.getByLabel('First authorized account').selectOption('telegram-binding');
   await panel.getByLabel('Second account from another channel').selectOption('email-binding');

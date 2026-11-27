@@ -312,7 +312,7 @@ def test_stopping_a_run_durably_requests_session_cleanup(workspace_tmp_path):
     assert [item.id for item in journal.terminal()] == [session.id]
 
 
-def test_schema_42_database_migrates_docker_journal_and_a2a_tls_settings(workspace_tmp_path):
+def test_schema_42_database_migrates_docker_journal_and_a2a_peer_storage(workspace_tmp_path):
     store, _run_id, _owner = setup_run(workspace_tmp_path)
     with store.connection() as connection:
         connection.execute("DROP INDEX docker_sessions_state_updated")
@@ -329,7 +329,13 @@ def test_schema_42_database_migrates_docker_journal_and_a2a_tls_settings(workspa
         listener_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(a2a_listener_settings)")
         }
-    assert version == 45
+        outbound_peers = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='a2a_outbound_peers'"
+        ).fetchone()
+        outbound_tasks = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='a2a_outbound_tasks'"
+        ).fetchone()
+    assert version == 46
     assert {
         "id",
         "run_id",
@@ -342,3 +348,5 @@ def test_schema_42_database_migrates_docker_journal_and_a2a_tls_settings(workspa
     } <= columns
     assert listener_table is not None
     assert {"tls_cert_path", "tls_key_path"} <= listener_columns
+    assert outbound_peers is not None
+    assert outbound_tasks is not None

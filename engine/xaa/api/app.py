@@ -38,6 +38,11 @@ from xaa.api.contracts import (
     A2ACredentialRecord,
     A2AListenerSettings,
     A2AListenerStatus,
+    A2AOutboundPeerCreate,
+    A2AOutboundPeerCredential,
+    A2AOutboundPeerRecord,
+    A2AOutboundTaskCreate,
+    A2AOutboundTaskRecord,
     ArtifactRecord,
     CLIChatSessionRecord,
     CLIChatSessionSettings,
@@ -66,6 +71,7 @@ from xaa.api.contracts import (
 )
 from xaa.channels import a2a as a2a_channel
 from xaa.channels.a2a_listener import A2AListener
+from xaa.channels.a2a_outbound import A2AOutboundClient, A2AOutboundError, validate_agent_card_url
 from xaa.channels.email import EmailConfig, EmailService, EmailStore
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identity
@@ -1039,6 +1045,7 @@ def create_app(
     shutdown_callback: Callable[[], None] | None = None,
     stream_responses: bool = False,
     credential_store: CredentialStore | None = None,
+    a2a_outbound_client: A2AOutboundClient | None = None,
 ) -> FastAPI:
     """Create a fail-closed service; caller controls token and provider lifecycle."""
     expected = api_token.get_secret_value()
@@ -1060,6 +1067,7 @@ def create_app(
             )
 
     run_store = store or RunStore()
+    outbound_a2a = a2a_outbound_client or A2AOutboundClient()
     system_resource_monitor = SystemResourceMonitor()
     channel_identity_links = ChannelIdentityLinks(run_store)
     cli_chat_store = CLIChatStore(run_store)
@@ -1131,6 +1139,12 @@ def create_app(
         supervisor.start()
         schedule_service.start()
         with run_store.connection() as connection:
+            connection.execute(
+                "UPDATE a2a_outbound_tasks SET state='unknown',"
+                "last_error='The application stopped while the peer response was pending.',"
+                "updated_at=? WHERE state='sending'",
+                (utc_now(),),
+            )
             a2a_settings = connection.execute(
                 "SELECT enabled,bind_address,port,allow_network,tls_cert_path,tls_key_path "
                 "FROM a2a_listener_settings WHERE id=1"
@@ -3733,6 +3747,337 @@ def create_app(
             connection.execute("UPDATE a2a_listener_settings SET enabled=0 WHERE id=1")
         return Response(status_code=204)
 
+    def a2a_outbound_profile(peer_id: str) -> str:
+        return f"a2a-outbound:{peer_id}"
+
+    def a2a_outbound_peer_record(row: sqlite3.Row) -> A2AOutboundPeerRecord:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            configured = credential_store.get(a2a_outbound_profile(str(row["id"]))) is not None
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not read the OS credential."
+            ) from exc
+        return A2AOutboundPeerRecord(
+            id=str(row["id"]),
+            name=str(row["name"]),
+            agent_card_url=str(row["agent_card_url"]),
+            configured=configured,
+            created_at=datetime.fromisoformat(str(row["created_at"])),
+        )
+
+    def set_a2a_outbound_credential(peer_id: str, secret: str | None) -> None:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            if secret is None:
+                credential_store.delete(a2a_outbound_profile(peer_id))
+            else:
+                credential_store.set(secret, a2a_outbound_profile(peer_id))
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Could not update the A2A peer credential in Windows Credential Manager.",
+            ) from exc
+
+    @app.get("/channels/a2a/peers", response_model=list[A2AOutboundPeerRecord])
+    def list_a2a_outbound_peers(_: None = Depends(authenticate)) -> list[A2AOutboundPeerRecord]:
+        with run_store.connection() as connection:
+            rows = connection.execute(
+                "SELECT id,name,agent_card_url,created_at FROM a2a_outbound_peers "
+                "ORDER BY created_at,id"
+            ).fetchall()
+        return [a2a_outbound_peer_record(row) for row in rows]
+
+    @app.put("/channels/a2a/peers/{peer_id}/credential", response_model=A2AOutboundPeerRecord)
+    def set_a2a_outbound_peer_credential(
+        peer_id: str,
+        payload: A2AOutboundPeerCredential,
+        _: None = Depends(authenticate),
+    ) -> A2AOutboundPeerRecord:
+        with run_store.connection() as connection:
+            row = connection.execute(
+                "SELECT id,name,agent_card_url,created_at FROM a2a_outbound_peers WHERE id=?",
+                (peer_id,),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="A2A peer was not found.")
+        set_a2a_outbound_credential(peer_id, payload.bearer_token.get_secret_value())
+        return a2a_outbound_peer_record(row)
+
+    @app.delete("/channels/a2a/peers/{peer_id}/credential", status_code=204)
+    def clear_a2a_outbound_peer_credential(
+        peer_id: str, _: None = Depends(authenticate)
+    ) -> Response:
+        with run_store.connection() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM a2a_outbound_peers WHERE id=?", (peer_id,)
+            ).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="A2A peer was not found.")
+        set_a2a_outbound_credential(peer_id, None)
+        return Response(status_code=204)
+
+    @app.post("/channels/a2a/peers", response_model=A2AOutboundPeerRecord, status_code=201)
+    def create_a2a_outbound_peer(
+        payload: A2AOutboundPeerCreate, _: None = Depends(authenticate)
+    ) -> A2AOutboundPeerRecord:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Peer name cannot be blank.")
+        try:
+            card_url = validate_agent_card_url(payload.agent_card_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        peer_id = uuid4().hex
+        profile = a2a_outbound_profile(peer_id)
+        try:
+            credential_store.set(payload.bearer_token.get_secret_value(), profile)
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not save the OS credential."
+            ) from exc
+        created_at = utc_now()
+        try:
+            with run_store.connection() as connection:
+                connection.execute(
+                    "INSERT INTO a2a_outbound_peers(id,name,agent_card_url,created_at) "
+                    "VALUES(?,?,?,?)",
+                    (peer_id, name, card_url, created_at),
+                )
+                row = connection.execute(
+                    "SELECT id,name,agent_card_url,created_at FROM a2a_outbound_peers WHERE id=?",
+                    (peer_id,),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            try:
+                credential_store.delete(profile)
+            except (KeyringError, OSError, RuntimeError, ValueError):
+                logger.error("Could not remove an unpaired A2A peer credential.")
+            raise HTTPException(status_code=503, detail="Could not save the A2A peer.") from exc
+        if row is None:
+            raise HTTPException(status_code=503, detail="A2A peer was not saved.")
+        return a2a_outbound_peer_record(row)
+
+    @app.delete("/channels/a2a/peers/{peer_id}", status_code=204)
+    def delete_a2a_outbound_peer(peer_id: str, _: None = Depends(authenticate)) -> Response:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        try:
+            with run_store.atomic_connection() as connection:
+                row = connection.execute(
+                    "SELECT id FROM a2a_outbound_peers WHERE id=?", (peer_id,)
+                ).fetchone()
+                if row is None:
+                    raise HTTPException(status_code=404, detail="A2A peer was not found.")
+                count = connection.execute(
+                    "SELECT count(*) FROM a2a_outbound_tasks WHERE peer_id=?", (peer_id,)
+                ).fetchone()[0]
+                if count:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="A peer with a task history cannot be removed; its delivery records are retained.",
+                    )
+                credential_store.delete(a2a_outbound_profile(peer_id))
+                connection.execute("DELETE FROM a2a_outbound_peers WHERE id=?", (peer_id,))
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="Could not clear the OS credential."
+            ) from exc
+        return Response(status_code=204)
+
+    def a2a_outbound_task_record(row: sqlite3.Row) -> A2AOutboundTaskRecord:
+        raw_task = row["remote_task_json"]
+        try:
+            remote_task = json.loads(str(raw_task)) if raw_task is not None else None
+        except (TypeError, json.JSONDecodeError):
+            remote_task = None
+        return A2AOutboundTaskRecord(
+            id=str(row["id"]),
+            peer_id=str(row["peer_id"]),
+            idempotency_key=str(row["idempotency_key"]),
+            state=cast(Literal["sending", "sent", "unknown"], str(row["state"])),
+            remote_task_id=str(row["remote_task_id"]) if row["remote_task_id"] else None,
+            remote_context_id=(str(row["remote_context_id"]) if row["remote_context_id"] else None),
+            remote_task=cast(dict[str, Any] | None, remote_task),
+            error=str(row["last_error"]) if row["last_error"] else None,
+            created_at=datetime.fromisoformat(str(row["created_at"])),
+            updated_at=datetime.fromisoformat(str(row["updated_at"])),
+        )
+
+    @app.post(
+        "/channels/a2a/peers/{peer_id}/tasks",
+        response_model=A2AOutboundTaskRecord,
+        status_code=202,
+    )
+    async def send_a2a_outbound_task(
+        peer_id: str,
+        payload: A2AOutboundTaskCreate,
+        _: None = Depends(authenticate),
+    ) -> A2AOutboundTaskRecord:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.atomic_connection() as connection:
+            peer = connection.execute(
+                "SELECT id,agent_card_url FROM a2a_outbound_peers WHERE id=?", (peer_id,)
+            ).fetchone()
+            if peer is None:
+                raise HTTPException(status_code=404, detail="A2A peer was not found.")
+            digest = hashlib.sha256(payload.text.encode("utf-8")).hexdigest()
+            existing = connection.execute(
+                "SELECT * FROM a2a_outbound_tasks WHERE peer_id=? AND idempotency_key=?",
+                (peer_id, payload.idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["payload_digest"]) != digest:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This idempotency key was already used for different A2A task text.",
+                    )
+                if existing["state"] == "sending":
+                    raise HTTPException(
+                        status_code=409, detail="This A2A task is already being submitted."
+                    )
+                return a2a_outbound_task_record(existing)
+            task_id = uuid4().hex
+            message_id = uuid4().hex
+            now = utc_now()
+            connection.execute(
+                "INSERT INTO a2a_outbound_tasks(id,peer_id,idempotency_key,payload_digest,"
+                "message_id,state,created_at,updated_at) VALUES(?,?,?,?,?,'sending',?,?)",
+                (task_id, peer_id, payload.idempotency_key, digest, message_id, now, now),
+            )
+            saved_peer_url = str(peer["agent_card_url"])
+        try:
+            token = credential_store.get(a2a_outbound_profile(peer_id))
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            token = None
+            logger.warning("Could not read an A2A peer credential: %s", type(exc).__name__)
+        if token is None:
+            with run_store.connection() as connection:
+                connection.execute(
+                    "UPDATE a2a_outbound_tasks SET state='unknown',"
+                    "last_error='The configured peer credential is unavailable.',updated_at=? WHERE id=?",
+                    (utc_now(), task_id),
+                )
+        else:
+            try:
+                remote_task = await outbound_a2a.send_task(
+                    agent_card_url=saved_peer_url,
+                    bearer_token=token,
+                    text=payload.text,
+                    message_id=message_id,
+                )
+                remote_task_id = str(remote_task["id"])
+                context_id = remote_task.get("contextId")
+                with run_store.connection() as connection:
+                    connection.execute(
+                        "UPDATE a2a_outbound_tasks SET state='sent',remote_task_id=?,"
+                        "remote_context_id=?,remote_task_json=?,last_error=NULL,updated_at=? WHERE id=?",
+                        (
+                            remote_task_id,
+                            str(context_id) if context_id else None,
+                            json.dumps(remote_task, ensure_ascii=False, separators=(",", ":")),
+                            utc_now(),
+                            task_id,
+                        ),
+                    )
+            except A2AOutboundError as exc:
+                with run_store.connection() as connection:
+                    connection.execute(
+                        "UPDATE a2a_outbound_tasks SET state='unknown',last_error=?,updated_at=? "
+                        "WHERE id=?",
+                        (str(exc), utc_now(), task_id),
+                    )
+        with run_store.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM a2a_outbound_tasks WHERE id=?", (task_id,)
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=500, detail="A2A task record was not saved.")
+        return a2a_outbound_task_record(row)
+
+    @app.get("/channels/a2a/outbound-tasks", response_model=list[A2AOutboundTaskRecord])
+    def list_a2a_outbound_tasks(
+        peer_id: str | None = Query(default=None, min_length=32, max_length=32),
+        _: None = Depends(authenticate),
+    ) -> list[A2AOutboundTaskRecord]:
+        with run_store.connection() as connection:
+            if peer_id is None:
+                rows = connection.execute(
+                    "SELECT * FROM a2a_outbound_tasks ORDER BY created_at DESC,id DESC LIMIT 100"
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM a2a_outbound_tasks WHERE peer_id=? "
+                    "ORDER BY created_at DESC,id DESC LIMIT 100",
+                    (peer_id,),
+                ).fetchall()
+        return [a2a_outbound_task_record(row) for row in rows]
+
+    @app.get("/channels/a2a/outbound-tasks/{task_id}", response_model=A2AOutboundTaskRecord)
+    async def get_a2a_outbound_task(
+        task_id: str, _: None = Depends(authenticate)
+    ) -> A2AOutboundTaskRecord:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.connection() as connection:
+            row = connection.execute(
+                "SELECT t.*,p.agent_card_url FROM a2a_outbound_tasks AS t "
+                "JOIN a2a_outbound_peers AS p ON p.id=t.peer_id WHERE t.id=?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="A2A task was not found.")
+        if row["state"] == "sending":
+            raise HTTPException(
+                status_code=409, detail="This A2A task submission is still being resolved."
+            )
+        if row["remote_task_id"]:
+            try:
+                token = credential_store.get(a2a_outbound_profile(str(row["peer_id"])))
+            except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=503, detail="Could not read the OS credential."
+                ) from exc
+            if token is None:
+                raise HTTPException(
+                    status_code=409, detail="The configured peer credential is unavailable."
+                )
+            try:
+                remote_task = await outbound_a2a.get_task(
+                    agent_card_url=str(row["agent_card_url"]),
+                    bearer_token=token,
+                    task_id=str(row["remote_task_id"]),
+                )
+            except A2AOutboundError as exc:
+                with run_store.connection() as connection:
+                    connection.execute(
+                        "UPDATE a2a_outbound_tasks SET last_error=?,updated_at=? WHERE id=?",
+                        (str(exc), utc_now(), task_id),
+                    )
+            else:
+                with run_store.connection() as connection:
+                    connection.execute(
+                        "UPDATE a2a_outbound_tasks SET remote_task_json=?,last_error=NULL,"
+                        "updated_at=? WHERE id=?",
+                        (
+                            json.dumps(remote_task, ensure_ascii=False, separators=(",", ":")),
+                            utc_now(),
+                            task_id,
+                        ),
+                    )
+        with run_store.connection() as connection:
+            refreshed = connection.execute(
+                "SELECT * FROM a2a_outbound_tasks WHERE id=?", (task_id,)
+            ).fetchone()
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="A2A task was not found.")
+        return a2a_outbound_task_record(refreshed)
+
     @app.get("/.well-known/agent-card.json")
     def a2a_agent_card(request: Request) -> dict[str, object]:
         endpoint = str(request.base_url).rstrip("/") + "/a2a"
@@ -5282,7 +5627,16 @@ def create_app(
     def export_run_trajectory(run_id: str, _: None = Depends(authenticate)) -> Response:
         secrets_to_redact: list[str] = [expected]
         if credential_store is not None:
-            for profile in CREDENTIAL_PROFILES_FOR_EXPORT_REDACTION:
+            with run_store.connection() as connection:
+                a2a_peer_ids = [
+                    str(row["id"])
+                    for row in connection.execute("SELECT id FROM a2a_outbound_peers").fetchall()
+                ]
+            profiles = (
+                *CREDENTIAL_PROFILES_FOR_EXPORT_REDACTION,
+                *(a2a_outbound_profile(peer_id) for peer_id in a2a_peer_ids),
+            )
+            for profile in profiles:
                 value = credential_store.get(profile)
                 if value:
                     secrets_to_redact.append(value)

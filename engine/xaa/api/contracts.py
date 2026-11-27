@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.states import RunState
@@ -117,6 +117,55 @@ class WebhookCredentialRecord(BaseModel):
 class A2ACredentialRecord(BaseModel):
     configured: bool
     secret: str = Field(min_length=32, max_length=128)
+
+
+class A2AOutboundPeerCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    name: str = Field(min_length=1, max_length=80)
+    agent_card_url: str = Field(min_length=1, max_length=2048)
+    bearer_token: SecretStr = Field(min_length=32, max_length=512)
+
+
+class A2AOutboundPeerCredential(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    bearer_token: SecretStr = Field(min_length=32, max_length=512)
+
+
+class A2AOutboundPeerRecord(BaseModel):
+    id: str
+    name: str
+    agent_card_url: str
+    configured: bool
+    created_at: datetime
+
+
+class A2AOutboundTaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    text: str = Field(min_length=1, max_length=10_000)
+    idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+
+    @field_validator("text")
+    @classmethod
+    def non_blank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("A2A task text cannot be blank.")
+        return value
+
+
+class A2AOutboundTaskRecord(BaseModel):
+    id: str
+    peer_id: str
+    idempotency_key: str
+    state: Literal["sending", "sent", "unknown"]
+    remote_task_id: str | None
+    remote_context_id: str | None
+    remote_task: dict[str, Any] | None
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class WebhookReceipt(BaseModel):

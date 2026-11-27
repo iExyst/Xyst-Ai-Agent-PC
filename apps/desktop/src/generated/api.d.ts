@@ -137,6 +137,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/a2a/outbound-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List A2A Outbound Tasks */
+        get: operations["list_a2a_outbound_tasks_channels_a2a_outbound_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/a2a/outbound-tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get A2A Outbound Task */
+        get: operations["get_a2a_outbound_task_channels_a2a_outbound_tasks__task_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/a2a/peers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List A2A Outbound Peers */
+        get: operations["list_a2a_outbound_peers_channels_a2a_peers_get"];
+        put?: never;
+        /** Create A2A Outbound Peer */
+        post: operations["create_a2a_outbound_peer_channels_a2a_peers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/a2a/peers/{peer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete A2A Outbound Peer */
+        delete: operations["delete_a2a_outbound_peer_channels_a2a_peers__peer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/a2a/peers/{peer_id}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set A2A Outbound Peer Credential */
+        put: operations["set_a2a_outbound_peer_credential_channels_a2a_peers__peer_id__credential_put"];
+        post?: never;
+        /** Clear A2A Outbound Peer Credential */
+        delete: operations["clear_a2a_outbound_peer_credential_channels_a2a_peers__peer_id__credential_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/a2a/peers/{peer_id}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send A2A Outbound Task */
+        post: operations["send_a2a_outbound_task_channels_a2a_peers__peer_id__tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/email": {
         parameters: {
             query?: never;
@@ -2569,6 +2673,83 @@ export interface components {
             tls_cert_path?: string | null;
             /** Tls Key Path */
             tls_key_path?: string | null;
+        };
+        /** A2AOutboundPeerCreate */
+        A2AOutboundPeerCreate: {
+            /** Agent Card Url */
+            agent_card_url: string;
+            /**
+             * Bearer Token
+             * Format: password
+             */
+            bearer_token: string;
+            /** Name */
+            name: string;
+        };
+        /** A2AOutboundPeerCredential */
+        A2AOutboundPeerCredential: {
+            /**
+             * Bearer Token
+             * Format: password
+             */
+            bearer_token: string;
+        };
+        /** A2AOutboundPeerRecord */
+        A2AOutboundPeerRecord: {
+            /** Agent Card Url */
+            agent_card_url: string;
+            /** Configured */
+            configured: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** A2AOutboundTaskCreate */
+        A2AOutboundTaskCreate: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Text */
+            text: string;
+        };
+        /** A2AOutboundTaskRecord */
+        A2AOutboundTaskRecord: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Peer Id */
+            peer_id: string;
+            /** Remote Context Id */
+            remote_context_id: string | null;
+            /** Remote Task */
+            remote_task: {
+                [key: string]: unknown;
+            } | null;
+            /** Remote Task Id */
+            remote_task_id: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "sending" | "sent" | "unknown";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ArtifactRecord */
         ArtifactRecord: {
@@ -5726,6 +5907,249 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["A2AListenerStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_a2a_outbound_tasks_channels_a2a_outbound_tasks_get: {
+        parameters: {
+            query?: {
+                peer_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AOutboundTaskRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_a2a_outbound_task_channels_a2a_outbound_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AOutboundTaskRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_a2a_outbound_peers_channels_a2a_peers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AOutboundPeerRecord"][];
+                };
+            };
+        };
+    };
+    create_a2a_outbound_peer_channels_a2a_peers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2AOutboundPeerCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AOutboundPeerRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_a2a_outbound_peer_channels_a2a_peers__peer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_a2a_outbound_peer_credential_channels_a2a_peers__peer_id__credential_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2AOutboundPeerCredential"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AOutboundPeerRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_a2a_outbound_peer_credential_channels_a2a_peers__peer_id__credential_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_a2a_outbound_task_channels_a2a_peers__peer_id__tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2AOutboundTaskCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AOutboundTaskRecord"];
                 };
             };
             /** @description Validation Error */

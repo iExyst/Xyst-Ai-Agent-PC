@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from pydantic import SecretStr
 from xaa.api.app import create_app
+from xaa.channels.a2a_outbound import A2AOutboundClient
 from xaa.credentials import CredentialStore
 from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
 from xaa.storage.runs import RunStore
@@ -32,14 +33,17 @@ PEER_TOKEN = "a2a-sdk-peer-token-for-local-acceptance"
 
 
 class _Credentials:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {"a2a-inbound": PEER_TOKEN}
+
     def get(self, profile: str = "lm-studio") -> str | None:
-        return {"a2a-inbound": PEER_TOKEN}.get(profile)
+        return self.values.get(profile)
 
     def set(self, token: str, profile: str = "lm-studio") -> None:
-        return None
+        self.values[profile] = token
 
     def delete(self, profile: str = "lm-studio") -> None:
-        return None
+        self.values.pop(profile, None)
 
 
 class _DeterministicProvider(LMStudioProvider):
@@ -134,16 +138,39 @@ async def _run() -> dict[str, object]:
     TaskState = sdk_types.TaskState
     with tempfile.TemporaryDirectory(prefix="xaa-a2a-sdk-") as temporary:
         database = Path(temporary) / "runs.sqlite3"
+        peer_database = Path(temporary) / "peer-runs.sqlite3"
         certificate_path = Path(temporary) / "a2a-test-cert.pem"
         private_key_path = Path(temporary) / "a2a-test-key.pem"
         _write_test_certificate(certificate_path, private_key_path)
+        tls_context = ssl.create_default_context(cafile=str(certificate_path))
         store = RunStore(database)
+        credentials = _Credentials()
+        peer_store = RunStore(peer_database)
+        peer_credentials = _Credentials()
+        peer_listener_port = _free_port()
+        peer_app = create_app(
+            _DeterministicProvider(),
+            SecretStr("a2a-sdk-peer-owner-token-for-local-acceptance"),
+            store=peer_store,
+            credential_store=cast(CredentialStore, peer_credentials),
+        )
+        with peer_store.connection() as connection:
+            connection.execute(
+                "UPDATE provider_profiles SET selected_model='fixture/a2a-sdk' WHERE id='lm-studio'"
+            )
+            connection.execute(
+                "UPDATE a2a_listener_settings SET enabled=1,bind_address='127.0.0.1',"
+                "port=?,allow_network=0,tls_cert_path=?,tls_key_path=? WHERE id=1",
+                (peer_listener_port, str(certificate_path), str(private_key_path)),
+            )
         app = create_app(
             _DeterministicProvider(),
             SecretStr(OWNER_TOKEN),
             store=store,
-            credential_store=cast(CredentialStore, _Credentials()),
+            credential_store=cast(CredentialStore, credentials),
+            a2a_outbound_client=A2AOutboundClient(verify=tls_context),
         )
+        owner_listener_port = _free_port()
         with store.connection() as connection:
             connection.execute(
                 "UPDATE provider_profiles SET selected_model='fixture/a2a-sdk' WHERE id='lm-studio'"
@@ -151,9 +178,19 @@ async def _run() -> dict[str, object]:
             connection.execute(
                 "UPDATE a2a_listener_settings SET enabled=1,bind_address='127.0.0.1',"
                 "port=?,allow_network=0,tls_cert_path=?,tls_key_path=? WHERE id=1",
-                (_free_port(), str(certificate_path), str(private_key_path)),
+                (owner_listener_port, str(certificate_path), str(private_key_path)),
             )
         owner_port = _free_port()
+        peer_owner_port = _free_port()
+        peer_server = uvicorn.Server(
+            uvicorn.Config(
+                peer_app,
+                host="127.0.0.1",
+                port=peer_owner_port,
+                log_level="error",
+                access_log=False,
+            )
+        )
         server = uvicorn.Server(
             uvicorn.Config(
                 app,
@@ -163,8 +200,12 @@ async def _run() -> dict[str, object]:
                 access_log=False,
             )
         )
+        peer_server_task = asyncio.create_task(
+            peer_server.serve(), name="a2a-sdk-acceptance-peer-api"
+        )
         server_task = asyncio.create_task(server.serve(), name="a2a-sdk-acceptance-api")
         try:
+            await _wait_started(peer_server, peer_server_task)
             await _wait_started(server, server_task)
             listener_row = None
             with store.connection() as connection:
@@ -174,7 +215,13 @@ async def _run() -> dict[str, object]:
             if listener_row is None:
                 raise RuntimeError("A2A listener settings were not available.")
             peer_url = f"https://127.0.0.1:{int(listener_row['port'])}"
-            tls_context = ssl.create_default_context(cafile=str(certificate_path))
+            with peer_store.connection() as connection:
+                peer_listener_row = connection.execute(
+                    "SELECT port FROM a2a_listener_settings WHERE id=1"
+                ).fetchone()
+            if peer_listener_row is None:
+                raise RuntimeError("The external A2A peer listener settings were not available.")
+            remote_peer_url = f"https://127.0.0.1:{int(peer_listener_row['port'])}"
             async with httpx.AsyncClient(
                 headers={"Authorization": f"Bearer {PEER_TOKEN}"},
                 timeout=15,
@@ -231,6 +278,72 @@ async def _run() -> dict[str, object]:
                 if len(task.history) != 2:
                     raise AssertionError("Task polling did not return user/agent history.")
                 await client.close()
+            async with httpx.AsyncClient(
+                base_url=f"http://127.0.0.1:{owner_port}",
+                headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+                timeout=15,
+            ) as owner_client:
+                peer = await owner_client.post(
+                    "/channels/a2a/peers",
+                    json={
+                        "name": "Local SDK acceptance peer",
+                        "agent_card_url": f"{remote_peer_url}/.well-known/agent-card.json",
+                        "bearer_token": PEER_TOKEN,
+                    },
+                )
+                if peer.status_code != 201:
+                    raise AssertionError("The owner API did not save the outbound A2A peer.")
+                outbound_body = {
+                    "text": "Return the deterministic acceptance response.",
+                    "idempotency_key": "sdk-outbound-acceptance-1",
+                }
+                outbound = await owner_client.post(
+                    f"/channels/a2a/peers/{peer.json()['id']}/tasks", json=outbound_body
+                )
+                if outbound.status_code != 202 or outbound.json()["state"] != "sent":
+                    raise AssertionError("The configured A2A peer task was not accepted.")
+                duplicate = await owner_client.post(
+                    f"/channels/a2a/peers/{peer.json()['id']}/tasks", json=outbound_body
+                )
+                if duplicate.json()["id"] != outbound.json()["id"]:
+                    raise AssertionError("Outbound A2A idempotent replay created a second task.")
+                deadline = asyncio.get_running_loop().time() + 30
+                polled = None
+                while asyncio.get_running_loop().time() < deadline:
+                    polled = await owner_client.get(
+                        f"/channels/a2a/outbound-tasks/{outbound.json()['id']}"
+                    )
+                    if polled.status_code != 200:
+                        raise AssertionError("The owner API could not poll its outbound A2A task.")
+                    poll_body = cast(dict[str, Any], polled.json())
+                    remote = cast(dict[str, Any], poll_body.get("remote_task") or {})
+                    remote_task_status = cast(dict[str, Any], remote.get("status") or {})
+                    remote_status = remote_task_status.get("state")
+                    if remote_status not in {"TASK_STATE_SUBMITTED", "TASK_STATE_WORKING"}:
+                        break
+                    await asyncio.sleep(0.05)
+                if polled is None:
+                    raise AssertionError("The outbound A2A task was not polled.")
+                poll_body = cast(dict[str, Any], polled.json())
+                remote_task = cast(dict[str, Any], poll_body.get("remote_task") or {})
+                remote_task_status = cast(dict[str, Any], remote_task.get("status") or {})
+                remote_status = remote_task_status.get("state")
+                if remote_status != "TASK_STATE_INPUT_REQUIRED":
+                    remote_run = peer_store.get_run(str(outbound.json()["remote_task_id"]))
+                    diagnostic = (
+                        f"run_state={remote_run['state']},model={remote_run['model']}"
+                        if remote_run is not None
+                        else "remote run was not found"
+                    )
+                    raise AssertionError(
+                        f"Unexpected outbound A2A peer state: {remote_status!r}; {diagnostic}; "
+                        f"poll_error={poll_body.get('error')!r}."
+                    )
+                remote_history = cast(list[Any], remote_task.get("history") or [])
+                if len(remote_history) != 2:
+                    raise AssertionError(
+                        "Outbound A2A polling did not return durable task history."
+                    )
                 return {
                     "sdk": "a2a-sdk==1.3.1",
                     "protocol_version": card.supported_interfaces[0].protocol_version,
@@ -241,11 +354,18 @@ async def _run() -> dict[str, object]:
                     "artifact_id": streamed_artifact_id,
                     "history_count": len(task.history),
                     "owner_api_exposed_on_peer_listener": False,
+                    "outbound_peer_task_id": outbound.json()["remote_task_id"],
+                    "outbound_task_poll_state": remote_status,
+                    "outbound_task_history_count": len(remote_history),
+                    "outbound_idempotent_replay": duplicate.json()["id"] == outbound.json()["id"],
+                    "outbound_separate_peer_instance": True,
                     "live_model_inference": False,
                 }
         finally:
             server.should_exit = True
+            peer_server.should_exit = True
             await server_task
+            await peer_server_task
 
 
 def main() -> None:

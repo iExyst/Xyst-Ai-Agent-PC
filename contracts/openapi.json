@@ -143,6 +143,206 @@
         "title": "A2AListenerStatus",
         "type": "object"
       },
+      "A2AOutboundPeerCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_card_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Agent Card Url",
+            "type": "string"
+          },
+          "bearer_token": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 32,
+            "title": "Bearer Token",
+            "type": "string",
+            "writeOnly": true
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "agent_card_url",
+          "bearer_token"
+        ],
+        "title": "A2AOutboundPeerCreate",
+        "type": "object"
+      },
+      "A2AOutboundPeerCredential": {
+        "additionalProperties": false,
+        "properties": {
+          "bearer_token": {
+            "format": "password",
+            "maxLength": 512,
+            "minLength": 32,
+            "title": "Bearer Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "bearer_token"
+        ],
+        "title": "A2AOutboundPeerCredential",
+        "type": "object"
+      },
+      "A2AOutboundPeerRecord": {
+        "properties": {
+          "agent_card_url": {
+            "title": "Agent Card Url",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "agent_card_url",
+          "configured",
+          "created_at"
+        ],
+        "title": "A2AOutboundPeerRecord",
+        "type": "object"
+      },
+      "A2AOutboundTaskCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "idempotency_key"
+        ],
+        "title": "A2AOutboundTaskCreate",
+        "type": "object"
+      },
+      "A2AOutboundTaskRecord": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "peer_id": {
+            "title": "Peer Id",
+            "type": "string"
+          },
+          "remote_context_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Context Id"
+          },
+          "remote_task": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Task"
+          },
+          "remote_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remote Task Id"
+          },
+          "state": {
+            "enum": [
+              "sending",
+              "sent",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "peer_id",
+          "idempotency_key",
+          "state",
+          "remote_task_id",
+          "remote_context_id",
+          "remote_task",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "A2AOutboundTaskRecord",
+        "type": "object"
+      },
       "ArtifactRecord": {
         "properties": {
           "created_at": {
@@ -9017,6 +9217,355 @@
           }
         ],
         "summary": "Update A2A Listener"
+      }
+    },
+    "/channels/a2a/outbound-tasks": {
+      "get": {
+        "operationId": "list_a2a_outbound_tasks_channels_a2a_outbound_tasks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "peer_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "minLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Peer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/A2AOutboundTaskRecord"
+                  },
+                  "title": "Response List A2A Outbound Tasks Channels A2A Outbound Tasks Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List A2A Outbound Tasks"
+      }
+    },
+    "/channels/a2a/outbound-tasks/{task_id}": {
+      "get": {
+        "operationId": "get_a2a_outbound_task_channels_a2a_outbound_tasks__task_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2AOutboundTaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get A2A Outbound Task"
+      }
+    },
+    "/channels/a2a/peers": {
+      "get": {
+        "operationId": "list_a2a_outbound_peers_channels_a2a_peers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/A2AOutboundPeerRecord"
+                  },
+                  "title": "Response List A2A Outbound Peers Channels A2A Peers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List A2A Outbound Peers"
+      },
+      "post": {
+        "operationId": "create_a2a_outbound_peer_channels_a2a_peers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A2AOutboundPeerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2AOutboundPeerRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create A2A Outbound Peer"
+      }
+    },
+    "/channels/a2a/peers/{peer_id}": {
+      "delete": {
+        "operationId": "delete_a2a_outbound_peer_channels_a2a_peers__peer_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "peer_id",
+            "required": true,
+            "schema": {
+              "title": "Peer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete A2A Outbound Peer"
+      }
+    },
+    "/channels/a2a/peers/{peer_id}/credential": {
+      "delete": {
+        "operationId": "clear_a2a_outbound_peer_credential_channels_a2a_peers__peer_id__credential_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "peer_id",
+            "required": true,
+            "schema": {
+              "title": "Peer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear A2A Outbound Peer Credential"
+      },
+      "put": {
+        "operationId": "set_a2a_outbound_peer_credential_channels_a2a_peers__peer_id__credential_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "peer_id",
+            "required": true,
+            "schema": {
+              "title": "Peer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A2AOutboundPeerCredential"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2AOutboundPeerRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set A2A Outbound Peer Credential"
+      }
+    },
+    "/channels/a2a/peers/{peer_id}/tasks": {
+      "post": {
+        "operationId": "send_a2a_outbound_task_channels_a2a_peers__peer_id__tasks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "peer_id",
+            "required": true,
+            "schema": {
+              "title": "Peer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/A2AOutboundTaskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2AOutboundTaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Send A2A Outbound Task"
       }
     },
     "/channels/email": {

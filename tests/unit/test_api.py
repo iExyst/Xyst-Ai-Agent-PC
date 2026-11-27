@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -2325,6 +2326,251 @@ def test_a2a_listener_is_opt_in_persistent_and_filters_the_owner_api(workspace_t
                 ).fetchone()["enabled"]
                 == 0
             )
+
+
+def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tmp_path):
+    from xaa.channels.a2a_outbound import A2AOutboundClient
+
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    secret = "remote-peer-token-" + ("s" * 48)
+    active_secret = [secret]
+    sends: list[dict[str, Any]] = []
+
+    def peer(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == f"Bearer {active_secret[0]}"
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "supportedInterfaces": [
+                        {
+                            "url": "https://peer.example.test/a2a",
+                            "protocolBinding": "JSONRPC",
+                            "protocolVersion": "1.0",
+                        }
+                    ]
+                },
+            )
+        call = json.loads(request.content)
+        if call["method"] == "SendMessage":
+            sends.append(call)
+            message = call["params"]["message"]
+            assert message["parts"][0]["mediaType"] == "text/plain"
+            task = {
+                "id": "remote-task-1",
+                "contextId": "remote-context-1",
+                "status": {"state": "TASK_STATE_WORKING"},
+                "history": [message],
+            }
+        else:
+            assert call["method"] == "GetTask"
+            assert call["params"]["id"] == "remote-task-1"
+            task = {
+                "id": "remote-task-1",
+                "contextId": "remote-context-1",
+                "status": {"state": "TASK_STATE_COMPLETED"},
+                "history": [
+                    {"role": "ROLE_USER", "parts": [{"text": "Review this fixture."}]},
+                    {"role": "ROLE_AGENT", "parts": [{"text": "Reviewed."}]},
+                ],
+            }
+        result = {"task": task} if call["method"] == "SendMessage" else task
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": call["id"], "result": result})
+
+    credentials = Credentials()
+    store = RunStore(workspace_tmp_path / "a2a-outbound.sqlite3")
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+        a2a_outbound_client=A2AOutboundClient(transport=httpx.MockTransport(peer)),
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        invalid = client.post(
+            "/channels/a2a/peers",
+            headers=headers,
+            json={
+                "name": "Local",
+                "agent_card_url": "http://127.0.0.1/card",
+                "bearer_token": secret,
+            },
+        )
+        assert invalid.status_code == 422
+        created = client.post(
+            "/channels/a2a/peers",
+            headers=headers,
+            json={
+                "name": "Fixture peer",
+                "agent_card_url": "https://peer.example.test/.well-known/agent-card.json",
+                "bearer_token": secret,
+            },
+        )
+        assert created.status_code == 201
+        assert secret not in created.text
+        peer_id = created.json()["id"]
+        profile = f"a2a-outbound:{peer_id}"
+        assert credentials.values[profile] == secret
+        assert client.get("/channels/a2a/peers", headers=headers).json()[0]["configured"]
+        replacement = "rotated-peer-token-" + ("r" * 40)
+        rotated = client.put(
+            f"/channels/a2a/peers/{peer_id}/credential",
+            headers=headers,
+            json={"bearer_token": replacement},
+        )
+        assert rotated.status_code == 200
+        assert replacement not in rotated.text
+        assert credentials.values[profile] == replacement
+        active_secret[0] = replacement
+        assert (
+            client.delete(f"/channels/a2a/peers/{peer_id}/credential", headers=headers).status_code
+            == 204
+        )
+        assert client.get("/channels/a2a/peers", headers=headers).json()[0]["configured"] is False
+        assert credentials.get(profile) is None
+        assert (
+            client.put(
+                f"/channels/a2a/peers/{peer_id}/credential",
+                headers=headers,
+                json={"bearer_token": secret},
+            ).status_code
+            == 200
+        )
+        active_secret[0] = secret
+
+        body = {"text": "Review this fixture.", "idempotency_key": "review-001"}
+        first = client.post(f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=body)
+        assert first.status_code == 202
+        assert first.json()["state"] == "sent"
+        assert first.json()["remote_task_id"] == "remote-task-1"
+        repeated = client.post(f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=body)
+        assert repeated.json()["id"] == first.json()["id"]
+        assert len(sends) == 1
+        conflict = client.post(
+            f"/channels/a2a/peers/{peer_id}/tasks",
+            headers=headers,
+            json={"text": "Different text.", "idempotency_key": "review-001"},
+        )
+        assert conflict.status_code == 409
+        polled = client.get(f"/channels/a2a/outbound-tasks/{first.json()['id']}", headers=headers)
+        assert polled.status_code == 200
+        assert polled.json()["remote_task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+        assert len(sends) == 1
+        assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 1
+        assert client.delete(f"/channels/a2a/peers/{peer_id}", headers=headers).status_code == 409
+
+        run = store.create_run(
+            objective=f"Keep this {secret} out of the exported trajectory.",
+            acceptance_criteria=[],
+            workspace=None,
+            mode="observe",
+            model=None,
+        )
+        exported = client.get(f"/runs/{run['id']}/export", headers=headers)
+        assert exported.status_code == 200
+        assert secret not in exported.text
+
+
+def test_a2a_outbound_ambiguous_send_is_not_replayed_after_restart(workspace_tmp_path):
+    from xaa.channels.a2a_outbound import A2AOutboundClient
+
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    secret = "remote-peer-token-" + ("u" * 48)
+    post_count = 0
+
+    def peer(request: httpx.Request) -> httpx.Response:
+        nonlocal post_count
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "supportedInterfaces": [
+                        {
+                            "url": "https://peer.example.test/a2a",
+                            "protocolBinding": "JSONRPC",
+                            "protocolVersion": "1.0",
+                        }
+                    ]
+                },
+            )
+        post_count += 1
+        raise httpx.ReadTimeout("fixture accepted request then lost response", request=request)
+
+    credentials = Credentials()
+    store = RunStore(workspace_tmp_path / "a2a-unknown-send.sqlite3")
+    http_client = A2AOutboundClient(transport=httpx.MockTransport(peer))
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+        a2a_outbound_client=http_client,
+    )
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    body = {"text": "Do this once.", "idempotency_key": "single-delivery"}
+    with TestClient(app) as client:
+        created = client.post(
+            "/channels/a2a/peers",
+            headers=headers,
+            json={
+                "name": "Fixture peer",
+                "agent_card_url": "https://peer.example.test/.well-known/agent-card.json",
+                "bearer_token": secret,
+            },
+        )
+        peer_id = created.json()["id"]
+        path = f"/channels/a2a/peers/{peer_id}/tasks"
+        first = client.post(path, headers=headers, json=body)
+        assert first.status_code == 202
+        assert first.json()["state"] == "unknown"
+        assert first.json()["remote_task_id"] is None
+        replay = client.post(path, headers=headers, json=body)
+        assert replay.json()["id"] == first.json()["id"]
+        assert replay.json()["state"] == "unknown"
+        assert post_count == 1
+
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE a2a_outbound_tasks SET state='sending' WHERE id=?", (first.json()["id"],)
+        )
+    restarted = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+        a2a_outbound_client=http_client,
+    )
+    with TestClient(restarted) as client:
+        recovered = client.post(path, headers=headers, json=body)
+        assert recovered.status_code == 202
+        assert recovered.json()["state"] == "unknown"
+        assert "stopped" in recovered.json()["error"]
+        assert post_count == 1
 
 
 @pytest.mark.parametrize(

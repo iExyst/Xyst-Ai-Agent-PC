@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import {open} from '@tauri-apps/plugin-dialog';
-import type {A2AListenerStatus,ChannelIdentityBinding,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
+import type {A2AListenerStatus,A2AOutboundPeer,A2AOutboundTask,ChannelIdentityBinding,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 import {InlineConfirmation} from './InlineConfirmation.tsx';
 
 export function ChannelsPanel({client}:{client:EngineClient}) {
@@ -21,6 +21,16 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [a2aPort,setA2aPort]=useState('8766');
   const [a2aTlsCertPath,setA2aTlsCertPath]=useState('');
   const [a2aTlsKeyPath,setA2aTlsKeyPath]=useState('');
+  const [a2aOutboundPeers,setA2aOutboundPeers]=useState<A2AOutboundPeer[]>([]);
+  const [a2aPeerName,setA2aPeerName]=useState('');
+  const [a2aPeerCardUrl,setA2aPeerCardUrl]=useState('');
+  const [a2aPeerToken,setA2aPeerToken]=useState('');
+  const [a2aPeerCredentialEdits,setA2aPeerCredentialEdits]=useState<Record<string,string>>({});
+  const [a2aSelectedPeerId,setA2aSelectedPeerId]=useState('');
+  const [a2aOutboundText,setA2aOutboundText]=useState('');
+  const [a2aOutboundKey,setA2aOutboundKey]=useState(()=>crypto.randomUUID().replaceAll('-',''));
+  const [a2aOutboundTasks,setA2aOutboundTasks]=useState<A2AOutboundTask[]>([]);
+  const [a2aSelectedTask,setA2aSelectedTask]=useState<A2AOutboundTask>();
   const [identityBindings,setIdentityBindings]=useState<ChannelIdentityBinding[]>([]);
   const [identitySource,setIdentitySource]=useState('');
   const [identityTarget,setIdentityTarget]=useState('');
@@ -38,7 +48,12 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [authservId,setAuthservId]=useState('');
 
   async function refresh() {
-    try {setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setA2a(await client.a2aStatus());const listener=await client.a2aListenerStatus();setA2aListener(listener);setA2aNetwork(listener.allow_network);setA2aPort(String(listener.port));setA2aTlsCertPath(listener.tls_cert_path??'');setA2aTlsKeyPath(listener.tls_key_path??'');setIdentityBindings(await client.channelIdentityBindings());setError('');}
+    try {
+      setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setA2a(await client.a2aStatus());
+      const listener=await client.a2aListenerStatus();setA2aListener(listener);setA2aNetwork(listener.allow_network);setA2aPort(String(listener.port));setA2aTlsCertPath(listener.tls_cert_path??'');setA2aTlsKeyPath(listener.tls_key_path??'');
+      const peers=await client.a2aOutboundPeers();setA2aOutboundPeers(peers);setA2aSelectedPeerId(current=>peers.some(peer=>peer.id===current)?current:(peers[0]?.id??''));setA2aOutboundTasks(await client.a2aOutboundTasks());
+      setIdentityBindings(await client.channelIdentityBindings());setError('');
+    }
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not read Telegram status.');}
   }
   useEffect(()=>{void refresh();void client.emailStatus().then(setEmail).catch(failure=>setError(String(failure)));},[client]);
@@ -183,6 +198,43 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     } catch(failure) {setError(failure instanceof Error?failure.message:'Could not select the A2A TLS private key.');}
   }
 
+  async function createA2AOutboundPeer() {
+    setBusy(true);setError('');
+    try {const peer=await client.createA2AOutboundPeer({name:a2aPeerName,agent_card_url:a2aPeerCardUrl,bearer_token:a2aPeerToken});setA2aPeerName('');setA2aPeerCardUrl('');setA2aPeerToken('');setA2aSelectedPeerId(peer.id);await refresh();}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not save the A2A peer.');}
+    finally {setBusy(false);}
+  }
+
+  async function rotateA2AOutboundCredential(peerId:string) {
+    const value=a2aPeerCredentialEdits[peerId]??'';if(!value.trim())return;
+    setBusy(true);setError('');
+    try {const peer=await client.setA2AOutboundPeerCredential(peerId,value);setA2aPeerCredentialEdits(current=>({...current,[peerId]:''}));setA2aOutboundPeers(current=>current.map(item=>item.id===peer.id?peer:item));}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not update the A2A peer credential.');}
+    finally {setBusy(false);}
+  }
+
+  async function clearA2AOutboundCredential(peerId:string) {
+    setBusy(true);setError('');
+    try {await client.clearA2AOutboundPeerCredential(peerId);setA2aOutboundPeers(current=>current.map(peer=>peer.id===peerId?{...peer,configured:false}:peer));}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not clear the A2A peer credential.');}
+    finally {setBusy(false);}
+  }
+
+  async function sendA2AOutboundTask() {
+    if(!a2aSelectedPeerId||!a2aOutboundText.trim())return;
+    setBusy(true);setError('');
+    try {const task=await client.sendA2AOutboundTask(a2aSelectedPeerId,a2aOutboundText,a2aOutboundKey);setA2aSelectedTask(task);setA2aOutboundTasks(await client.a2aOutboundTasks());}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not submit the A2A task.');}
+    finally {setBusy(false);}
+  }
+
+  async function refreshA2AOutboundTask(taskId:string) {
+    setBusy(true);setError('');
+    try {const task=await client.refreshA2AOutboundTask(taskId);setA2aSelectedTask(task);setA2aOutboundTasks(await client.a2aOutboundTasks());}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not refresh the A2A task.');}
+    finally {setBusy(false);}
+  }
+
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
     <h3>Cross-channel identity links</h3>
@@ -245,6 +297,34 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
         {a2aListener?.enabled&&<button type="button" onClick={()=>void saveA2AListener(false)} disabled={busy}>Disable A2A listener</button>}
       </div>
       {a2aListener&&<p role="status">A2A listener {a2aListener.listening?'is listening':'is stopped'} · {a2aListener.bind_address}:{a2aListener.port}</p>}
+    </>}
+    <h4>Authorized outbound peers</h4>
+    <p>Only a peer you add here can receive an outbound task. Sends happen only when you press the send button. HTTPS certificates are verified; an unclear delivery is marked for review and is never resent automatically.</p>
+    <label htmlFor="a2a-peer-name">Peer name</label>
+    <input id="a2a-peer-name" maxLength={80} value={a2aPeerName} onChange={event=>setA2aPeerName(event.target.value)} disabled={busy}/>
+    <label htmlFor="a2a-peer-card-url">HTTPS Agent Card URL</label>
+    <input id="a2a-peer-card-url" type="url" maxLength={2048} placeholder="https://agent.example/.well-known/agent-card.json" value={a2aPeerCardUrl} onChange={event=>setA2aPeerCardUrl(event.target.value)} disabled={busy}/>
+    <label htmlFor="a2a-peer-token">Peer bearer token</label>
+    <input id="a2a-peer-token" type="password" autoComplete="new-password" maxLength={512} value={a2aPeerToken} onChange={event=>setA2aPeerToken(event.target.value)} disabled={busy}/>
+    <button type="button" onClick={()=>void createA2AOutboundPeer()} disabled={busy||!a2aPeerName.trim()||!a2aPeerCardUrl.trim()||a2aPeerToken.length<32}>Add authorized peer</button>
+    {a2aOutboundPeers.length>0&&<>
+      <label htmlFor="a2a-outbound-peer">Send task to</label>
+      <select id="a2a-outbound-peer" value={a2aSelectedPeerId} onChange={event=>setA2aSelectedPeerId(event.target.value)} disabled={busy}>
+        <option value="">Choose an authorized peer</option>
+        {a2aOutboundPeers.map(peer=><option key={peer.id} value={peer.id}>{peer.name}{peer.configured?'':' · credential missing'}</option>)}
+      </select>
+      {a2aOutboundPeers.map(peer=><details key={peer.id}>
+        <summary>{peer.name} · {peer.configured?'credential saved':'credential missing'}</summary>
+        <p>{peer.agent_card_url}</p>
+        <label htmlFor={`a2a-peer-token-${peer.id}`}>Replace bearer token</label>
+        <input id={`a2a-peer-token-${peer.id}`} type="password" autoComplete="new-password" maxLength={512} value={a2aPeerCredentialEdits[peer.id]??''} onChange={event=>setA2aPeerCredentialEdits(current=>({...current,[peer.id]:event.target.value}))} disabled={busy}/>
+        <div className="controls"><button type="button" onClick={()=>void rotateA2AOutboundCredential(peer.id)} disabled={busy||(a2aPeerCredentialEdits[peer.id]??'').length<32}>Save replacement token</button>{peer.configured&&<button type="button" onClick={()=>void clearA2AOutboundCredential(peer.id)} disabled={busy}>Clear saved token</button>}</div>
+      </details>)}
+      <label htmlFor="a2a-outbound-text">Task text</label>
+      <textarea id="a2a-outbound-text" maxLength={10000} value={a2aOutboundText} onChange={event=>{setA2aOutboundText(event.target.value);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));}} disabled={busy}/>
+      <div className="controls"><button type="button" onClick={()=>void sendA2AOutboundTask()} disabled={busy||!a2aSelectedPeerId||!a2aOutboundText.trim()||!a2aOutboundPeers.find(peer=>peer.id===a2aSelectedPeerId)?.configured}>Send task to selected peer</button><button type="button" onClick={()=>{setA2aOutboundText('');setA2aSelectedTask(undefined);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));}} disabled={busy}>New task</button></div>
+      {a2aOutboundTasks.length>0&&<section aria-label="Saved outbound A2A tasks"><h5>Saved outbound tasks</h5><ul>{a2aOutboundTasks.map(task=><li key={task.id}><button type="button" onClick={()=>setA2aSelectedTask(task)} disabled={busy}>{a2aOutboundPeers.find(peer=>peer.id===task.peer_id)?.name??'Peer'} · {task.state} · {task.remote_task_id??'remote task not confirmed'}</button><button type="button" onClick={()=>void refreshA2AOutboundTask(task.id)} disabled={busy||!task.remote_task_id}>Refresh remote task</button></li>)}</ul></section>}
+      {a2aSelectedTask&&<section aria-label="Selected outbound A2A task"><h5>Outbound task result</h5><p>Delivery state: {a2aSelectedTask.state}{a2aSelectedTask.remote_task?.status?` · Remote state: ${String((a2aSelectedTask.remote_task.status as {state?:unknown}).state??'unknown')}`:''}</p>{a2aSelectedTask.error&&<p role="status">{a2aSelectedTask.error}</p>}<pre>{JSON.stringify(a2aSelectedTask.remote_task,null,2)}</pre></section>}
     </>}
     <h3>Telegram (private chats)</h3>
     <p>Connect a bot token from BotFather. X.A.A. stores it in Windows Credential Manager. A paired private Telegram account can submit objectives as Observe-mode runs and receive their final answers.</p>

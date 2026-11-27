@@ -31,6 +31,8 @@ export type WebhookCredential = components['schemas']['WebhookCredentialRecord']
 export type A2ACredential = components['schemas']['A2ACredentialRecord'];
 export type A2AListenerSettings = components['schemas']['A2AListenerSettings'];
 export type A2AListenerStatus = components['schemas']['A2AListenerStatus'];
+export type A2AOutboundPeer = components['schemas']['A2AOutboundPeerRecord'];
+export type A2AOutboundTask = components['schemas']['A2AOutboundTaskRecord'];
 export type ChannelIdentityBinding = components['schemas']['ChannelIdentityBinding'];
 export type CredentialStatus = components['schemas']['LMStudioCredentialStatus'];
 export type MCPTool = components['schemas']['MCPToolResponse'];
@@ -400,6 +402,37 @@ export class EngineClient {
 
   updateA2AListener(input:A2AListenerSettings): Promise<A2AListenerStatus> {
     return this.#request('/channels/a2a/listener',{method:'PUT',body:JSON.stringify(input)});
+  }
+
+  a2aOutboundPeers(): Promise<A2AOutboundPeer[]> { return this.#request('/channels/a2a/peers'); }
+
+  createA2AOutboundPeer(input:components['schemas']['A2AOutboundPeerCreate']): Promise<A2AOutboundPeer> {
+    return this.#request('/channels/a2a/peers',{method:'POST',body:JSON.stringify(input)});
+  }
+
+  setA2AOutboundPeerCredential(peerId:string,bearerToken:string): Promise<A2AOutboundPeer> {
+    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}/credential`,{method:'PUT',body:JSON.stringify({bearer_token:bearerToken})});
+  }
+
+  clearA2AOutboundPeerCredential(peerId:string): Promise<void> {
+    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}/credential`,{method:'DELETE'});
+  }
+
+  deleteA2AOutboundPeer(peerId:string): Promise<void> {
+    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}`,{method:'DELETE'});
+  }
+
+  sendA2AOutboundTask(peerId:string,text:string,idempotencyKey:string): Promise<A2AOutboundTask> {
+    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}/tasks`,{method:'POST',body:JSON.stringify({text,idempotency_key:idempotencyKey})});
+  }
+
+  a2aOutboundTasks(peerId?:string): Promise<A2AOutboundTask[]> {
+    const query=peerId?`?peer_id=${encodeURIComponent(peerId)}`:'';
+    return this.#request(`/channels/a2a/outbound-tasks${query}`);
+  }
+
+  refreshA2AOutboundTask(taskId:string): Promise<A2AOutboundTask> {
+    return this.#request(`/channels/a2a/outbound-tasks/${encodeURIComponent(taskId)}`);
   }
 
   createWebhookCredential(): Promise<WebhookCredential> {

@@ -23,7 +23,7 @@ from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 45
+DATABASE_SCHEMA_VERSION = 46
 
 
 def _is_normalized_relative_workspace_path(path: str) -> bool:
@@ -732,6 +732,29 @@ class RunStore:
                     tls_key_path TEXT
                 );
                 INSERT OR IGNORE INTO a2a_listener_settings(id) VALUES(1);
+                CREATE TABLE IF NOT EXISTS a2a_outbound_peers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 80),
+                    agent_card_url TEXT NOT NULL CHECK(length(agent_card_url) BETWEEN 1 AND 2048),
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS a2a_outbound_tasks (
+                    id TEXT PRIMARY KEY,
+                    peer_id TEXT NOT NULL REFERENCES a2a_outbound_peers(id) ON DELETE RESTRICT,
+                    idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 1 AND 64),
+                    payload_digest TEXT NOT NULL CHECK(length(payload_digest)=64),
+                    message_id TEXT NOT NULL UNIQUE,
+                    state TEXT NOT NULL CHECK(state IN ('sending','sent','unknown')),
+                    remote_task_id TEXT,
+                    remote_context_id TEXT,
+                    remote_task_json TEXT,
+                    last_error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(peer_id,idempotency_key)
+                );
+                CREATE INDEX IF NOT EXISTS a2a_outbound_tasks_peer_created
+                    ON a2a_outbound_tasks(peer_id,created_at DESC);
                 CREATE TABLE IF NOT EXISTS telegram_pairing_codes (
                     code_hash TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
