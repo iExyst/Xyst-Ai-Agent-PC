@@ -42,7 +42,11 @@ XAA_CHANNEL_SLICES: dict[str, XaaChannelSlice] = {
     },
     "a2a": {
         "module": "engine/xaa/channels/a2a.py, filtered network listener, and authenticated API ingress",
-        "modules": ["engine/xaa/channels/a2a.py", "engine/xaa/channels/a2a_listener.py", "engine/xaa/api/app.py"],
+        "modules": [
+            "engine/xaa/channels/a2a.py",
+            "engine/xaa/channels/a2a_listener.py",
+            "engine/xaa/api/app.py",
+        ],
         "status": "implemented_partial",
         "scope": "Authenticated bounded text JSON-RPC ingress with canonical v1 method names and legacy aliases, task lookup/cancel and SSE status on Observe-mode runs; optional opt-in filtered network listener and desktop setup UI expose only the Agent Card and A2A JSON-RPC routes, while the owner API stays on loopback. One local peer credential; no outbound adapter, broad protocol/media support, or interop/full-parity claim.",
     },
