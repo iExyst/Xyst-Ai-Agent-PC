@@ -9,7 +9,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from xaa.runtime.states import RunState
@@ -124,10 +124,13 @@ def launch_dst_tick(database: Path, instant: datetime) -> list[str]:
     )
     if result.returncode != 0:
         raise RuntimeError(f"DST scheduler process failed ({result.returncode}): {result.stderr}")
-    dispatched = json.loads(result.stdout)
-    if not isinstance(dispatched, list) or any(not isinstance(item, str) for item in dispatched):
-        raise RuntimeError("DST scheduler process returned an invalid dispatch list.")
-    return dispatched
+    decoded: object = json.loads(result.stdout)
+    if not isinstance(decoded, list):
+        raise TypeError("DST scheduler process returned an invalid dispatch list.")
+    items = cast(list[object], decoded)
+    if any(not isinstance(item, str) for item in items):
+        raise TypeError("DST scheduler process returned an invalid dispatch list.")
+    return [item for item in items if isinstance(item, str)]
 
 
 def main() -> None:
