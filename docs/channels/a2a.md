@@ -1,6 +1,6 @@
 # A2A peer access
 
-X.A.A. accepts bounded text tasks through an authenticated A2A JSON-RPC listener. Tasks use the same persistent coordinator as the desktop app, run in Observe mode, and receive no workspace or tool grants.
+X.A.A. accepts bounded text tasks with an optional inline image through an authenticated A2A JSON-RPC listener. Tasks use the same persistent coordinator as the desktop app, run in Observe mode, and receive no workspace or tool grants.
 
 ## Enable a listener
 
@@ -14,9 +14,9 @@ The network listener exposes only `GET /.well-known/agent-card.json` and `POST /
 
 ## Supported protocol slice
 
-The listener accepts canonical A2A v1 JSON-RPC names `SendMessage`, `SendStreamingMessage`, `GetTask`, and `CancelTask`, plus the older slash-style aliases. Input is text-only, limited to 64 KiB per request and 10,000 characters per message. Message IDs are deduplicated across retries, and task state remains queryable after the engine restarts. `GetTask` returns the bounded user/agent text history and a stable text artifact when a response is available. A candidate awaiting X.A.A. owner review reports `TASK_STATE_INPUT_REQUIRED`; the stream sends the candidate artifact and closes so the peer can poll for the owner's decision. `historyLength` is validated and capped at 100 entries. The source workflow also exercises discovery, streaming and task polling through the official `a2a-sdk` Python client against a local deterministic provider; it does not contact an external agent or use a live model.
+The listener accepts canonical A2A v1 JSON-RPC names `SendMessage`, `SendStreamingMessage`, `GetTask`, and `CancelTask`, plus the older slash-style aliases. Requests are limited to 4 MiB plus envelope allowance and text prompts to 10,000 characters. A request may contain one inline `raw` PNG, JPEG, GIF, or WebP image part; the selected model must advertise vision. Message IDs are deduplicated across retries, and task state remains queryable after the engine restarts. `GetTask` returns bounded user/agent text history and a stable text artifact when a response is available; it does not echo image bytes into task history. A candidate awaiting X.A.A. owner review reports `TASK_STATE_INPUT_REQUIRED`; the stream sends the candidate artifact and closes so the peer can poll for the owner's decision. `historyLength` is validated and capped at 100 entries. The official `a2a-sdk` Python client acceptance exercises discovery, streaming, polling, and inline image transfer against a local deterministic provider; it does not contact an externally hosted agent or use a live model.
 
-Push notifications, attachments, broader A2A methods, and live interoperability with an external agent are not implemented or verified yet. This is a partial channel implementation, not a claim of full A2A or Hermes parity.
+Inbound text tasks can include one inline PNG, JPEG, GIF, or WebP image as an A2A v1 `raw` part with `mediaType`. The image is size-bounded, checked against the selected model's advertised vision support, normalized through the normal image-input path, and stored as a managed run artifact. Remote file URLs are rejected and never fetched. The run event stores only artifact metadata; task history currently returns the text prompt without re-embedding image bytes. Outbound image/file parts, document/audio attachments, push notifications, broader A2A methods, automatic replies, and live interoperability with an external agent are not implemented or verified yet. This is a partial channel implementation, not a claim of full A2A or Hermes parity.
 
 ## Send a task to an authorized peer
 

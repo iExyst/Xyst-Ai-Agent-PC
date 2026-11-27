@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import json
 import os
@@ -25,7 +26,7 @@ from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.channels.a2a_outbound import A2AOutboundClient
 from xaa.credentials import CredentialStore
-from xaa.providers.lm_studio import LMStudioProvider, ModelInfo
+from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo
 from xaa.storage.runs import RunStore
 
 OWNER_TOKEN = "a2a-sdk-owner-token-for-local-acceptance"
@@ -54,7 +55,7 @@ class _DeterministicProvider(LMStudioProvider):
         return True
 
     async def models(self) -> list[ModelInfo]:
-        return [ModelInfo(id="fixture/a2a-sdk")]
+        return [ModelInfo(id="fixture/a2a-sdk", capabilities=ModelCapabilities(vision=True))]
 
     async def chat(self, **kwargs: Any) -> dict[str, Any]:
         return {
@@ -376,7 +377,52 @@ async def _run() -> dict[str, object]:
                     raise AssertionError("Task polling did not preserve the candidate response.")
                 if len(task.history) != 2:
                     raise AssertionError("Task polling did not return user/agent history.")
+                image_bytes = b"\x89PNG\r\n\x1a\nA2A SDK image fixture"
+                image_request = SendMessageRequest(
+                    message=Message(
+                        role=Role.ROLE_USER,
+                        message_id=uuid4().hex,
+                        context_id=uuid4().hex,
+                        parts=[
+                            Part(text="Describe this attached image."),
+                            Part(raw=image_bytes, media_type="image/png"),
+                        ],
+                    )
+                )
+                image_task_id: str | None = None
+                async for event in client.send_message(image_request):
+                    if event.HasField("task"):
+                        image_task_id = event.task.id
+                if image_task_id is None:
+                    raise AssertionError("Official A2A SDK image request returned no task.")
                 await client.close()
+            async with httpx.AsyncClient(
+                base_url=f"http://127.0.0.1:{owner_port}",
+                headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+                timeout=15,
+            ) as image_owner_client:
+                image_artifacts = await image_owner_client.get(f"/runs/{image_task_id}/artifacts")
+                if image_artifacts.status_code != 200:
+                    raise AssertionError("The owner API could not read A2A image artifacts.")
+                image_records = cast(list[dict[str, Any]], image_artifacts.json())
+                image_record = next(
+                    (
+                        item
+                        for item in image_records
+                        if item.get("provenance") == "user.input_image"
+                    ),
+                    None,
+                )
+                if image_record is None or image_record.get("media_type") != "image/png":
+                    raise AssertionError("The A2A SDK image was not stored as a managed input.")
+                stored_image = await image_owner_client.get(f"/artifacts/{image_record['id']}")
+                if stored_image.status_code != 200 or stored_image.content != image_bytes:
+                    raise AssertionError("The managed A2A SDK image did not preserve its bytes.")
+                image_events = await image_owner_client.get(f"/runs/{image_task_id}/events")
+                if image_events.status_code != 200:
+                    raise AssertionError("The owner API could not inspect A2A image events.")
+                if base64.b64encode(image_bytes).decode("ascii") in image_events.text:
+                    raise AssertionError("A2A image bytes were copied into the event journal.")
             async with httpx.AsyncClient(
                 base_url=f"http://127.0.0.1:{owner_port}",
                 headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
@@ -480,6 +526,8 @@ async def _run() -> dict[str, object]:
                     "outbound_cancel_remote_state": cancellation.json()["remote_task"]["status"][
                         "state"
                     ],
+                    "inbound_image_artifact_media_type": image_record["media_type"],
+                    "inbound_image_artifact_sha256": image_record["sha256"],
                     "live_model_inference": False,
                 }
         finally:

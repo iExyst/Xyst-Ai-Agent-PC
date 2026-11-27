@@ -2204,6 +2204,110 @@ def test_a2a_text_ingress_is_authenticated_deduplicated_and_restart_queryable(wo
         assert client.post("/a2a", json=rpc, headers=peer_headers).status_code == 404
 
 
+def test_a2a_inline_image_is_gated_and_saved_as_managed_input(workspace_tmp_path):
+    import base64
+
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    class VisionReplyProvider(TextReplyProvider):
+        async def models(self) -> list[ModelInfo]:
+            return [ModelInfo(id="fixture/model", capabilities=ModelCapabilities(vision=True))]
+
+    database = workspace_tmp_path / "a2a-image.sqlite3"
+    store = RunStore(database)
+    credentials = Credentials()
+    app = create_app(
+        VisionReplyProvider(), SecretStr(TOKEN), store=store, credential_store=credentials
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
+        )
+    owner_headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        assert client.get("/.well-known/agent-card.json").json()["defaultInputModes"] == [
+            "text/plain",
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+        ]
+        secret = client.post("/channels/a2a/credential", headers=owner_headers).json()["secret"]
+        peer_headers = {"Authorization": f"Bearer {secret}"}
+        png = b"\x89PNG\r\n\x1a\nfixture-image"
+        encoded = base64.b64encode(png).decode("ascii")
+        rpc = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "messageId": "image-message-1",
+                    "role": "ROLE_USER",
+                    "parts": [
+                        {"text": "Describe the attached picture", "mediaType": "text/plain"},
+                        {"raw": encoded, "mediaType": "image/png"},
+                    ],
+                }
+            },
+        }
+        remote_file = json.loads(json.dumps(rpc))
+        remote_file["id"] = 2
+        remote_file["params"]["message"]["parts"][1] = {
+            "url": "https://attacker.example/image.png",
+            "mediaType": "image/png",
+        }
+        rejected_remote_file = client.post("/a2a", json=remote_file, headers=peer_headers)
+        assert rejected_remote_file.json()["error"]["code"] == -32602
+        assert "URLs are not fetched" in rejected_remote_file.text
+        with store.connection() as connection:
+            assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+        accepted = client.post("/a2a", json=rpc, headers=peer_headers)
+        assert accepted.status_code == 200, accepted.text
+        run_id = accepted.json()["result"]["task"]["id"]
+        artifacts = store.list_artifacts(run_id)
+        image = next(item for item in artifacts if item["provenance"] == "user.input_image")
+        assert image["media_type"] == "image/png"
+        assert image["sha256"] == hashlib.sha256(png).hexdigest()
+        assert store.image_data_url(run_id) == "data:image/png;base64," + encoded
+        bound_event = next(
+            event
+            for event in store.public_events(run_id)
+            if event["event_type"] == "a2a.task_bound"
+        )
+        assert bound_event["payload"]["image_artifact"]["id"] == image["id"]
+        assert encoded not in json.dumps(bound_event["payload"])
+
+    nonvision_store = RunStore(workspace_tmp_path / "a2a-image-no-vision.sqlite3")
+    nonvision = create_app(
+        TextReplyProvider(),
+        SecretStr(TOKEN),
+        store=nonvision_store,
+        credential_store=credentials,
+    )
+    with nonvision_store.connection() as connection:
+        connection.execute(
+            "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
+        )
+    with TestClient(nonvision) as client:
+        rejected = client.post("/a2a", json=rpc, headers=peer_headers)
+        assert rejected.status_code == 409
+        assert "does not advertise vision" in rejected.text
+        with nonvision_store.connection() as connection:
+            assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+
+
 def test_a2a_listener_is_opt_in_persistent_and_filters_the_owner_api(workspace_tmp_path):
     class Credentials:
         def __init__(self):

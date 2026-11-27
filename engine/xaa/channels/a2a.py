@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import re
@@ -11,7 +13,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-MAX_A2A_BODY_BYTES = 64 * 1024
+MAX_A2A_BODY_BYTES = 4 * 1024 * 1024 + 32 * 1024
 MAX_A2A_TEXT_CHARS = 10_000
 _IDENTIFIER = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _METHODS = {
@@ -49,9 +51,9 @@ class InvalidA2ARequest(ValueError):
 
 
 def parse_request(body: bytes) -> A2ARequest:
-    """Validate one bounded A2A v1 JSON-RPC request and its supported text shape."""
+    """Validate one bounded A2A v1 JSON-RPC request and its supported input shape."""
     if len(body) > MAX_A2A_BODY_BYTES:
-        raise InvalidA2ARequest("A2A request exceeds 64 KiB.", code=-32600)
+        raise InvalidA2ARequest(f"A2A request exceeds {MAX_A2A_BODY_BYTES} bytes.", code=-32600)
     try:
         value: object = json.loads(body)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -103,24 +105,73 @@ def _validate_message(params: dict[str, Any], request_id: str | int) -> None:
         raise InvalidA2ARequest("A2A contextId is invalid.", request_id=request_id)
     parts_value = message.get("parts")
     if not isinstance(parts_value, list):
-        raise InvalidA2ARequest("A2A message must contain 1–32 text parts.", request_id=request_id)
+        raise InvalidA2ARequest(
+            "A2A message must contain 1–32 supported parts.", request_id=request_id
+        )
     parts = cast(list[object], parts_value)
     if not 1 <= len(parts) <= 32:
-        raise InvalidA2ARequest("A2A message must contain 1–32 text parts.", request_id=request_id)
-    if any(
-        not isinstance(part, dict)
-        or not isinstance(cast(dict[str, Any], part).get("text"), str)
-        or (cast(dict[str, Any], part).get("mediaType") not in (None, "text/plain"))
-        for part in parts
-    ):
         raise InvalidA2ARequest(
-            "This A2A endpoint accepts text/plain parts only.", request_id=request_id
+            "A2A message must contain 1–32 supported parts.", request_id=request_id
+        )
+    image_parts = 0
+    for part_value in parts:
+        if not isinstance(part_value, dict):
+            raise InvalidA2ARequest("A2A message part is invalid.", request_id=request_id)
+        part = cast(dict[str, Any], part_value)
+        if isinstance(part.get("text"), str) and part.get("mediaType") in (None, "text/plain"):
+            continue
+        if "raw" in part or "url" in part:
+            media_type = part.get("mediaType")
+            encoded = part.get("raw")
+            if (
+                not isinstance(encoded, str)
+                or not isinstance(media_type, str)
+                or part.get("url") is not None
+                or not media_type.startswith("image/")
+            ):
+                raise InvalidA2ARequest(
+                    "A2A image parts must contain inline raw bytes; remote file URLs are not fetched.",
+                    request_id=request_id,
+                )
+            image_parts += 1
+            if image_parts > 1:
+                raise InvalidA2ARequest(
+                    "Only one A2A image attachment is supported per task.", request_id=request_id
+                )
+            try:
+                if len(encoded) > 4 * 1024 * 1024:
+                    raise ValueError
+                base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error):
+                raise InvalidA2ARequest(
+                    "A2A image bytes are invalid or exceed 3 MiB.", request_id=request_id
+                ) from None
+            continue
+        raise InvalidA2ARequest(
+            "This A2A endpoint accepts text/plain and inline image parts only.",
+            request_id=request_id,
         )
     text = extract_text(message)
     if not text or len(text) > MAX_A2A_TEXT_CHARS:
         raise InvalidA2ARequest(
             "A2A message text must contain 1–10,000 characters.", request_id=request_id
         )
+
+
+def extract_image_data_url(message: Mapping[str, Any]) -> str | None:
+    """Return the single inline raw image part as a data URL; never dereference peer URLs."""
+    raw_parts = message.get("parts")
+    if not isinstance(raw_parts, list):
+        return None
+    for value in cast(list[object], raw_parts):
+        if not isinstance(value, dict):
+            continue
+        part = cast(dict[str, Any], value)
+        media_type = part.get("mediaType")
+        encoded = part.get("raw")
+        if isinstance(media_type, str) and isinstance(encoded, str):
+            return f"data:{media_type};base64,{encoded}"
+    return None
 
 
 def extract_text(message: Mapping[str, Any]) -> str:
