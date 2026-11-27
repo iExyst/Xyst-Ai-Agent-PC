@@ -149,7 +149,8 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'Create A2A peer credential'}).click();
   await expect(panel.getByRole('region',{name:'New A2A peer credential'})).toContainText('one-time-a2a-peer-secret-with-at-least-32-characters');
   await panel.getByLabel('A2A listener port').fill('9876');
-  await panel.getByLabel('Allow connections from other devices on this network').check();
+  await panel.getByLabel('Allow connections from other devices on this trusted network (HTTP, unencrypted)').check();
+  await expect(panel.getByText(/plain HTTP.*capture the peer secret and task contents/)).toBeVisible();
   await panel.getByRole('button',{name:'Enable A2A listener'}).click();
   await expect(panel.getByText('A2A listener is listening · 0.0.0.0:9876')).toBeVisible();
   await panel.getByRole('button',{name:'Disable A2A listener'}).click();

@@ -6,8 +6,10 @@ X.A.A. accepts bounded text tasks through an authenticated A2A JSON-RPC listener
 
 1. Open **Tools & integrations → Messaging channels → Agent-to-agent (A2A)**.
 2. Create an A2A peer credential and copy the displayed secret to the connecting peer. X.A.A. stores the credential in Windows Credential Manager and shows the secret only once.
-3. Keep **Allow connections from other devices on this network** unchecked for local-only use. To accept peers on the LAN, check it and enable the listener. X.A.A. binds a separate port (8766 by default) and protects task requests with the peer secret.
+3. Keep **Allow connections from other devices on this trusted network (HTTP, unencrypted)** unchecked for local-only use. To accept peers on a trusted LAN, check it and enable the listener. X.A.A. binds a separate port (8766 by default) and protects task requests with the peer secret.
 4. If Windows Firewall blocks inbound connections, add a rule for the selected port. Use the desktop's machine name or IP address when giving the Agent Card URL to another device; `0.0.0.0` is the bind address, not a client destination.
+
+The A2A listener currently uses plain HTTP. Anyone who can monitor the network may capture the peer secret and task contents. Only enable it on a trusted network; do not forward the port to the internet. TLS support is not implemented yet.
 
 The network listener exposes only `GET /.well-known/agent-card.json` and `POST /a2a`. The broader owner API remains bound to loopback. The peer credential can submit, stream, query, and cancel A2A tasks; it cannot access owner settings or grant tools/workspace permissions.
 

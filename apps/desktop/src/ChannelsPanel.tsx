@@ -217,8 +217,8 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     {a2a?.configured&&<>
       <label htmlFor="a2a-listener-port">A2A listener port</label>
       <input id="a2a-listener-port" type="number" min={1024} max={65535} value={a2aPort} onChange={event=>setA2aPort(event.target.value)} disabled={busy}/>
-      <label htmlFor="a2a-network-access"><input id="a2a-network-access" type="checkbox" checked={a2aNetwork} onChange={event=>setA2aNetwork(event.target.checked)} disabled={busy}/> Allow connections from other devices on this network</label>
-      <p>Network access opens a dedicated listener protected by the A2A secret. Only the Agent Card and A2A task endpoint are reachable; the owner API stays on loopback. Windows Firewall may still need an inbound rule.</p>
+      <label htmlFor="a2a-network-access"><input id="a2a-network-access" type="checkbox" checked={a2aNetwork} onChange={event=>setA2aNetwork(event.target.checked)} disabled={busy}/> Allow connections from other devices on this trusted network (HTTP, unencrypted)</label>
+      <p>The A2A listener uses plain HTTP. Anyone able to monitor this network could capture the peer secret and task contents. Only enable it on a trusted network; do not expose its port to the internet. Only the Agent Card and A2A task endpoint are reachable; the owner API stays on loopback. Windows Firewall may still need an inbound rule.</p>
       <div className="controls">
         <button type="button" onClick={()=>void saveA2AListener(true)} disabled={busy}>{a2aListener?.listening?'Apply A2A listener settings':'Enable A2A listener'}</button>
         {a2aListener?.enabled&&<button type="button" onClick={()=>void saveA2AListener(false)} disabled={busy}>Disable A2A listener</button>}

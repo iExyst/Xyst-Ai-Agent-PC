@@ -1,3 +1,7 @@
+## Disclose A2A LAN transport security in the desktop (2026-11-27)
+
+The optional A2A network listener uses plain HTTP, so its peer secret and task text are observable to anyone monitoring that network. The desktop checkbox now names the trusted-network scope and unencrypted transport, with a warning not to expose the port to the internet; the A2A guide and parity notes record TLS as an open security gap. The channel browser acceptance asserts that warning, and the focused browser test, desktop TypeScript check, and `git diff --check` pass locally. TLS is still unimplemented; this change makes the current boundary clear without claiming secure remote transport.
+
 ## Retry physical Windows microphone speech acceptance (2026-11-27)
 
 Ran the user-authorized 35-second local acceptance against the installed Windows System.Speech recognizer and current default microphone. It recorded 281 input-level events but the peak remained 0%, so the result is `silent_input` rather than a speech-recognition pass ([report](../.acceptance/windows-microphone-speech-8e1addd4-180b-4138-8652-660671d1ab50/report.json)). No audio was retained, no network was used, and no model inference was requested. Physical device capture and the no-signal UI behavior are verified; human-speech accuracy and physical-microphone-to-ASR remain open.
