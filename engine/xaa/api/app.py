@@ -4226,6 +4226,7 @@ def create_app(
     ) -> dict[str, object]:
         run_id = str(run["id"])
         history: list[dict[str, object]] = []
+        image_artifact: dict[str, Any] | None = None
         with run_store.connection() as connection:
             row = connection.execute(
                 "SELECT payload FROM run_events WHERE run_id=? "
@@ -4236,6 +4237,9 @@ def create_app(
             payload_value: object = json.loads(row["payload"])
             if isinstance(payload_value, dict):
                 payload = cast(dict[str, Any], payload_value)
+                image_value = payload.get("image_artifact")
+                if isinstance(image_value, dict):
+                    image_artifact = cast(dict[str, Any], image_value)
                 message_value = payload.get("message")
                 if isinstance(message_value, dict):
                     message = cast(dict[str, Any], message_value)
@@ -4274,6 +4278,23 @@ def create_app(
                 )
         if history_length is not None:
             history = history[-min(history_length, 100) :] if history_length else []
+        if image_artifact is not None:
+            user_entry = next(
+                (entry for entry in history if entry.get("role") == "ROLE_USER"), None
+            )
+            if user_entry is not None:
+                data_url = run_store.image_data_url(run_id)
+                if data_url is not None:
+                    header, separator, encoded = data_url.partition(",")
+                    media_type = header.removeprefix("data:").removesuffix(";base64")
+                    if (
+                        not separator
+                        or not header.endswith(";base64")
+                        or not media_type.startswith("image/")
+                    ):
+                        raise ValueError("Managed A2A image has an invalid data URL.")
+                    parts = cast(list[dict[str, object]], user_entry["parts"])
+                    parts.append({"raw": encoded, "mediaType": media_type})
         artifacts: list[dict[str, object]] | None = None
         if answer is not None:
             artifacts = [

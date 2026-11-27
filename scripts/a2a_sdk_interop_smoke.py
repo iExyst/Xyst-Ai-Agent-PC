@@ -395,6 +395,18 @@ async def _run() -> dict[str, object]:
                         image_task_id = event.task.id
                 if image_task_id is None:
                     raise AssertionError("Official A2A SDK image request returned no task.")
+                image_task = await client.get_task(
+                    GetTaskRequest(id=image_task_id, history_length=10)
+                )
+                image_user_message = next(
+                    (message for message in image_task.history if message.role == Role.ROLE_USER),
+                    None,
+                )
+                if image_user_message is None or not any(
+                    part.raw == image_bytes and part.media_type == "image/png"
+                    for part in image_user_message.parts
+                ):
+                    raise AssertionError("GetTask did not return the managed image input part.")
                 await client.close()
             async with httpx.AsyncClient(
                 base_url=f"http://127.0.0.1:{owner_port}",

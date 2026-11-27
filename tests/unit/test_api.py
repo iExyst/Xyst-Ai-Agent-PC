@@ -2288,6 +2288,29 @@ def test_a2a_inline_image_is_gated_and_saved_as_managed_input(workspace_tmp_path
         )
         assert bound_event["payload"]["image_artifact"]["id"] == image["id"]
         assert encoded not in json.dumps(bound_event["payload"])
+        task_history = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "GetTask",
+                "params": {"id": run_id},
+            },
+            headers=peer_headers,
+        ).json()["result"]["history"]
+        image_part = next(part for part in task_history[0]["parts"] if "raw" in part)
+        assert image_part == {"raw": encoded, "mediaType": "image/png"}
+        empty_history = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "GetTask",
+                "params": {"id": run_id, "historyLength": 0},
+            },
+            headers=peer_headers,
+        ).json()["result"]["history"]
+        assert empty_history == []
 
     nonvision_store = RunStore(workspace_tmp_path / "a2a-image-no-vision.sqlite3")
     nonvision = create_app(
