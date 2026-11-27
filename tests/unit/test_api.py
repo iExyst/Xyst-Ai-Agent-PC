@@ -2083,6 +2083,15 @@ def test_a2a_text_ingress_is_authenticated_deduplicated_and_restart_queryable(wo
         assert accepted.status_code == 200, accepted.text
         task = accepted.json()["result"]["task"]
         run_id = task["id"]
+        assert task["history"] == [
+            {
+                "messageId": "user-message-1",
+                "contextId": "fixture-context",
+                "taskId": run_id,
+                "role": "ROLE_USER",
+                "parts": [{"text": "Reply with a short greeting", "mediaType": "text/plain"}],
+            }
+        ]
         record = store.get_run(run_id)
         assert record is not None
         assert record["mode"] == "observe" and record["workspace"] is None
@@ -2127,8 +2136,18 @@ def test_a2a_text_ingress_is_authenticated_deduplicated_and_restart_queryable(wo
         ) as streamed:
             assert streamed.status_code == 200
             assert streamed.headers["content-type"].startswith("text/event-stream")
-            first_event = next(streamed.iter_text())
+            events = list(streamed.iter_text())
+            first_event = events[0]
             assert '"TASK_STATE_' in first_event
+            assert '"artifactUpdate"' in "".join(events)
+            deadline = time.monotonic() + 5
+            record = store.get_run(run_id)
+            while record is not None and record["state"] != "verifying":
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.01)
+                record = store.get_run(run_id)
+            assert record is not None and record["state"] == "verifying"
 
     restarted = create_app(
         TextReplyProvider(),
@@ -2137,14 +2156,49 @@ def test_a2a_text_ingress_is_authenticated_deduplicated_and_restart_queryable(wo
         credential_store=credentials,
     )
     with TestClient(restarted) as client:
+        record = store.get_run(run_id)
+        assert record is not None and record["state"] == "verifying"
         task_lookup = client.post(
             "/a2a",
             json={"jsonrpc": "2.0", "id": 2, "method": "GetTask", "params": {"id": run_id}},
             headers=peer_headers,
         )
         assert task_lookup.status_code == 200
-        assert task_lookup.json()["result"]["id"] == run_id
-        assert task_lookup.json()["result"]["contextId"] == "fixture-context"
+        result_task = task_lookup.json()["result"]
+        assert result_task["id"] == run_id
+        assert result_task["contextId"] == "fixture-context"
+        assert result_task["status"]["state"] == "TASK_STATE_INPUT_REQUIRED"
+        assert "awaiting owner review" in result_task["status"]["message"]["parts"][0]["text"]
+        assert result_task["artifacts"][0]["parts"][0]["text"] == (
+            "Hello from the shared coordinator."
+        )
+        assert result_task["artifacts"][0]["name"] == "Candidate response"
+        assert result_task["history"][-1]["role"] == "ROLE_AGENT"
+        history_tail = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "GetTask",
+                "params": {"id": run_id, "historyLength": 1},
+            },
+            headers=peer_headers,
+        ).json()["result"]
+        assert len(history_tail["history"]) == 1
+        assert history_tail["history"][0]["role"] == "ROLE_AGENT"
+        assert history_tail["artifacts"] == result_task["artifacts"]
+        no_history = client.post(
+            "/a2a",
+            json={
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "GetTask",
+                "params": {"id": run_id, "historyLength": 0},
+            },
+            headers=peer_headers,
+        ).json()["result"]
+        assert no_history["history"] == []
+        assert no_history["artifacts"] == result_task["artifacts"]
         assert client.delete("/channels/a2a/credential", headers=owner_headers).status_code == 204
         assert client.post("/a2a", json=rpc, headers=peer_headers).status_code == 404
 
@@ -2284,6 +2338,28 @@ def test_a2a_listener_is_opt_in_persistent_and_filters_the_owner_api(workspace_t
                             "parts": [{"data": {"workspace": "grant"}}],
                         }
                     },
+                }
+            ).encode(),
+            -32602,
+        ),
+        (
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "GetTask",
+                    "params": {"id": "task-1", "historyLength": -1},
+                }
+            ).encode(),
+            -32602,
+        ),
+        (
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "GetTask",
+                    "params": {"id": "task-1", "historyLength": True},
                 }
             ).encode(),
             -32602,

@@ -8,7 +8,6 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -73,8 +72,17 @@ def parse_request(body: bytes) -> A2ARequest:
         raise InvalidA2ARequest("A2A method is not supported.", code=-32601, request_id=request.id)
     if request.method in SEND_METHODS | STREAM_METHODS:
         _validate_message(request.params, request.id)
-    elif not _valid_task_id(request.params.get("id") or request.params.get("taskId")):
-        raise InvalidA2ARequest("A2A task ID is missing or invalid.", request_id=request.id)
+    else:
+        if not _valid_task_id(request.params.get("id") or request.params.get("taskId")):
+            raise InvalidA2ARequest("A2A task ID is missing or invalid.", request_id=request.id)
+        if request.method in GET_METHODS:
+            history_length = request.params.get("historyLength")
+            if history_length is not None and (
+                type(history_length) is not int or history_length < 0
+            ):
+                raise InvalidA2ARequest(
+                    "A2A historyLength must be a non-negative integer.", request_id=request.id
+                )
     return request
 
 
@@ -157,24 +165,50 @@ def task_state(run_state: str) -> str:
         return "TASK_STATE_FAILED"
     if run_state in {"cancelled"}:
         return "TASK_STATE_CANCELED"
-    if run_state in {"blocked", "paused", "waiting_for_approval"}:
+    if run_state in {"blocked", "paused", "waiting_for_approval", "verifying"}:
         return "TASK_STATE_INPUT_REQUIRED"
     if run_state == "queued":
         return "TASK_STATE_SUBMITTED"
     return "TASK_STATE_WORKING"
 
 
-def task_record(run: Mapping[str, Any], context_id: str) -> dict[str, object]:
-    return {
+def task_record(
+    run: Mapping[str, Any],
+    context_id: str,
+    *,
+    history: list[dict[str, object]] | None = None,
+    artifacts: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    state = task_state(str(run["state"]))
+    status: dict[str, object] = {
+        "state": state,
+        "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    }
+    if run["state"] == "verifying":
+        task_id = str(run["id"])
+        review_id = "xaa-review-" + hashlib.sha256(task_id.encode()).hexdigest()[:20]
+        status["message"] = {
+            "messageId": review_id,
+            "contextId": context_id,
+            "taskId": task_id,
+            "role": "ROLE_AGENT",
+            "parts": [
+                {
+                    "text": "The candidate response is awaiting owner review in X.A.A.",
+                    "mediaType": "text/plain",
+                }
+            ],
+        }
+    task: dict[str, object] = {
         "id": str(run["id"]),
         "contextId": context_id,
-        "status": {
-            "state": task_state(str(run["state"])),
-            "timestamp": datetime.now(UTC)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z"),
-        },
+        "status": status,
     }
+    if history is not None:
+        task["history"] = history
+    if artifacts is not None:
+        task["artifacts"] = artifacts
+    return task
 
 
 def stream_task(task: dict[str, object]) -> dict[str, object]:
@@ -202,7 +236,7 @@ def artifact_update(task_id: str, context_id: str, text: str) -> dict[str, objec
             "taskId": task_id,
             "contextId": context_id,
             "artifact": {
-                "artifactId": uuid4().hex,
+                "artifactId": "xaa-" + hashlib.sha256(task_id.encode()).hexdigest()[:24],
                 "parts": [{"text": text, "mediaType": "text/plain"}],
             },
         }

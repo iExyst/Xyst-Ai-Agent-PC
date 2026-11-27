@@ -323,7 +323,10 @@ def test_schema_42_database_migrates_the_docker_session_journal(workspace_tmp_pa
     with migrated.connection() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(docker_sessions)")}
-    assert version == 43
+        listener_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='a2a_listener_settings'"
+        ).fetchone()
+    assert version == 44
     assert {
         "id",
         "run_id",
@@ -334,3 +337,4 @@ def test_schema_42_database_migrates_the_docker_session_journal(workspace_tmp_pa
         "container_id",
         "active_execution_id",
     } <= columns
+    assert listener_table is not None

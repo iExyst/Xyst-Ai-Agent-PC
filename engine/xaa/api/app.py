@@ -3728,6 +3728,72 @@ def create_app(
         value = json.loads(row["payload"])
         return str(value.get("context_id", run_id))
 
+    def a2a_task_record(
+        run: dict[str, Any], context_id: str, *, history_length: int | None = None
+    ) -> dict[str, object]:
+        run_id = str(run["id"])
+        history: list[dict[str, object]] = []
+        with run_store.connection() as connection:
+            row = connection.execute(
+                "SELECT payload FROM run_events WHERE run_id=? "
+                "AND event_type='a2a.task_bound' ORDER BY sequence LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        if row is not None:
+            payload_value: object = json.loads(row["payload"])
+            if isinstance(payload_value, dict):
+                payload = cast(dict[str, Any], payload_value)
+                message_value = payload.get("message")
+                if isinstance(message_value, dict):
+                    message = cast(dict[str, Any], message_value)
+                    text = a2a_channel.extract_text(message)
+                    history.append(
+                        {
+                            "messageId": str(message.get("messageId", "")),
+                            "contextId": context_id,
+                            "taskId": run_id,
+                            "role": "ROLE_USER",
+                            "parts": [{"text": text, "mediaType": "text/plain"}],
+                        }
+                    )
+        answer: str | None = None
+        if run["state"] in {"verifying", "completed"}:
+            answer = next(
+                (
+                    item["content"]
+                    for item in reversed(run_store.conversation_messages(run_id))
+                    if item.get("role") == "assistant"
+                    and isinstance(item.get("content"), str)
+                    and item["content"].strip()
+                ),
+                None,
+            )
+            if isinstance(answer, str):
+                answer_id = "xaa-" + hashlib.sha256(run_id.encode()).hexdigest()[:24]
+                history.append(
+                    {
+                        "messageId": answer_id,
+                        "contextId": context_id,
+                        "taskId": run_id,
+                        "role": "ROLE_AGENT",
+                        "parts": [{"text": answer, "mediaType": "text/plain"}],
+                    }
+                )
+        if history_length is not None:
+            history = history[-min(history_length, 100) :] if history_length else []
+        artifacts: list[dict[str, object]] | None = None
+        if answer is not None:
+            artifacts = [
+                {
+                    "artifactId": "xaa-" + hashlib.sha256(run_id.encode()).hexdigest()[:24],
+                    "name": (
+                        "Candidate response" if run["state"] == "verifying" else "Final response"
+                    ),
+                    "parts": [{"text": answer, "mediaType": "text/plain"}],
+                }
+            ]
+        return a2a_channel.task_record(run, context_id, history=history, artifacts=artifacts)
+
     def a2a_run_for_task(run_id: str) -> dict[str, Any] | None:
         with run_store.connection() as connection:
             owned = connection.execute(
@@ -3781,6 +3847,7 @@ def create_app(
                     {
                         "context_id": context_id,
                         "message_id_sha256": hashlib.sha256(message_id.encode()).hexdigest(),
+                        "message": message,
                     },
                 )
         if record["state"] == "queued" and record["model"]:
@@ -3858,7 +3925,7 @@ def create_app(
                 )
             task_id = str(record["id"])
             if rpc.method in a2a_channel.SEND_METHODS:
-                task = a2a_channel.task_record(record, context_id)
+                task = a2a_task_record(record, context_id)
                 result: object = {"task": task} if rpc.method == "SendMessage" else task
                 return Response(
                     content=json.dumps(
@@ -3883,9 +3950,7 @@ def create_app(
                     if mapped != last_state:
                         if last_state is None:
                             yield a2a_channel.sse_data(
-                                a2a_channel.stream_task(
-                                    a2a_channel.task_record(current, context_id)
-                                ),
+                                a2a_channel.stream_task(a2a_task_record(current, context_id)),
                                 rpc.id,
                             )
                         else:
@@ -3899,8 +3964,9 @@ def create_app(
                         "cancelled",
                         "waiting_for_approval",
                         "blocked",
+                        "verifying",
                     }:
-                        if current["state"] == "completed":
+                        if current["state"] in {"completed", "verifying"}:
                             messages = run_store.conversation_messages(task_id)
                             answer = next(
                                 (
@@ -3934,9 +4000,14 @@ def create_app(
             )
         context_id = a2a_task_context(requested_id)
         if rpc.method in a2a_channel.GET_METHODS:
+            raw_history_length = rpc.params.get("historyLength")
+            history_length = raw_history_length if type(raw_history_length) is int else None
             return Response(
                 content=json.dumps(
-                    a2a_channel.jsonrpc_result(rpc.id, a2a_channel.task_record(record, context_id)),
+                    a2a_channel.jsonrpc_result(
+                        rpc.id,
+                        a2a_task_record(record, context_id, history_length=history_length),
+                    ),
                     ensure_ascii=False,
                 ),
                 media_type="application/json",
@@ -3961,7 +4032,7 @@ def create_app(
         record = transition_run(requested_id, RunState.CANCELLED, "a2a_peer_requested")
         return Response(
             content=json.dumps(
-                a2a_channel.jsonrpc_result(rpc.id, a2a_channel.task_record(record, context_id)),
+                a2a_channel.jsonrpc_result(rpc.id, a2a_task_record(record, context_id)),
                 ensure_ascii=False,
             ),
             media_type="application/json",
