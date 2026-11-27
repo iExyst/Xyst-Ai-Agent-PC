@@ -11,6 +11,28 @@ import yaml
 from audit_execution_inventory import PIN, ROOT, check_reference, digest
 
 OUTPUT = Path("docs/parity/channel-inventory.json")
+XAA_CHANNEL_SLICES = {
+    "telegram": {
+        "module": "engine/xaa/channels/telegram.py",
+        "status": "implemented_partial",
+        "scope": "Authorized text ingress, private pairing, durable deduplication and text delivery; live service acceptance and media/topic parity remain open.",
+    },
+    "email": {
+        "module": "engine/xaa/channels/email.py",
+        "status": "implemented_partial",
+        "scope": "Allowlisted text ingress and threaded text replies with durable ambiguous-send reconciliation; live mailbox interoperability and broader parity remain open.",
+    },
+    "webhook": {
+        "module": "engine/xaa/channels/webhook.py plus authenticated API ingress",
+        "status": "implemented_partial",
+        "scope": "Signed bounded text ingress with event deduplication into Observe-mode runs; ingress only, no outbound messaging.",
+    },
+    "discord": {
+        "module": None,
+        "status": "excluded_by_product_scope",
+        "scope": "Explicitly excluded from X.A.A. product scope; retained in this upstream inventory for audit completeness.",
+    },
+}
 HOMEASSISTANT_SOURCE_AUDIT = {
     "repository": "NousResearch/hermes-official-plugins",
     "reference_commit": "4d492b1dc5326af3e38bb2cf3e4b9ad6d65f0072",
@@ -526,6 +548,7 @@ def inventory() -> dict[str, Any]:
     for name, (transport, acceptance) in REQUIREMENTS.items():
         core = name in {"api_server", "webhook", "msgraph_webhook"}
         source = ROOT / "gateway/platforms" / f"{name}.py" if core else None
+        xaa_slice = XAA_CHANNEL_SLICES.get(name)
         channels.append(
             {
                 "id": name,
@@ -536,7 +559,15 @@ def inventory() -> dict[str, Any]:
                 "phase_scope": "initial authenticated text path"
                 if name in {"telegram", "webhook"}
                 else "parity expansion",
-                "xaa_module": f"engine/xaa/channels/{name} (not implemented)",
+                "xaa_module": (
+                    xaa_slice["module"]
+                    if xaa_slice is not None
+                    else f"engine/xaa/channels/{name} (not implemented)"
+                ),
+                "xaa_implementation_status": (
+                    xaa_slice["status"] if xaa_slice is not None else "not_implemented"
+                ),
+                "xaa_implemented_scope": xaa_slice["scope"] if xaa_slice is not None else None,
                 "transport_observation": transport,
                 "acceptance_id": f"CHANNEL-{name.upper()}",
                 "acceptance": acceptance,
@@ -642,7 +673,7 @@ def inventory() -> dict[str, Any]:
             "Transport observations come from source declarations and selected paths; adapters have not been executed.",
             "Home Assistant is an external catalog-declared gateway/toolset, not an in-tree registration; pinned source was reviewed but plugin tests and live runtime were not executed.",
             "Catalog category platform includes non-channel features and can omit other categories that register channels; candidates are not an exhaustive channel count.",
-            "No X.A.A. messaging adapter or authorized external delivery is claimed implemented.",
+            "The X.A.A. implementation fields describe only implemented slices; they do not establish full parity or live external interoperability.",
         ],
     }
 
