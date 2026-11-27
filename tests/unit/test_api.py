@@ -2400,6 +2400,92 @@ def test_a2a_inline_image_is_gated_and_saved_as_managed_input(workspace_tmp_path
             "filename": "reference.md",
         }
 
+
+def test_a2a_scanned_pdf_uses_bounded_ocr_and_deduplicates_retry(workspace_tmp_path):
+    import base64
+    from io import BytesIO
+
+    from pypdf import PdfWriter
+
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    class ScannedPdfProvider(TextReplyProvider):
+        ocr_calls = 0
+
+        async def models(self) -> list[ModelInfo]:
+            return [ModelInfo(id="fixture/model", capabilities=ModelCapabilities(vision=True))]
+
+        async def transcribe_scanned_pages(self, *, model, objective, pages):
+            assert model == "fixture/model"
+            assert objective == "Read this scanned agreement"
+            assert len(pages) == 1 and pages[0][0] == 1
+            self.ocr_calls += 1
+            return "[Scanned PDF OCR — page 1]\nfixture scanned text", [
+                (
+                    "8bd0368a-c3f8-4ca5-aa58-0f6b0eef2676",
+                    {"prompt_tokens": 80, "completion_tokens": 5, "total_tokens": 85},
+                )
+            ]
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    output = BytesIO()
+    writer.write(output)
+    source = output.getvalue()
+    encoded = base64.b64encode(source).decode("ascii")
+    provider = ScannedPdfProvider()
+    store = RunStore(workspace_tmp_path / "a2a-scanned-pdf.sqlite3")
+    credentials = Credentials()
+    app = create_app(provider, SecretStr(TOKEN), store=store, credential_store=credentials)
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
+        )
+    owner_headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        secret = client.post("/channels/a2a/credential", headers=owner_headers).json()["secret"]
+        peer_headers = {"Authorization": f"Bearer {secret}"}
+        rpc = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "SendMessage",
+            "params": {
+                "message": {
+                    "messageId": "scanned-pdf-message-1",
+                    "role": "ROLE_USER",
+                    "parts": [
+                        {"text": "Read this scanned agreement", "mediaType": "text/plain"},
+                        {"raw": encoded, "mediaType": "application/pdf", "filename": "scan.pdf"},
+                    ],
+                }
+            },
+        }
+        first = client.post("/a2a", json=rpc, headers=peer_headers)
+        assert first.status_code == 200, first.text
+        run_id = first.json()["result"]["task"]["id"]
+        retry = json.loads(json.dumps(rpc))
+        retry["id"] = 2
+        second = client.post("/a2a", json=retry, headers=peer_headers)
+        assert second.status_code == 200, second.text
+        assert second.json()["result"]["task"]["id"] == run_id
+        assert provider.ocr_calls == 1
+        assert "fixture scanned text" in (store.document_text(run_id) or "")
+        assert store.token_usage(run_id)["total_tokens"] == 85
+        pages = store.document_page_images(run_id)
+        assert len(pages) == 1 and pages[0][0] == 1
+        assert base64.b64decode(pages[0][1].split(",", 1)[1]).startswith(b"\x89PNG\r\n\x1a\n")
+
     nonvision_store = RunStore(workspace_tmp_path / "a2a-image-no-vision.sqlite3")
     nonvision = create_app(
         TextReplyProvider(),
