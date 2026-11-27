@@ -23,7 +23,7 @@ from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 46
+DATABASE_SCHEMA_VERSION = 47
 
 
 def _is_normalized_relative_workspace_path(path: str) -> bool:
@@ -748,6 +748,9 @@ class RunStore:
                     remote_task_id TEXT,
                     remote_context_id TEXT,
                     remote_task_json TEXT,
+                    cancel_state TEXT NOT NULL DEFAULT 'not_requested'
+                        CHECK(cancel_state IN ('not_requested','sending','sent','unknown')),
+                    cancel_error TEXT,
                     last_error TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -1131,6 +1134,17 @@ class RunStore:
                     "INSERT INTO channel_identity_link_events SELECT * FROM channel_identity_link_events_v21"
                 )
                 connection.execute("DROP TABLE channel_identity_link_events_v21")
+            outbound_task_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(a2a_outbound_tasks)")
+            }
+            if "cancel_state" not in outbound_task_columns:
+                connection.execute(
+                    "ALTER TABLE a2a_outbound_tasks ADD COLUMN cancel_state TEXT NOT NULL "
+                    "DEFAULT 'not_requested' CHECK(cancel_state IN "
+                    "('not_requested','sending','sent','unknown'))"
+                )
+            if "cancel_error" not in outbound_task_columns:
+                connection.execute("ALTER TABLE a2a_outbound_tasks ADD COLUMN cancel_error TEXT")
             connection.execute(f"PRAGMA user_version={DATABASE_SCHEMA_VERSION}")
 
     @contextmanager

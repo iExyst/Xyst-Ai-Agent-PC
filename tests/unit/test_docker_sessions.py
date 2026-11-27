@@ -335,7 +335,7 @@ def test_schema_42_database_migrates_docker_journal_and_a2a_peer_storage(workspa
         outbound_tasks = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='a2a_outbound_tasks'"
         ).fetchone()
-    assert version == 46
+    assert version == 47
     assert {
         "id",
         "run_id",
@@ -350,3 +350,25 @@ def test_schema_42_database_migrates_docker_journal_and_a2a_peer_storage(workspa
     assert {"tls_cert_path", "tls_key_path"} <= listener_columns
     assert outbound_peers is not None
     assert outbound_tasks is not None
+    with migrated.connection() as connection:
+        outbound_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(a2a_outbound_tasks)")
+        }
+    assert {"cancel_state", "cancel_error"} <= outbound_columns
+
+
+def test_schema_46_outbound_tasks_gain_manual_cancel_journal(workspace_tmp_path):
+    store, _run_id, _owner = setup_run(workspace_tmp_path)
+    with store.connection() as connection:
+        connection.execute("ALTER TABLE a2a_outbound_tasks DROP COLUMN cancel_error")
+        connection.execute("ALTER TABLE a2a_outbound_tasks DROP COLUMN cancel_state")
+        connection.execute("PRAGMA user_version=46")
+
+    migrated = RunStore(store.path)
+    with migrated.connection() as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 47
+        columns = {
+            row["name"]: row for row in connection.execute("PRAGMA table_info(a2a_outbound_tasks)")
+        }
+        assert columns["cancel_state"]["dflt_value"] == "'not_requested'"
+        assert columns["cancel_error"]["notnull"] == 0

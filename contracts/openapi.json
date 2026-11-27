@@ -251,6 +251,27 @@
       },
       "A2AOutboundTaskRecord": {
         "properties": {
+          "cancel_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Error"
+          },
+          "cancel_state": {
+            "enum": [
+              "not_requested",
+              "sending",
+              "sent",
+              "unknown"
+            ],
+            "title": "Cancel State",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -336,6 +357,8 @@
           "remote_task_id",
           "remote_context_id",
           "remote_task",
+          "cancel_state",
+          "cancel_error",
           "error",
           "created_at",
           "updated_at"
@@ -9318,6 +9341,50 @@
           }
         ],
         "summary": "Get A2A Outbound Task"
+      }
+    },
+    "/channels/a2a/outbound-tasks/{task_id}/cancel": {
+      "post": {
+        "operationId": "cancel_a2a_outbound_task_channels_a2a_outbound_tasks__task_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2AOutboundTaskRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel A2A Outbound Task"
       }
     },
     "/channels/a2a/peers": {

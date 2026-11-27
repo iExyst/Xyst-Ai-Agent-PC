@@ -3,6 +3,11 @@ import {open} from '@tauri-apps/plugin-dialog';
 import type {A2AListenerStatus,A2AOutboundPeer,A2AOutboundTask,ChannelIdentityBinding,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 import {InlineConfirmation} from './InlineConfirmation.tsx';
 
+function canCancelA2ATask(task:A2AOutboundTask): boolean {
+  const status=(task.remote_task?.status as {state?:unknown}|undefined)?.state;
+  return typeof status!=='string'||!['TASK_STATE_COMPLETED','TASK_STATE_CANCELED','TASK_STATE_FAILED','TASK_STATE_REJECTED'].includes(status);
+}
+
 export function ChannelsPanel({client}:{client:EngineClient}) {
   const [status,setStatus]=useState<TelegramChannelStatus>();
   const [token,setToken]=useState('');
@@ -235,6 +240,14 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     finally {setBusy(false);}
   }
 
+  async function cancelA2AOutboundTask(taskId:string) {
+    if(!window.confirm('Ask the remote agent to stop this task?'))return;
+    setBusy(true);setError('');
+    try {const task=await client.cancelA2AOutboundTask(taskId);setA2aSelectedTask(task);setA2aOutboundTasks(await client.a2aOutboundTasks());}
+    catch(failure) {setError(failure instanceof Error?failure.message:'Could not cancel the remote A2A task.');}
+    finally {setBusy(false);}
+  }
+
   return <section aria-labelledby="channels-title">
     <h2 id="channels-title">Messaging channels</h2>
     <h3>Cross-channel identity links</h3>
@@ -323,8 +336,8 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
       <label htmlFor="a2a-outbound-text">Task text</label>
       <textarea id="a2a-outbound-text" maxLength={10000} value={a2aOutboundText} onChange={event=>{setA2aOutboundText(event.target.value);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));}} disabled={busy}/>
       <div className="controls"><button type="button" onClick={()=>void sendA2AOutboundTask()} disabled={busy||!a2aSelectedPeerId||!a2aOutboundText.trim()||!a2aOutboundPeers.find(peer=>peer.id===a2aSelectedPeerId)?.configured}>Send task to selected peer</button><button type="button" onClick={()=>{setA2aOutboundText('');setA2aSelectedTask(undefined);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));}} disabled={busy}>New task</button></div>
-      {a2aOutboundTasks.length>0&&<section aria-label="Saved outbound A2A tasks"><h5>Saved outbound tasks</h5><ul>{a2aOutboundTasks.map(task=><li key={task.id}><button type="button" onClick={()=>setA2aSelectedTask(task)} disabled={busy}>{a2aOutboundPeers.find(peer=>peer.id===task.peer_id)?.name??'Peer'} · {task.state} · {task.remote_task_id??'remote task not confirmed'}</button><button type="button" onClick={()=>void refreshA2AOutboundTask(task.id)} disabled={busy||!task.remote_task_id}>Refresh remote task</button></li>)}</ul></section>}
-      {a2aSelectedTask&&<section aria-label="Selected outbound A2A task"><h5>Outbound task result</h5><p>Delivery state: {a2aSelectedTask.state}{a2aSelectedTask.remote_task?.status?` · Remote state: ${String((a2aSelectedTask.remote_task.status as {state?:unknown}).state??'unknown')}`:''}</p>{a2aSelectedTask.error&&<p role="status">{a2aSelectedTask.error}</p>}<pre>{JSON.stringify(a2aSelectedTask.remote_task,null,2)}</pre></section>}
+      {a2aOutboundTasks.length>0&&<section aria-label="Saved outbound A2A tasks"><h5>Saved outbound tasks</h5><ul>{a2aOutboundTasks.map(task=><li key={task.id}><button type="button" onClick={()=>setA2aSelectedTask(task)} disabled={busy}>{a2aOutboundPeers.find(peer=>peer.id===task.peer_id)?.name??'Peer'} · {task.state} · {task.remote_task_id??'remote task not confirmed'}</button><button type="button" onClick={()=>void refreshA2AOutboundTask(task.id)} disabled={busy||!task.remote_task_id}>Refresh remote task</button>{task.remote_task_id&&task.cancel_state!=='sent'&&canCancelA2ATask(task)&&<button type="button" onClick={()=>void cancelA2AOutboundTask(task.id)} disabled={busy||task.cancel_state==='sending'}>{task.cancel_state==='unknown'?'Retry remote cancellation':'Cancel remote task'}</button>}</li>)}</ul></section>}
+      {a2aSelectedTask&&<section aria-label="Selected outbound A2A task"><h5>Outbound task result</h5><p>Delivery state: {a2aSelectedTask.state}{a2aSelectedTask.remote_task?.status?` · Remote state: ${String((a2aSelectedTask.remote_task.status as {state?:unknown}).state??'unknown')}`:''}</p><p>Cancellation: {a2aSelectedTask.cancel_state}{a2aSelectedTask.cancel_error?` · ${a2aSelectedTask.cancel_error}`:''}</p>{a2aSelectedTask.error&&<p role="status">{a2aSelectedTask.error}</p>}<pre>{JSON.stringify(a2aSelectedTask.remote_task,null,2)}</pre></section>}
     </>}
     <h3>Telegram (private chats)</h3>
     <p>Connect a bot token from BotFather. X.A.A. stores it in Windows Credential Manager. A paired private Telegram account can submit objectives as Observe-mode runs and receive their final answers.</p>

@@ -435,6 +435,10 @@ export class EngineClient {
     return this.#request(`/channels/a2a/outbound-tasks/${encodeURIComponent(taskId)}`);
   }
 
+  cancelA2AOutboundTask(taskId:string): Promise<A2AOutboundTask> {
+    return this.#request(`/channels/a2a/outbound-tasks/${encodeURIComponent(taskId)}/cancel`,{method:'POST'});
+  }
+
   createWebhookCredential(): Promise<WebhookCredential> {
     return this.#request('/channels/webhook/credential',{method:'POST',body:JSON.stringify({})});
   }

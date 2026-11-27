@@ -1145,6 +1145,12 @@ def create_app(
                 "updated_at=? WHERE state='sending'",
                 (utc_now(),),
             )
+            connection.execute(
+                "UPDATE a2a_outbound_tasks SET cancel_state='unknown',"
+                "cancel_error='The application stopped while the peer cancellation was pending.',"
+                "updated_at=? WHERE cancel_state='sending'",
+                (utc_now(),),
+            )
             a2a_settings = connection.execute(
                 "SELECT enabled,bind_address,port,allow_network,tls_cert_path,tls_key_path "
                 "FROM a2a_listener_settings WHERE id=1"
@@ -3903,6 +3909,11 @@ def create_app(
             remote_task_id=str(row["remote_task_id"]) if row["remote_task_id"] else None,
             remote_context_id=(str(row["remote_context_id"]) if row["remote_context_id"] else None),
             remote_task=cast(dict[str, Any] | None, remote_task),
+            cancel_state=cast(
+                Literal["not_requested", "sending", "sent", "unknown"],
+                str(row["cancel_state"]),
+            ),
+            cancel_error=str(row["cancel_error"]) if row["cancel_error"] else None,
             error=str(row["last_error"]) if row["last_error"] else None,
             created_at=datetime.fromisoformat(str(row["created_at"])),
             updated_at=datetime.fromisoformat(str(row["updated_at"])),
@@ -4064,6 +4075,87 @@ def create_app(
                     connection.execute(
                         "UPDATE a2a_outbound_tasks SET remote_task_json=?,last_error=NULL,"
                         "updated_at=? WHERE id=?",
+                        (
+                            json.dumps(remote_task, ensure_ascii=False, separators=(",", ":")),
+                            utc_now(),
+                            task_id,
+                        ),
+                    )
+        with run_store.connection() as connection:
+            refreshed = connection.execute(
+                "SELECT * FROM a2a_outbound_tasks WHERE id=?", (task_id,)
+            ).fetchone()
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="A2A task was not found.")
+        return a2a_outbound_task_record(refreshed)
+
+    @app.post(
+        "/channels/a2a/outbound-tasks/{task_id}/cancel",
+        response_model=A2AOutboundTaskRecord,
+    )
+    async def cancel_a2a_outbound_task(
+        task_id: str, _: None = Depends(authenticate)
+    ) -> A2AOutboundTaskRecord:
+        if credential_store is None:
+            raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        with run_store.atomic_connection() as connection:
+            row = connection.execute(
+                "SELECT t.*,p.agent_card_url FROM a2a_outbound_tasks AS t "
+                "JOIN a2a_outbound_peers AS p ON p.id=t.peer_id WHERE t.id=?",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="A2A task was not found.")
+            if not row["remote_task_id"]:
+                raise HTTPException(
+                    status_code=409, detail="The remote A2A task identity is not known."
+                )
+            if row["cancel_state"] == "sent":
+                return a2a_outbound_task_record(row)
+            if row["cancel_state"] == "sending":
+                raise HTTPException(
+                    status_code=409, detail="This A2A cancellation is already being resolved."
+                )
+            connection.execute(
+                "UPDATE a2a_outbound_tasks SET cancel_state='sending',cancel_error=NULL,"
+                "updated_at=? WHERE id=?",
+                (utc_now(), task_id),
+            )
+            peer_url = str(row["agent_card_url"])
+            peer_id = str(row["peer_id"])
+            remote_task_id = str(row["remote_task_id"])
+        try:
+            token = credential_store.get(a2a_outbound_profile(peer_id))
+        except (KeyringError, OSError, RuntimeError, ValueError) as exc:
+            logger.warning("Could not read an A2A peer credential: %s", type(exc).__name__)
+            token = None
+        if token is None:
+            with run_store.connection() as connection:
+                connection.execute(
+                    "UPDATE a2a_outbound_tasks SET cancel_state='unknown',"
+                    "cancel_error='The configured peer credential is unavailable.',updated_at=? "
+                    "WHERE id=?",
+                    (utc_now(), task_id),
+                )
+        else:
+            try:
+                remote_task = await outbound_a2a.cancel_task(
+                    agent_card_url=peer_url,
+                    bearer_token=token,
+                    task_id=remote_task_id,
+                )
+            except A2AOutboundError as exc:
+                with run_store.connection() as connection:
+                    connection.execute(
+                        "UPDATE a2a_outbound_tasks SET cancel_state='unknown',cancel_error=?,"
+                        "updated_at=? WHERE id=?",
+                        (str(exc), utc_now(), task_id),
+                    )
+            else:
+                with run_store.connection() as connection:
+                    connection.execute(
+                        "UPDATE a2a_outbound_tasks SET cancel_state='sent',cancel_error=NULL,"
+                        "remote_task_json=?,updated_at=? WHERE id=?",
                         (
                             json.dumps(remote_task, ensure_ascii=False, separators=(",", ":")),
                             utc_now(),

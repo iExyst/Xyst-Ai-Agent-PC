@@ -132,11 +132,16 @@ test('save Telegram token securely, pair an account and clear the credential',as
     }
     if(path==='/channels/a2a/peers/fixture-peer/tasks'&&request.method()==='POST'){
       const body=request.postDataJSON();expect(body.text).toBe('Review the fixture task.');expect(body.idempotency_key).toMatch(/^[a-f0-9]{32}$/);a2aOutboundSendCount++;
-      const task={id:'local-task-1',peer_id:'fixture-peer',idempotency_key:body.idempotency_key,state:'sent',remote_task_id:'remote-task-1',remote_context_id:'context-1',remote_task:{id:'remote-task-1',status:{state:'TASK_STATE_SUBMITTED'}},error:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+      const task={id:'local-task-1',peer_id:'fixture-peer',idempotency_key:body.idempotency_key,state:'sent',remote_task_id:'remote-task-1',remote_context_id:'context-1',remote_task:{id:'remote-task-1',status:{state:'TASK_STATE_SUBMITTED'}},cancel_state:'not_requested',cancel_error:null,error:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
       a2aOutboundTasks=[task];return route.fulfill({status:202,json:task,headers});
     }
     if(path==='/channels/a2a/outbound-tasks/local-task-1'&&request.method()==='GET'){
-      return route.fulfill({json:{...a2aOutboundTasks[0],remote_task:{...a2aOutboundTasks[0].remote_task,status:{state:'TASK_STATE_COMPLETED'}}},headers});
+      a2aOutboundTasks=[{...a2aOutboundTasks[0],remote_task:{...a2aOutboundTasks[0].remote_task,status:{state:'TASK_STATE_WORKING'}}}];
+      return route.fulfill({json:a2aOutboundTasks[0],headers});
+    }
+    if(path==='/channels/a2a/outbound-tasks/local-task-1/cancel'&&request.method()==='POST'){
+      a2aOutboundTasks=[{...a2aOutboundTasks[0],cancel_state:'sent',remote_task:{...a2aOutboundTasks[0].remote_task,status:{state:'TASK_STATE_CANCELED'}}}];
+      return route.fulfill({json:a2aOutboundTasks[0],headers});
     }
     if(path==='/channels/a2a/credential'&&request.method()==='POST'){
       a2aStatus={configured:true};
@@ -187,7 +192,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await expect(panel.getByRole('region',{name:'Saved outbound A2A tasks'})).toContainText('remote-task-1');
   expect(a2aOutboundSendCount).toBe(1);
   await panel.getByRole('button',{name:'Refresh remote task'}).click();
-  await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_COMPLETED');
+  await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_WORKING');
+  page.once('dialog',dialog=>dialog.accept());
+  await panel.getByRole('button',{name:'Cancel remote task'}).click();
+  await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_CANCELED');
   await panel.getByRole('button',{name:'Clear A2A peer credential'}).click();
   await panel.getByLabel('First authorized account').selectOption('telegram-binding');
   await panel.getByLabel('Second account from another channel').selectOption('email-binding');

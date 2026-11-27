@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 from xaa.channels.a2a_outbound import A2AOutboundClient, A2AOutboundError, validate_agent_card_url
@@ -94,6 +96,47 @@ async def test_outbound_client_does_not_follow_redirects_or_forward_credentials(
     ]
     assert all(request.headers.get("authorization") == f"Bearer {token}" for request in requests)
     assert requests[1].headers.get("a2a-version") == "1.0"
+
+
+@pytest.mark.asyncio
+async def test_outbound_client_cancels_and_validates_remote_task_identity() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "supportedInterfaces": [
+                        {
+                            "url": "https://agent.example.test",
+                            "protocolBinding": "JSONRPC",
+                            "protocolVersion": "1.0",
+                        }
+                    ]
+                },
+            )
+        call = json.loads(request.content)
+        assert call["method"] == "CancelTask"
+        assert call["params"] == {"id": "remote-task-4"}
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": call["id"],
+                "result": {"id": "remote-task-4", "status": {"state": "TASK_STATE_CANCELED"}},
+            },
+        )
+
+    client = A2AOutboundClient(transport=httpx.MockTransport(handler))
+    task = await client.cancel_task(
+        agent_card_url="https://agent.example.test/.well-known/agent-card.json",
+        bearer_token="z" * 48,
+        task_id="remote-task-4",
+    )
+    assert task["status"]["state"] == "TASK_STATE_CANCELED"
+    assert requests[1].headers["a2a-version"] == "1.0"
 
 
 @pytest.mark.asyncio

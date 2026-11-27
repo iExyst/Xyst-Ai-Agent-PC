@@ -163,6 +163,8 @@ class A2AOutboundTaskRecord(BaseModel):
     remote_task_id: str | None
     remote_context_id: str | None
     remote_task: dict[str, Any] | None
+    cancel_state: Literal["not_requested", "sending", "sent", "unknown"]
+    cancel_error: str | None
     error: str | None
     created_at: datetime
     updated_at: datetime

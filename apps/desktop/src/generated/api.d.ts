@@ -171,6 +171,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/a2a/outbound-tasks/{task_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel A2A Outbound Task */
+        post: operations["cancel_a2a_outbound_task_channels_a2a_outbound_tasks__task_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channels/a2a/peers": {
         parameters: {
             query?: never;
@@ -2719,6 +2736,13 @@ export interface components {
         };
         /** A2AOutboundTaskRecord */
         A2AOutboundTaskRecord: {
+            /** Cancel Error */
+            cancel_error: string | null;
+            /**
+             * Cancel State
+             * @enum {string}
+             */
+            cancel_state: "not_requested" | "sending" | "sent" | "unknown";
             /**
              * Created At
              * Format: date-time
@@ -5952,6 +5976,37 @@ export interface operations {
         };
     };
     get_a2a_outbound_task_channels_a2a_outbound_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2AOutboundTaskRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_a2a_outbound_task_channels_a2a_outbound_tasks__task_id__cancel_post: {
         parameters: {
             query?: never;
             header?: never;

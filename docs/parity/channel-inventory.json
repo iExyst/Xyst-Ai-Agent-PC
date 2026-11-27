@@ -3159,10 +3159,10 @@
         "apps/desktop/src/ChannelsPanel.tsx"
       ],
       "xaa_implementation_status": "implemented_partial",
-      "xaa_implemented_scope": "Authenticated bounded text JSON-RPC ingress with canonical v1 methods, durable task history/artifacts, owner-review state, lookup/cancel and SSE on Observe-mode runs; optional TLS listener exposes only the Agent Card and task endpoint. The owner can configure HTTPS A2A 1.0 JSON-RPC peers with credentials in Windows Credential Manager and manually send bounded text tasks or poll durable remote task IDs. Sends are idempotency-keyed, and ambiguous outcomes are never automatically replayed. The client verifies TLS, disables redirects and ambient proxies, restricts Agent Card endpoints to the configured origin, and caps time/response size. No automatic replies, broad protocol/media support, independent external-agent interoperability or full-parity claim.",
+      "xaa_implemented_scope": "Authenticated bounded text JSON-RPC ingress with canonical v1 methods, durable task history/artifacts, owner-review state, lookup/cancel and SSE on Observe-mode runs; optional TLS listener exposes only the Agent Card and task endpoint. The owner can configure HTTPS A2A 1.0 JSON-RPC peers with credentials in Windows Credential Manager and manually send bounded text tasks, poll, and request remote cancellation. Send and cancel outcomes are journaled; ambiguous outcomes are never automatically replayed. The client verifies TLS, sends the A2A 1.0 version header, disables redirects and ambient proxies, restricts Agent Card endpoints to the configured origin, and caps time/response size. A local independent official-SDK server verifies send/poll/artifact/cancel; no automatic replies, push notifications, broad protocol/media support, live external service exchange, or full-parity claim.",
       "transport_observation": "HTTP JSON-RPC and SSE; stdlib server",
       "acceptance_id": "CHANNEL-A2A",
-      "acceptance": "Agent Card discovery, authenticated task submission, streamed result/cancel and restart deduplication; outbound peers need separate authorization.",
+      "acceptance": "Agent Card discovery, authenticated task submission, streamed result/cancel and restart deduplication; outbound peers need separate authorization and owner-confirmed cancellation.",
       "common_requirements": "CHANNEL-COMMON-1 through CHANNEL-COMMON-8"
     },
     {

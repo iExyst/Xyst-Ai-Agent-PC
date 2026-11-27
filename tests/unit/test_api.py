@@ -2347,6 +2347,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
     secret = "remote-peer-token-" + ("s" * 48)
     active_secret = [secret]
     sends: list[dict[str, Any]] = []
+    cancels: list[dict[str, Any]] = []
 
     def peer(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == f"Bearer {active_secret[0]}"
@@ -2374,13 +2375,21 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
                 "status": {"state": "TASK_STATE_WORKING"},
                 "history": [message],
             }
+        elif call["method"] == "CancelTask":
+            cancels.append(call)
+            assert call["params"]["id"] == "remote-task-1"
+            task = {
+                "id": "remote-task-1",
+                "contextId": "remote-context-1",
+                "status": {"state": "TASK_STATE_CANCELED"},
+            }
         else:
             assert call["method"] == "GetTask"
             assert call["params"]["id"] == "remote-task-1"
             task = {
                 "id": "remote-task-1",
                 "contextId": "remote-context-1",
-                "status": {"state": "TASK_STATE_COMPLETED"},
+                "status": {"state": "TASK_STATE_WORKING"},
                 "history": [
                     {"role": "ROLE_USER", "parts": [{"text": "Review this fixture."}]},
                     {"role": "ROLE_AGENT", "parts": [{"text": "Reviewed."}]},
@@ -2467,8 +2476,20 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         assert conflict.status_code == 409
         polled = client.get(f"/channels/a2a/outbound-tasks/{first.json()['id']}", headers=headers)
         assert polled.status_code == 200
-        assert polled.json()["remote_task"]["status"]["state"] == "TASK_STATE_COMPLETED"
+        assert polled.json()["remote_task"]["status"]["state"] == "TASK_STATE_WORKING"
         assert len(sends) == 1
+        assert polled.json()["cancel_state"] == "not_requested"
+        cancelled = client.post(
+            f"/channels/a2a/outbound-tasks/{first.json()['id']}/cancel", headers=headers
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["cancel_state"] == "sent"
+        assert cancelled.json()["remote_task"]["status"]["state"] == "TASK_STATE_CANCELED"
+        repeated_cancel = client.post(
+            f"/channels/a2a/outbound-tasks/{first.json()['id']}/cancel", headers=headers
+        )
+        assert repeated_cancel.json()["cancel_state"] == "sent"
+        assert len(cancels) == 1
         assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 1
         assert client.delete(f"/channels/a2a/peers/{peer_id}", headers=headers).status_code == 409
 
@@ -2571,6 +2592,121 @@ def test_a2a_outbound_ambiguous_send_is_not_replayed_after_restart(workspace_tmp
         assert recovered.json()["state"] == "unknown"
         assert "stopped" in recovered.json()["error"]
         assert post_count == 1
+
+
+def test_a2a_outbound_ambiguous_cancel_requires_explicit_retry_after_restart(workspace_tmp_path):
+    from xaa.channels.a2a_outbound import A2AOutboundClient
+
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    token = "cancel-peer-token-" + ("c" * 48)
+    cancel_requests = 0
+
+    def peer(request: httpx.Request) -> httpx.Response:
+        nonlocal cancel_requests
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "supportedInterfaces": [
+                        {
+                            "url": "https://peer.example.test/a2a",
+                            "protocolBinding": "JSONRPC",
+                            "protocolVersion": "1.0",
+                        }
+                    ]
+                },
+            )
+        call = json.loads(request.content)
+        if call["method"] == "SendMessage":
+            task = {
+                "id": "remote-cancel-task",
+                "contextId": "remote-cancel-context",
+                "status": {"state": "TASK_STATE_WORKING"},
+            }
+            result = {"task": task}
+        elif call["method"] == "CancelTask":
+            cancel_requests += 1
+            raise httpx.ReadTimeout(
+                "peer accepted cancellation before response loss", request=request
+            )
+        elif call["method"] == "GetTask":
+            task = {
+                "id": "remote-cancel-task",
+                "contextId": "remote-cancel-context",
+                "status": {"state": "TASK_STATE_WORKING"},
+            }
+            result = task
+        else:
+            raise AssertionError(f"Unexpected peer method: {call['method']}")
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": call["id"], "result": result})
+
+    credentials = Credentials()
+    store = RunStore(workspace_tmp_path / "a2a-ambiguous-cancel.sqlite3")
+    a2a_client = A2AOutboundClient(transport=httpx.MockTransport(peer))
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    app = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+        a2a_outbound_client=a2a_client,
+    )
+    with TestClient(app) as client:
+        created = client.post(
+            "/channels/a2a/peers",
+            headers=headers,
+            json={
+                "name": "Cancel peer",
+                "agent_card_url": "https://peer.example.test/.well-known/agent-card.json",
+                "bearer_token": token,
+            },
+        )
+        peer_id = created.json()["id"]
+        task = client.post(
+            f"/channels/a2a/peers/{peer_id}/tasks",
+            headers=headers,
+            json={"text": "Long running fixture", "idempotency_key": "cancel-once"},
+        )
+        task_id = task.json()["id"]
+        first_cancel = client.post(
+            f"/channels/a2a/outbound-tasks/{task_id}/cancel", headers=headers
+        )
+        assert first_cancel.status_code == 200
+        assert first_cancel.json()["cancel_state"] == "unknown"
+        assert cancel_requests == 1
+
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE a2a_outbound_tasks SET cancel_state='sending' WHERE id=?", (task_id,)
+        )
+    restarted = create_app(
+        FakeProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=credentials,
+        a2a_outbound_client=a2a_client,
+    )
+    with TestClient(restarted) as client:
+        recovered = client.get(f"/channels/a2a/outbound-tasks/{task_id}", headers=headers)
+        assert recovered.status_code == 200
+        assert recovered.json()["cancel_state"] == "unknown"
+        assert "stopped" in recovered.json()["cancel_error"]
+        assert cancel_requests == 1
+        retry = client.post(f"/channels/a2a/outbound-tasks/{task_id}/cancel", headers=headers)
+        assert retry.json()["cancel_state"] == "unknown"
+        assert cancel_requests == 2
 
 
 @pytest.mark.parametrize(

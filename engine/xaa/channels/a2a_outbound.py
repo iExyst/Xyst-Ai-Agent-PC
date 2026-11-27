@@ -125,6 +125,35 @@ class A2AOutboundClient:
             raise A2AOutboundError("The peer returned a mismatched A2A task.")
         return task_value
 
+    async def cancel_task(
+        self, *, agent_card_url: str, bearer_token: str, task_id: str
+    ) -> dict[str, Any]:
+        card_url = validate_agent_card_url(agent_card_url)
+        request_id = uuid4().hex
+        async with self._client(bearer_token) as client:
+            card = await self._json(client, "GET", card_url, limit=MAX_AGENT_CARD_BYTES)
+            endpoint = self._jsonrpc_endpoint(card, card_url)
+            response = await self._json(
+                client,
+                "POST",
+                endpoint,
+                limit=MAX_RESPONSE_BYTES,
+                json_body={
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "CancelTask",
+                    "params": {"id": task_id},
+                },
+            )
+        result = self._result(response, expected_id=request_id)
+        task_value = result.get("task", result)
+        if not isinstance(task_value, dict):
+            raise A2AOutboundError("The peer did not return the canceled A2A task.")
+        task = cast(dict[str, Any], task_value)
+        if task.get("id") != task_id:
+            raise A2AOutboundError("The peer returned a mismatched canceled A2A task.")
+        return task
+
     def _client(self, bearer_token: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             verify=self._verify,

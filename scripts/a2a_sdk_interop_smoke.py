@@ -165,10 +165,16 @@ async def _run() -> dict[str, object]:
                     )
                 ]
             )
-            await updater.update_status(state=TaskStateEnum.TASK_STATE_COMPLETED)
+            await updater.update_status(state=TaskStateEnum.TASK_STATE_INPUT_REQUIRED)
 
         async def cancel(self, context: Any, event_queue: Any) -> None:
-            raise NotImplementedError("The local independent-peer fixture does not cancel tasks.")
+            if context.current_task is None:
+                raise ValueError("The SDK fixture cannot find the task to cancel.")
+            task = context.current_task
+            updater = sdk_tasks.TaskUpdater(
+                event_queue=event_queue, task_id=task.id, context_id=task.context_id
+            )
+            await updater.update_status(state=TaskStateEnum.TASK_STATE_CANCELED)
 
     with tempfile.TemporaryDirectory(prefix="xaa-a2a-sdk-") as temporary:
         database = Path(temporary) / "runs.sqlite3"
@@ -424,7 +430,7 @@ async def _run() -> dict[str, object]:
                 remote_task = cast(dict[str, Any], poll_body.get("remote_task") or {})
                 remote_task_status = cast(dict[str, Any], remote_task.get("status") or {})
                 remote_status = remote_task_status.get("state")
-                if remote_status != "TASK_STATE_COMPLETED":
+                if remote_status != "TASK_STATE_INPUT_REQUIRED":
                     raise AssertionError(
                         f"Unexpected outbound A2A peer state: {remote_status!r}; "
                         f"poll_error={poll_body.get('error')!r}."
@@ -444,6 +450,16 @@ async def _run() -> dict[str, object]:
                     "Independent SDK peer received: Return the deterministic acceptance response."
                 ):
                     raise AssertionError("The independent A2A SDK peer returned unexpected text.")
+                cancellation = await owner_client.post(
+                    f"/channels/a2a/outbound-tasks/{outbound.json()['id']}/cancel"
+                )
+                if (
+                    cancellation.status_code != 200
+                    or cancellation.json()["cancel_state"] != "sent"
+                    or cancellation.json()["remote_task"]["status"]["state"]
+                    != "TASK_STATE_CANCELED"
+                ):
+                    raise AssertionError("The independent A2A SDK peer did not cancel its task.")
                 return {
                     "sdk": "a2a-sdk==1.3.1",
                     "protocol_version": card.supported_interfaces[0].protocol_version,
@@ -460,6 +476,10 @@ async def _run() -> dict[str, object]:
                     "outbound_idempotent_replay": duplicate.json()["id"] == outbound.json()["id"],
                     "outbound_peer_implementation": "official a2a-sdk==1.3.1 server",
                     "outbound_peer_task_artifact_text": first_part["text"],
+                    "outbound_cancel_state": cancellation.json()["cancel_state"],
+                    "outbound_cancel_remote_state": cancellation.json()["remote_task"]["status"][
+                        "state"
+                    ],
                     "live_model_inference": False,
                 }
         finally:
