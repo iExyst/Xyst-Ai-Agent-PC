@@ -2955,3 +2955,70 @@ def test_a2a_task_cancel_uses_the_shared_coordinator(workspace_tmp_path):
         assert cancelled.json()["result"]["status"]["state"] == "TASK_STATE_CANCELED"
         assert provider.stopped.wait(2)
         assert store.get_run(task_id)["state"] == RunState.CANCELLED.value
+
+
+def test_a2a_streaming_forwards_incremental_model_deltas(workspace_tmp_path):
+    class Credentials:
+        def __init__(self):
+            self.values = {"a2a-inbound": "fixture-peer-token"}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+    class StreamingProvider(FakeProvider):
+        async def stream(self, **kwargs):
+            del kwargs
+            yield '{"choices":[{"delta":{"content":"hello"}}]}'
+            yield '{"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}'
+
+    store = RunStore(workspace_tmp_path / "a2a-stream.sqlite3")
+    app = create_app(
+        StreamingProvider(),
+        SecretStr(TOKEN),
+        store=store,
+        credential_store=Credentials(),
+        stream_responses=True,
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
+        )
+    with (
+        TestClient(app) as client,
+        client.stream(
+            "POST",
+            "/a2a",
+            headers={"Authorization": "Bearer fixture-peer-token"},
+            json={
+                "jsonrpc": "2.0",
+                "id": "incremental-stream",
+                "method": "SendStreamingMessage",
+                "params": {
+                    "message": {
+                        "messageId": "incremental-stream-message",
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Say hello", "mediaType": "text/plain"}],
+                    }
+                },
+            },
+        ) as response,
+    ):
+        assert response.status_code == 200
+        payloads = [
+            json.loads(line.removeprefix("data: "))["result"]
+            for line in response.iter_lines()
+            if line.startswith("data: ")
+        ]
+    initial_task = next(item["task"] for item in payloads if "task" in item)
+    assert "artifacts" not in initial_task
+    assert all(message["role"] == "ROLE_USER" for message in initial_task["history"])
+    updates = [item["artifactUpdate"] for item in payloads if "artifactUpdate" in item]
+    assert any(update["append"] for update in updates)
+    assert updates[-1]["lastChunk"] is True
+    assert updates[-1]["append"] is False
+    assembled = ""
+    for update in updates:
+        chunk = "".join(part["text"] for part in update["artifact"]["parts"])
+        assembled = assembled + chunk if update["append"] else chunk
+    assert assembled == "hello world"
+    assert "".join(part["text"] for part in updates[-1]["artifact"]["parts"]) == assembled

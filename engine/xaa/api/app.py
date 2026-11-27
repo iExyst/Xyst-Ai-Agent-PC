@@ -4517,6 +4517,8 @@ def create_app(
 
             async def stream_task_events() -> AsyncIterator[str]:
                 last_state: str | None = None
+                event_sequence = 0
+                streamed_text = ""
                 # StreamingResponse owns disconnect cancellation. Polling
                 # Request.is_disconnected() here can wait on the ASGI receive
                 # channel after the request body has already been consumed,
@@ -4526,11 +4528,40 @@ def create_app(
                     if current is None:
                         yield a2a_channel.sse_done()
                         return
+                    for event in run_store.public_events(task_id, event_sequence):
+                        event_sequence = int(event["sequence"])
+                        if event.get("event_type") != "model.delta":
+                            continue
+                        payload_value: object = event.get("payload")
+                        payload = (
+                            cast(dict[str, Any], payload_value)
+                            if isinstance(payload_value, dict)
+                            else {}
+                        )
+                        delta: object = payload.get("text")
+                        if isinstance(delta, str) and delta:
+                            streamed_text += delta
+                            yield a2a_channel.sse_data(
+                                a2a_channel.artifact_update(
+                                    task_id, context_id, delta, append=True
+                                ),
+                                rpc.id,
+                            )
                     mapped = a2a_channel.task_state(str(current["state"]))
                     if mapped != last_state:
                         if last_state is None:
+                            initial_task = a2a_task_record(current, context_id)
+                            initial_task.pop("artifacts", None)
+                            initial_history = initial_task.get("history")
+                            if isinstance(initial_history, list):
+                                initial_task["history"] = [
+                                    entry
+                                    for entry in cast(list[object], initial_history)
+                                    if isinstance(entry, dict)
+                                    and cast(dict[str, Any], entry).get("role") == "ROLE_USER"
+                                ]
                             yield a2a_channel.sse_data(
-                                a2a_channel.stream_task(a2a_task_record(current, context_id)),
+                                a2a_channel.stream_task(initial_task),
                                 rpc.id,
                             )
                         else:
@@ -4559,8 +4590,24 @@ def create_app(
                                 None,
                             )
                             if isinstance(answer, str):
+                                matches_stream = answer.startswith(streamed_text)
+                                has_unstreamed_suffix = matches_stream and len(answer) > len(
+                                    streamed_text
+                                )
+                                final_delta = (
+                                    answer[len(streamed_text) :]
+                                    if has_unstreamed_suffix
+                                    else answer
+                                )
                                 yield a2a_channel.sse_data(
-                                    a2a_channel.artifact_update(task_id, context_id, answer), rpc.id
+                                    a2a_channel.artifact_update(
+                                        task_id,
+                                        context_id,
+                                        final_delta,
+                                        append=bool(streamed_text) and has_unstreamed_suffix,
+                                        last_chunk=True,
+                                    ),
+                                    rpc.id,
                                 )
                         yield a2a_channel.sse_done()
                         return

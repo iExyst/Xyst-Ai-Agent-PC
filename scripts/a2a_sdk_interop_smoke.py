@@ -351,6 +351,7 @@ async def _run() -> dict[str, object]:
                 streamed_artifact_id: str | None = None
                 streamed_answer: str | None = None
                 stream_state: str | None = None
+                final_chunk_seen = False
                 async for event in client.send_message(request):
                     if event.HasField("task"):
                         task_id = event.task.id
@@ -361,11 +362,21 @@ async def _run() -> dict[str, object]:
                     elif event.HasField("artifact_update"):
                         artifact = event.artifact_update.artifact
                         streamed_artifact_id = artifact.artifact_id
-                        streamed_answer = "".join(part.text for part in artifact.parts)
+                        chunk = "".join(part.text for part in artifact.parts)
+                        streamed_answer = (
+                            (streamed_answer or "") + chunk
+                            if event.artifact_update.append
+                            else chunk
+                        )
+                        final_chunk_seen = final_chunk_seen or event.artifact_update.last_chunk
                 if task_id is None:
                     raise AssertionError("Official A2A client received no task event.")
                 if streamed_answer != "A2A SDK interoperability verified.":
                     raise AssertionError("Official A2A client did not receive the text artifact.")
+                if not final_chunk_seen:
+                    raise AssertionError(
+                        "Official A2A client did not receive a final artifact chunk."
+                    )
                 if stream_state != "TASK_STATE_INPUT_REQUIRED":
                     raise AssertionError(f"Unexpected owner-review stream state: {stream_state!r}.")
                 task = await client.get_task(GetTaskRequest(id=task_id, history_length=10))

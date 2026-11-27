@@ -281,7 +281,14 @@ def status_update(task_id: str, context_id: str, state: str) -> dict[str, object
     }
 
 
-def artifact_update(task_id: str, context_id: str, text: str) -> dict[str, object]:
+def artifact_update(
+    task_id: str,
+    context_id: str,
+    text: str,
+    *,
+    append: bool = False,
+    last_chunk: bool = False,
+) -> dict[str, object]:
     return {
         "artifactUpdate": {
             "taskId": task_id,
@@ -290,6 +297,8 @@ def artifact_update(task_id: str, context_id: str, text: str) -> dict[str, objec
                 "artifactId": "xaa-" + hashlib.sha256(task_id.encode()).hexdigest()[:24],
                 "parts": [{"text": text, "mediaType": "text/plain"}],
             },
+            "append": append,
+            "lastChunk": last_chunk,
         }
     }
 
