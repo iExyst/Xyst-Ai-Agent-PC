@@ -3148,10 +3148,13 @@
       "status": "planned",
       "full_parity_phase": 9,
       "phase_scope": "parity expansion",
-      "xaa_module": "engine/xaa/channels/a2a (not implemented)",
-      "xaa_modules": [],
-      "xaa_implementation_status": "not_implemented",
-      "xaa_implemented_scope": null,
+      "xaa_module": "engine/xaa/channels/a2a.py plus authenticated API ingress",
+      "xaa_modules": [
+        "engine/xaa/channels/a2a.py",
+        "engine/xaa/api/app.py"
+      ],
+      "xaa_implementation_status": "implemented_partial",
+      "xaa_implemented_scope": "Authenticated bounded text JSON-RPC ingress with canonical v1 method names and legacy aliases, task lookup/cancel and SSE status on Observe-mode runs; current desktop API binds loopback, one local peer credential, no outbound adapter or desktop setup UI, and no interop/full-parity claim.",
       "transport_observation": "HTTP JSON-RPC and SSE; stdlib server",
       "acceptance_id": "CHANNEL-A2A",
       "acceptance": "Agent Card discovery, authenticated task submission, streamed result/cancel and restart deduplication; outbound peers need separate authorization.",

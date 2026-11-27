@@ -14,6 +14,7 @@ CREDENTIAL_PROFILES_FOR_EXPORT_REDACTION = (
     "telegram-bot",
     "discord-bot",
     "generic-webhook-hmac",
+    "a2a-inbound",
     "email-mailbox-password",
 )
 

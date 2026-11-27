@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
+from xaa.channels import a2a as a2a_channel
 from xaa.channels.webhook import sign_webhook
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo, ProviderError
 from xaa.runtime.states import RunState
@@ -40,6 +41,21 @@ class FakeProvider(LMStudioProvider):
 
     async def close(self) -> None:
         return None
+
+
+class TextReplyProvider(FakeProvider):
+    async def chat(self, **kwargs):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello from the shared coordinator.",
+                    },
+                    "finish_reason": "stop",
+                }
+            ]
+        }
 
 
 TOKEN = "a-test-token-that-is-long-enough-to-pass-validation"
@@ -2009,3 +2025,221 @@ def test_authenticated_token_count_contract_and_safe_failure(workspace_tmp_path)
         client.post(path, json={**body, "api_token": "not-allowed"}, headers=headers).status_code
         == 422
     )
+
+
+def test_a2a_text_ingress_is_authenticated_deduplicated_and_restart_queryable(workspace_tmp_path):
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    database = workspace_tmp_path / "a2a-api.sqlite3"
+    credentials = Credentials()
+    store = RunStore(database)
+    app = create_app(
+        TextReplyProvider(), SecretStr(TOKEN), store=store, credential_store=credentials
+    )
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
+        )
+    with store.connection() as connection:
+        assert (
+            connection.execute(
+                "SELECT selected_model FROM provider_profiles WHERE id='lm-studio'"
+            ).fetchone()["selected_model"]
+            == "fixture/model"
+        )
+    owner_headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        assert client.get("/.well-known/agent-card.json").json()["capabilities"]["streaming"]
+        assert client.get("/channels/a2a").status_code == 401
+        assert client.get("/channels/a2a", headers=owner_headers).json() == {"configured": False}
+        configured = client.post("/channels/a2a/credential", headers=owner_headers)
+        assert configured.status_code == 200
+        peer_headers = {"Authorization": f"Bearer {configured.json()['secret']}"}
+        params = {
+            "message": {
+                "messageId": "user-message-1",
+                "contextId": "fixture-context",
+                "role": "ROLE_USER",
+                "parts": [{"text": "Reply with a short greeting", "mediaType": "text/plain"}],
+            }
+        }
+        rpc = {"jsonrpc": "2.0", "id": "request-1", "method": "SendMessage", "params": params}
+        assert client.post("/a2a", json=rpc).status_code == 401
+        accepted = client.post("/a2a", json=rpc, headers=peer_headers)
+        assert accepted.status_code == 200, accepted.text
+        task = accepted.json()["result"]["task"]
+        run_id = task["id"]
+        record = store.get_run(run_id)
+        assert record is not None
+        assert record["mode"] == "observe" and record["workspace"] is None
+        assert record["approved_mcp_tools"] == [] and record["command_grant"] is None
+        replay = client.post(
+            "/a2a",
+            json={**rpc, "id": "different-jsonrpc-id"},
+            headers=peer_headers,
+        )
+        assert replay.json()["result"]["task"]["id"] == run_id
+        changed = client.post(
+            "/a2a",
+            json={
+                **rpc,
+                "params": {
+                    "message": {
+                        **params["message"],
+                        "parts": [{"text": "Changed after retry", "mediaType": "text/plain"}],
+                    }
+                },
+            },
+            headers=peer_headers,
+        )
+        assert changed.status_code == 409
+        assert "reused with different content" in changed.text
+        with client.stream(
+            "POST",
+            "/a2a",
+            headers=peer_headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": "stream-request",
+                "method": "SendStreamingMessage",
+                "params": {
+                    "message": {
+                        "messageId": "streamed-message-1",
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Stream a short greeting", "mediaType": "text/plain"}],
+                    }
+                },
+            },
+        ) as streamed:
+            assert streamed.status_code == 200
+            assert streamed.headers["content-type"].startswith("text/event-stream")
+            first_event = next(streamed.iter_text())
+            assert '"TASK_STATE_' in first_event
+
+    restarted = create_app(
+        TextReplyProvider(),
+        SecretStr(TOKEN),
+        store=RunStore(database),
+        credential_store=credentials,
+    )
+    with TestClient(restarted) as client:
+        task_lookup = client.post(
+            "/a2a",
+            json={"jsonrpc": "2.0", "id": 2, "method": "GetTask", "params": {"id": run_id}},
+            headers=peer_headers,
+        )
+        assert task_lookup.status_code == 200
+        assert task_lookup.json()["result"]["id"] == run_id
+        assert task_lookup.json()["result"]["contextId"] == "fixture-context"
+        assert client.delete("/channels/a2a/credential", headers=owner_headers).status_code == 204
+        assert client.post("/a2a", json=rpc, headers=peer_headers).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "body,code",
+    [
+        (b"{", -32700),
+        (b"[]", -32600),
+        (
+            json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {}}
+            ).encode(),
+            -32602,
+        ),
+        (
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "message/send",
+                    "params": {
+                        "message": {
+                            "messageId": "m1",
+                            "role": "ROLE_USER",
+                            "parts": [{"data": {"workspace": "grant"}}],
+                        }
+                    },
+                }
+            ).encode(),
+            -32602,
+        ),
+    ],
+)
+def test_a2a_rejects_malformed_and_non_text_requests(body, code):
+    with pytest.raises(a2a_channel.InvalidA2ARequest) as error:
+        a2a_channel.parse_request(body)
+    assert error.value.code == code
+
+
+def test_a2a_task_cancel_uses_the_shared_coordinator(workspace_tmp_path):
+    class Credentials:
+        def __init__(self):
+            self.values: dict[str, str] = {}
+
+        def get(self, profile="lm-studio"):
+            return self.values.get(profile)
+
+        def set(self, token, profile="lm-studio"):
+            self.values[profile] = token
+
+        def delete(self, profile="lm-studio"):
+            self.values.pop(profile, None)
+
+    provider = WaitingProvider()
+    store = RunStore(workspace_tmp_path / "a2a-cancel.sqlite3")
+    credentials = Credentials()
+    app = create_app(provider, SecretStr(TOKEN), store=store, credential_store=credentials)
+    with store.connection() as connection:
+        connection.execute(
+            "UPDATE provider_profiles SET selected_model='fixture/model' WHERE id='lm-studio'"
+        )
+    owner_headers = {"Authorization": f"Bearer {TOKEN}"}
+    with TestClient(app) as client:
+        peer_secret = client.post("/channels/a2a/credential", headers=owner_headers).json()[
+            "secret"
+        ]
+        peer_headers = {"Authorization": f"Bearer {peer_secret}"}
+        accepted = client.post(
+            "/a2a",
+            headers=peer_headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "SendMessage",
+                "params": {
+                    "message": {
+                        "messageId": "cancel-message-1",
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Wait until cancelled", "mediaType": "text/plain"}],
+                    }
+                },
+            },
+        )
+        assert accepted.status_code == 200
+        task_id = accepted.json()["result"]["task"]["id"]
+        assert provider.started.wait(2)
+        cancelled = client.post(
+            "/a2a",
+            headers=peer_headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "CancelTask",
+                "params": {"id": task_id},
+            },
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["result"]["status"]["state"] == "TASK_STATE_CANCELED"
+        assert provider.stopped.wait(2)
+        assert store.get_run(task_id)["state"] == RunState.CANCELLED.value

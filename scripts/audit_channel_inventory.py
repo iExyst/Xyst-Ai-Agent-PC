@@ -40,6 +40,12 @@ XAA_CHANNEL_SLICES: dict[str, XaaChannelSlice] = {
         "status": "implemented_partial",
         "scope": "Signed bounded text ingress with event deduplication into Observe-mode runs; ingress only, no outbound messaging.",
     },
+    "a2a": {
+        "module": "engine/xaa/channels/a2a.py plus authenticated API ingress",
+        "modules": ["engine/xaa/channels/a2a.py", "engine/xaa/api/app.py"],
+        "status": "implemented_partial",
+        "scope": "Authenticated bounded text JSON-RPC ingress with canonical v1 method names and legacy aliases, task lookup/cancel and SSE status on Observe-mode runs; current desktop API binds loopback, one local peer credential, no outbound adapter or desktop setup UI, and no interop/full-parity claim.",
+    },
     "discord": {
         "module": None,
         "modules": [],
