@@ -5,30 +5,44 @@ import ast
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import yaml
 from audit_execution_inventory import PIN, ROOT, check_reference, digest
 
 OUTPUT = Path("docs/parity/channel-inventory.json")
-XAA_CHANNEL_SLICES = {
+XAA_ROOT = Path(__file__).resolve().parents[1]
+
+
+class XaaChannelSlice(TypedDict):
+    module: str | None
+    modules: list[str]
+    status: str
+    scope: str
+
+
+XAA_CHANNEL_SLICES: dict[str, XaaChannelSlice] = {
     "telegram": {
         "module": "engine/xaa/channels/telegram.py",
+        "modules": ["engine/xaa/channels/telegram.py"],
         "status": "implemented_partial",
         "scope": "Authorized text ingress, private pairing, durable deduplication and text delivery; live service acceptance and media/topic parity remain open.",
     },
     "email": {
         "module": "engine/xaa/channels/email.py",
+        "modules": ["engine/xaa/channels/email.py"],
         "status": "implemented_partial",
         "scope": "Allowlisted text ingress and threaded text replies with durable ambiguous-send reconciliation; live mailbox interoperability and broader parity remain open.",
     },
     "webhook": {
         "module": "engine/xaa/channels/webhook.py plus authenticated API ingress",
+        "modules": ["engine/xaa/channels/webhook.py", "engine/xaa/api/app.py"],
         "status": "implemented_partial",
         "scope": "Signed bounded text ingress with event deduplication into Observe-mode runs; ingress only, no outbound messaging.",
     },
     "discord": {
         "module": None,
+        "modules": [],
         "status": "excluded_by_product_scope",
         "scope": "Explicitly excluded from X.A.A. product scope; retained in this upstream inventory for audit completeness.",
     },
@@ -549,6 +563,15 @@ def inventory() -> dict[str, Any]:
         core = name in {"api_server", "webhook", "msgraph_webhook"}
         source = ROOT / "gateway/platforms" / f"{name}.py" if core else None
         xaa_slice = XAA_CHANNEL_SLICES.get(name)
+        xaa_modules: list[str] = xaa_slice["modules"] if xaa_slice is not None else []
+        missing_xaa_modules = [
+            module for module in xaa_modules if not (XAA_ROOT / module).is_file()
+        ]
+        if missing_xaa_modules:
+            raise ValueError(
+                f"X.A.A. channel mapping for {name} references missing modules: "
+                + ", ".join(missing_xaa_modules)
+            )
         channels.append(
             {
                 "id": name,
@@ -564,6 +587,7 @@ def inventory() -> dict[str, Any]:
                     if xaa_slice is not None
                     else f"engine/xaa/channels/{name} (not implemented)"
                 ),
+                "xaa_modules": xaa_modules,
                 "xaa_implementation_status": (
                     xaa_slice["status"] if xaa_slice is not None else "not_implemented"
                 ),
