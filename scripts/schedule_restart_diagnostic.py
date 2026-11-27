@@ -235,7 +235,7 @@ def main() -> None:
     report["dst_fall_back_process_restart"] = {
         "passed": dst_passed,
         "timezone": "America/New_York",
-        "first_0130_utc": "2025-11-02T05:45:00+00:00",
+        "first_tick_after_0130_edt_utc": "2025-11-02T05:45:00+00:00",
         "repeated_0100_utc_after_restart": "2025-11-02T06:00:00+00:00",
         "dispatches_before_restart": len(first_fall_back),
         "dispatches_after_restart": len(repeated_hour_after_restart),
@@ -244,11 +244,56 @@ def main() -> None:
             dst_saved["recurrence"]["next_at"] if dst_saved is not None else None
         ),
     }
-    report["passed"] = passed and dst_passed
+
+    spring_database = root / "dst-spring-forward.sqlite3"
+    spring_store = RunStore(spring_database)
+    spring_schedule = ScheduleStore(spring_store).create(
+        objective="Catch up safely across the spring-forward gap.",
+        acceptance_criteria=[
+            "Do not repeat catch-up after restart; skip the nonexistent wall time."
+        ],
+        workspace=None,
+        model="diagnostic-no-inference",
+        start_at=datetime(2025, 3, 8, 2, 30),
+        frequency="daily",
+        timezone="America/New_York",
+        missed_run_policy="run_once",
+        max_iterations=1,
+        max_seconds=30,
+    )
+    spring_catch_up = launch_dst_tick(spring_database, datetime(2025, 3, 9, 7, 0, tzinfo=UTC))
+    spring_gap_after_restart = launch_dst_tick(
+        spring_database, datetime(2025, 3, 9, 7, 1, tzinfo=UTC)
+    )
+    spring_saved = ScheduleStore(RunStore(spring_database)).get(spring_schedule["id"])
+    spring_outcomes = (
+        [item["state"] for item in spring_saved["executions"]] if spring_saved is not None else []
+    )
+    spring_passed = (
+        len(spring_catch_up) == 1
+        and spring_gap_after_restart == []
+        and spring_saved is not None
+        and len(spring_outcomes) == 2
+        and set(spring_outcomes) == {"queued", "dst_skipped"}
+        and spring_saved["recurrence"]["next_at"] == "2025-03-10T02:30"
+    )
+    report["dst_spring_forward_process_restart"] = {
+        "passed": spring_passed,
+        "timezone": "America/New_York",
+        "catch_up_tick_utc": "2025-03-09T07:00:00+00:00",
+        "gap_tick_after_restart_utc": "2025-03-09T07:01:00+00:00",
+        "dispatches_before_restart": len(spring_catch_up),
+        "dispatches_after_restart": len(spring_gap_after_restart),
+        "execution_outcomes": spring_outcomes,
+        "next_local_occurrence": (
+            spring_saved["recurrence"]["next_at"] if spring_saved is not None else None
+        ),
+    }
+    report["passed"] = passed and dst_passed and spring_passed
     (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report, indent=2))
     if not report["passed"]:
-        raise RuntimeError("Scheduled recovery or fall-back restart was not exactly once.")
+        raise RuntimeError("Scheduled recovery or DST process-restart acceptance failed.")
 
 
 if __name__ == "__main__":
