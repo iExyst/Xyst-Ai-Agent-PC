@@ -1166,3 +1166,7 @@ The Windows installer workflow now invokes the isolated installed backup/restore
 ## Reattempt physical microphone acceptance (2026-11-27)
 
 The local Windows speech acceptance listened to the current default input, recorded 282 level events with a peak of 0%, and returned `silent_input` ([report](../../.acceptance/windows-microphone-speech-817bb045-4b14-40e2-86c2-0053f163b0af/report.json)). A user-authorized retry recorded 281 events, again at a peak of 0%, and returned `silent_input` ([report](../../.acceptance/windows-microphone-speech-259b99a7-7e24-4ec9-bdda-b71b0702fb32/report.json)). Windows enumerates microphone endpoints, but the selected default endpoint supplied no signal; human-speech recognition remains unverified. No audio was retained and no inference occurred. This does not promote Hermes audio parity.
+
+## Reverify current Windows package lifecycle (2026-11-27)
+
+Exact-head hosted installer workflow [45971570878](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/45971570878) passed package build, frozen/installed execution, upgrade, standard-user install, native recovery, backup/restore and uninstall. Package evidence is retained in [`.acceptance/hosted-installer-45971570878/`](../../.acceptance/hosted-installer-45971570878/). This confirms X.A.A.'s Windows release packaging checks only; it does not change any Hermes capability status or establish live-model parity.
