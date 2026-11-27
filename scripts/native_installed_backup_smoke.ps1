@@ -35,8 +35,33 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not seed isolated installed package data.' }
     $env:XAA_NATIVE_ACCEPTANCE_ROOT = Join-Path $xaaRoot 'native'
     $env:XAA_NATIVE_BACKUP_FIXTURE = $xaaFixture
-    node scripts/native_boot_smoke.mjs $xaaDesktop
-    if ($LASTEXITCODE -ne 0) { throw 'Installed desktop backup/restore acceptance failed.' }
+    $xaaDebugPort = 19222
+    $xaaPriorDebugPort = $env:XAA_NATIVE_DEBUG_PORT
+    $env:XAA_NATIVE_DEBUG_PORT = [string]$xaaDebugPort
+    $xaaIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $xaaElevated = ([Security.Principal.WindowsPrincipal]::new($xaaIdentity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $xaaPolicyPath = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+    $xaaPolicyCreated = $false
+    $xaaValueCreated = $false
+    try {
+        if ($xaaElevated) {
+            $xaaExistingPolicy = Get-Item -LiteralPath $xaaPolicyPath -ErrorAction SilentlyContinue
+            if ($xaaExistingPolicy -and $xaaExistingPolicy.GetValueNames() -contains 'xaa-desktop.exe') { throw 'Refusing to replace existing app debugging configuration.' }
+            if (-not $xaaExistingPolicy) { New-Item -Path $xaaPolicyPath -Force | Out-Null; $xaaPolicyCreated = $true }
+            New-ItemProperty -LiteralPath $xaaPolicyPath -Name 'xaa-desktop.exe' -Value "--remote-debugging-port=$xaaDebugPort" -PropertyType String | Out-Null
+            $xaaValueCreated = $true
+        }
+        node scripts/native_boot_smoke.mjs $xaaDesktop
+        if ($LASTEXITCODE -ne 0) { throw 'Installed desktop backup/restore acceptance failed.' }
+    } finally {
+        if ($xaaValueCreated) { Remove-ItemProperty -LiteralPath $xaaPolicyPath -Name 'xaa-desktop.exe' }
+        if ($xaaPolicyCreated -and (Test-Path -LiteralPath $xaaPolicyPath)) {
+            $xaaRemainingValues = (Get-Item -LiteralPath $xaaPolicyPath).GetValueNames()
+            if ($xaaRemainingValues.Count -eq 0) { Remove-Item -LiteralPath $xaaPolicyPath }
+        }
+        if ($null -eq $xaaPriorDebugPort) { Remove-Item Env:XAA_NATIVE_DEBUG_PORT -ErrorAction SilentlyContinue }
+        else { $env:XAA_NATIVE_DEBUG_PORT = $xaaPriorDebugPort }
+    }
     $xaaNativeReport = Get-Content -LiteralPath (Join-Path $env:XAA_NATIVE_ACCEPTANCE_ROOT 'report.json') -Raw | ConvertFrom-Json
     if (-not $xaaNativeReport.installed_backup_restore_verified -or -not $xaaNativeReport.backup_acceptance.verification.passed) { throw 'Installed backup/restore evidence was incomplete.' }
     if (-not $xaaNativeReport.installed_desktop_restore_ui_verified -or -not $xaaNativeReport.desktop_restore_acceptance.restored_database_and_artifacts_verified -or -not $xaaNativeReport.desktop_restore_acceptance.active_profile_unchanged_before_switch -or -not $xaaNativeReport.desktop_restore_acceptance.profile_switch_disabled_before_confirmation -or -not $xaaNativeReport.desktop_restore_acceptance.profile_switch_enabled_after_confirmation -or -not $xaaNativeReport.desktop_restore_acceptance.profile_activation_invoked -or -not $xaaNativeReport.desktop_restore_acceptance.desktop_restarted -or -not $xaaNativeReport.desktop_restore_acceptance.restored_run_available_after_restart -or -not $xaaNativeReport.desktop_restore_acceptance.restored_profile_reverified_after_restart) { throw 'Installed desktop restore and profile activation acceptance was incomplete.' }
