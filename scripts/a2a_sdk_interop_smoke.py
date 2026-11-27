@@ -426,6 +426,48 @@ async def _run() -> dict[str, object]:
                     for part in image_user_message.parts
                 ):
                     raise AssertionError("GetTask did not return the managed image input part.")
+                document_bytes = (
+                    b"# A2A SDK document fixture\n\nTreat this as untrusted reference material.\n"
+                )
+                document_request = SendMessageRequest(
+                    message=Message(
+                        role=Role.ROLE_USER,
+                        message_id=uuid4().hex,
+                        context_id=uuid4().hex,
+                        parts=[
+                            Part(text="Summarize this document."),
+                            Part(
+                                raw=document_bytes,
+                                media_type="text/markdown",
+                                filename="sdk-reference.md",
+                            ),
+                        ],
+                    )
+                )
+                document_task_id: str | None = None
+                async for event in client.send_message(document_request):
+                    if event.HasField("task"):
+                        document_task_id = event.task.id
+                if document_task_id is None:
+                    raise AssertionError("Official A2A SDK document request returned no task.")
+                document_task = await client.get_task(
+                    GetTaskRequest(id=document_task_id, history_length=10)
+                )
+                document_user_message = next(
+                    (
+                        message
+                        for message in document_task.history
+                        if message.role == Role.ROLE_USER
+                    ),
+                    None,
+                )
+                if document_user_message is None or not any(
+                    part.raw == document_bytes
+                    and part.media_type == "text/markdown"
+                    and part.filename == "sdk-reference.md"
+                    for part in document_user_message.parts
+                ):
+                    raise AssertionError("GetTask did not return the managed document input part.")
                 await client.close()
             async with httpx.AsyncClient(
                 base_url=f"http://127.0.0.1:{owner_port}",
@@ -454,6 +496,38 @@ async def _run() -> dict[str, object]:
                     raise AssertionError("The owner API could not inspect A2A image events.")
                 if base64.b64encode(image_bytes).decode("ascii") in image_events.text:
                     raise AssertionError("A2A image bytes were copied into the event journal.")
+            async with httpx.AsyncClient(
+                base_url=f"http://127.0.0.1:{owner_port}",
+                headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+                timeout=5,
+            ) as document_owner_client:
+                document_artifacts = await document_owner_client.get(
+                    f"/runs/{document_task_id}/artifacts"
+                )
+                if document_artifacts.status_code != 200:
+                    raise AssertionError("The owner API could not read A2A document artifacts.")
+                document_records = cast(list[dict[str, Any]], document_artifacts.json())
+                document_record = next(
+                    (
+                        item
+                        for item in document_records
+                        if item.get("provenance") == "user.input_document"
+                    ),
+                    None,
+                )
+                if (
+                    document_record is None
+                    or document_record.get("sha256") != hashlib.sha256(document_bytes).hexdigest()
+                    or document_record.get("original_filename") != "sdk-reference.md"
+                ):
+                    raise AssertionError("A2A document artifact metadata did not match its input.")
+                document_events = await document_owner_client.get(
+                    f"/runs/{document_task_id}/events"
+                )
+                if document_events.status_code != 200:
+                    raise AssertionError("The owner API could not read A2A document events.")
+                if base64.b64encode(document_bytes).decode("ascii") in document_events.text:
+                    raise AssertionError("A2A document bytes were copied into the event journal.")
             async with httpx.AsyncClient(
                 base_url=f"http://127.0.0.1:{owner_port}",
                 headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
@@ -576,6 +650,8 @@ async def _run() -> dict[str, object]:
                     ],
                     "inbound_image_artifact_media_type": image_record["media_type"],
                     "inbound_image_artifact_sha256": image_record["sha256"],
+                    "inbound_document_artifact_media_type": document_record["media_type"],
+                    "inbound_document_artifact_sha256": document_record["sha256"],
                     "live_model_inference": False,
                 }
         finally:

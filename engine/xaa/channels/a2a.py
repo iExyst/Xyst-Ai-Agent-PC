@@ -13,8 +13,18 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-MAX_A2A_BODY_BYTES = 4 * 1024 * 1024 + 32 * 1024
+MAX_A2A_ATTACHMENT_BYTES = 4 * 1024 * 1024
+MAX_A2A_BODY_BYTES = 6 * 1024 * 1024 + 32 * 1024
 MAX_A2A_TEXT_CHARS = 10_000
+DOCUMENT_MEDIA_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+    "text/markdown",
+    "text/plain",
+}
+IMAGE_MEDIA_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 _IDENTIFIER = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _METHODS = {
     "SendMessage",
@@ -113,12 +123,16 @@ def _validate_message(params: dict[str, Any], request_id: str | int) -> None:
         raise InvalidA2ARequest(
             "A2A message must contain 1–32 supported parts.", request_id=request_id
         )
-    image_parts = 0
+    attachment_parts = 0
     for part_value in parts:
         if not isinstance(part_value, dict):
             raise InvalidA2ARequest("A2A message part is invalid.", request_id=request_id)
         part = cast(dict[str, Any], part_value)
-        if isinstance(part.get("text"), str) and part.get("mediaType") in (None, "text/plain"):
+        if "text" in part and (
+            isinstance(part.get("text"), str)
+            and part.get("mediaType") in (None, "text/plain")
+            and not any(key in part for key in ("raw", "url", "data"))
+        ):
             continue
         if "raw" in part or "url" in part:
             media_type = part.get("mediaType")
@@ -126,29 +140,48 @@ def _validate_message(params: dict[str, Any], request_id: str | int) -> None:
             if (
                 not isinstance(encoded, str)
                 or not isinstance(media_type, str)
-                or part.get("url") is not None
-                or not media_type.startswith("image/")
+                or "url" in part
+                or "text" in part
+                or "data" in part
             ):
                 raise InvalidA2ARequest(
-                    "A2A image parts must contain inline raw bytes; remote file URLs are not fetched.",
+                    "A2A attachments must contain inline raw bytes; remote file URLs are not fetched.",
                     request_id=request_id,
                 )
-            image_parts += 1
-            if image_parts > 1:
+            if media_type not in IMAGE_MEDIA_TYPES | DOCUMENT_MEDIA_TYPES:
                 raise InvalidA2ARequest(
-                    "Only one A2A image attachment is supported per task.", request_id=request_id
+                    "This A2A endpoint does not support the attachment media type.",
+                    request_id=request_id,
+                )
+            attachment_limit = (
+                3 * 1024 * 1024 if media_type in IMAGE_MEDIA_TYPES else MAX_A2A_ATTACHMENT_BYTES
+            )
+            attachment_parts += 1
+            if attachment_parts > 1:
+                raise InvalidA2ARequest(
+                    "Only one A2A image or document attachment is supported per task.",
+                    request_id=request_id,
                 )
             try:
-                if len(encoded) > 4 * 1024 * 1024:
+                if len(encoded) > ((attachment_limit + 2) // 3) * 4:
                     raise ValueError
-                base64.b64decode(encoded, validate=True)
+                raw = base64.b64decode(encoded, validate=True)
+                if not raw or len(raw) > attachment_limit:
+                    raise ValueError
             except (ValueError, binascii.Error):
                 raise InvalidA2ARequest(
-                    "A2A image bytes are invalid or exceed 3 MiB.", request_id=request_id
+                    f"A2A attachment bytes are invalid or exceed {attachment_limit // (1024 * 1024)} MiB.",
+                    request_id=request_id,
                 ) from None
+            if "filename" in part and (
+                not isinstance(part["filename"], str) or len(part["filename"]) > 255
+            ):
+                raise InvalidA2ARequest(
+                    "A2A attachment filename is invalid or too long.", request_id=request_id
+                )
             continue
         raise InvalidA2ARequest(
-            "This A2A endpoint accepts text/plain and inline image parts only.",
+            "This A2A endpoint accepts text/plain and one inline image or document only.",
             request_id=request_id,
         )
     text = extract_text(message)
@@ -169,8 +202,42 @@ def extract_image_data_url(message: Mapping[str, Any]) -> str | None:
         part = cast(dict[str, Any], value)
         media_type = part.get("mediaType")
         encoded = part.get("raw")
-        if isinstance(media_type, str) and isinstance(encoded, str):
+        if (
+            isinstance(media_type, str)
+            and media_type in IMAGE_MEDIA_TYPES
+            and isinstance(encoded, str)
+        ):
             return f"data:{media_type};base64,{encoded}"
+    return None
+
+
+def extract_document_attachment(
+    message: Mapping[str, Any],
+) -> tuple[bytes, str, str | None] | None:
+    """Decode one bounded inline document; never dereference a peer-supplied URL."""
+    raw_parts = message.get("parts")
+    if not isinstance(raw_parts, list):
+        return None
+    for value in cast(list[object], raw_parts):
+        if not isinstance(value, dict):
+            continue
+        part = cast(dict[str, Any], value)
+        media_type = part.get("mediaType")
+        encoded = part.get("raw")
+        if not isinstance(media_type, str) or media_type not in DOCUMENT_MEDIA_TYPES:
+            continue
+        if "raw" not in part:
+            continue
+        if not isinstance(encoded, str):
+            raise TypeError("A2A document attachment must contain inline raw bytes.")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error):
+            raise ValueError("A2A document attachment bytes are invalid.") from None
+        if not content or len(content) > MAX_A2A_ATTACHMENT_BYTES:
+            raise ValueError("A2A document attachment must be between 1 byte and 4 MiB.")
+        filename = part.get("filename")
+        return content, media_type, filename if isinstance(filename, str) else None
     return None
 
 

@@ -1877,6 +1877,35 @@ class RunStore:
             raise ValueError("Run image failed artifact integrity verification.")
         return f"data:{row['media_type']};base64," + base64.b64encode(content).decode("ascii")
 
+    def document_attachment(self, run_id: str) -> tuple[bytes, str, str | None] | None:
+        """Read and integrity-check the single managed document input for a run."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT media_type, storage_key, size_bytes, sha256, original_filename "
+                "FROM artifacts WHERE run_id=? AND provenance='user.input_document' "
+                "ORDER BY created_at LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        if row["size_bytes"] > 4 * 1024 * 1024:
+            raise ValueError("Managed document exceeds the attachment read limit.")
+        root = (self.path.parent / "artifacts").resolve(strict=True)
+        target = (root / row["storage_key"]).resolve(strict=True)
+        if not target.is_relative_to(root):
+            raise PermissionError("Run document escaped managed artifact storage.")
+        with target.open("rb") as source:
+            if not opened_file_path(source).is_relative_to(root):
+                raise PermissionError("Opened run document escaped managed artifact storage.")
+            content = source.read(4 * 1024 * 1024 + 1)
+        if (
+            len(content) != row["size_bytes"]
+            or hashlib.sha256(content).hexdigest() != row["sha256"]
+        ):
+            raise ValueError("Run document failed artifact integrity verification.")
+        filename = row["original_filename"]
+        return content, row["media_type"], filename if isinstance(filename, str) else None
+
     def assigned_image_data_urls(
         self, run_id: str, artifact_ids: list[str]
     ) -> list[dict[str, str]]:
