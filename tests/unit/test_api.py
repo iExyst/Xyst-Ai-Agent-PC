@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import socket
@@ -2473,6 +2474,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
 
     secret = "remote-peer-token-" + ("s" * 48)
     active_secret = [secret]
+    active_modes = [["text/plain", "image/png"]]
     sends: list[dict[str, Any]] = []
     cancels: list[dict[str, Any]] = []
 
@@ -2482,13 +2484,14 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             return httpx.Response(
                 200,
                 json={
+                    "defaultInputModes": active_modes[0],
                     "supportedInterfaces": [
                         {
                             "url": "https://peer.example.test/a2a",
                             "protocolBinding": "JSONRPC",
                             "protocolVersion": "1.0",
                         }
-                    ]
+                    ],
                 },
             )
         call = json.loads(request.content)
@@ -2601,10 +2604,72 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             json={"text": "Different text.", "idempotency_key": "review-001"},
         )
         assert conflict.status_code == 409
+        image_bytes = b"\x89PNG\r\n\x1a\nfixture-image"
+        image_data = "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
+        image_body = {
+            "text": "Describe this picture.",
+            "image_data_url": image_data,
+            "idempotency_key": "review-image-001",
+        }
+        sent_image = client.post(
+            f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=image_body
+        )
+        assert sent_image.status_code == 202
+        assert sent_image.json()["state"] == "sent"
+        assert len(sends) == 2
+        saved_remote_image = sent_image.json()["remote_task"]["history"][0]["parts"][1]
+        assert saved_remote_image == {
+            "mediaType": "image/png",
+            "text": "[Remote attachment omitted by X.A.A.]",
+        }
+        assert base64.b64encode(image_bytes).decode("ascii") not in sent_image.text
+        with store.connection() as connection:
+            saved_task = connection.execute(
+                "SELECT remote_task_json FROM a2a_outbound_tasks WHERE id=?",
+                (sent_image.json()["id"],),
+            ).fetchone()
+        assert base64.b64encode(image_bytes).decode("ascii") not in str(saved_task[0])
+        assert sends[1]["params"]["message"]["parts"] == [
+            {"text": "Describe this picture.", "mediaType": "text/plain"},
+            {
+                "raw": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture-image").decode("ascii"),
+                "mediaType": "image/png",
+            },
+        ]
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=image_body
+            ).json()["id"]
+            == sent_image.json()["id"]
+        )
+        different_image = {
+            **image_body,
+            "image_data_url": "data:image/png;base64,"
+            + base64.b64encode(b"\x89PNG\r\n\x1a\ndifferent-image").decode("ascii"),
+        }
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=different_image
+            ).status_code
+            == 409
+        )
+        assert len(sends) == 2
+        active_modes[0] = ["text/plain"]
+        unsupported = client.post(
+            f"/channels/a2a/peers/{peer_id}/tasks",
+            headers=headers,
+            json={**image_body, "idempotency_key": "unsupported-image-001"},
+        )
+        assert unsupported.status_code == 422
+        assert len(sends) == 2
+        assert all(
+            task["idempotency_key"] != "unsupported-image-001"
+            for task in client.get("/channels/a2a/outbound-tasks", headers=headers).json()
+        )
         polled = client.get(f"/channels/a2a/outbound-tasks/{first.json()['id']}", headers=headers)
         assert polled.status_code == 200
         assert polled.json()["remote_task"]["status"]["state"] == "TASK_STATE_WORKING"
-        assert len(sends) == 1
+        assert len(sends) == 2
         assert polled.json()["cancel_state"] == "not_requested"
         cancelled = client.post(
             f"/channels/a2a/outbound-tasks/{first.json()['id']}/cancel", headers=headers
@@ -2617,7 +2682,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         )
         assert repeated_cancel.json()["cancel_state"] == "sent"
         assert len(cancels) == 1
-        assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 1
+        assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 2
         assert client.delete(f"/channels/a2a/peers/{peer_id}", headers=headers).status_code == 409
 
         run = store.create_run(

@@ -235,6 +235,18 @@
             "title": "Idempotency Key",
             "type": "string"
           },
+          "image_data_url": {
+            "anyOf": [
+              {
+                "maxLength": 4300000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Data Url"
+          },
           "text": {
             "maxLength": 10000,
             "minLength": 1,

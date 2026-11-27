@@ -145,6 +145,7 @@ class A2AOutboundTaskCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     text: str = Field(min_length=1, max_length=10_000)
+    image_data_url: str | None = Field(default=None, max_length=4_300_000)
     idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
     @field_validator("text")

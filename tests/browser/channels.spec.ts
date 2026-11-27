@@ -28,6 +28,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
   let a2aOutboundPeers:any[]=[];
   let a2aOutboundTasks:any[]=[];
   let a2aOutboundSendCount=0;
+  let a2aOutboundImageDataUrl='';
   let identityBindings:any[]=[
     {id:'telegram-binding',channel:'telegram',account_id:'bot-1',external_identity:'456',session_id:'telegram-session',session_channel:'telegram',identity_link_id:null,authorized:true,title:'Telegram history',link_created_at:null},
     {id:'email-binding',channel:'email',account_id:'mailbox-1',external_identity:'owner@example.test',session_id:'email-session',session_channel:'email',identity_link_id:null,authorized:true,title:'Email history',link_created_at:null},
@@ -131,7 +132,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
       return route.fulfill({status:201,json:peer,headers});
     }
     if(path==='/channels/a2a/peers/fixture-peer/tasks'&&request.method()==='POST'){
-      const body=request.postDataJSON();expect(body.text).toBe('Review the fixture task.');expect(body.idempotency_key).toMatch(/^[a-f0-9]{32}$/);a2aOutboundSendCount++;
+      const body=request.postDataJSON();expect(body.text).toBe('Review the fixture task.');expect(body.idempotency_key).toMatch(/^[a-f0-9]{32}$/);expect(body.image_data_url).toBe(a2aOutboundImageDataUrl);a2aOutboundSendCount++;
       const task={id:'local-task-1',peer_id:'fixture-peer',idempotency_key:body.idempotency_key,state:'sent',remote_task_id:'remote-task-1',remote_context_id:'context-1',remote_task:{id:'remote-task-1',status:{state:'TASK_STATE_SUBMITTED'}},cancel_state:'not_requested',cancel_error:null,error:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
       a2aOutboundTasks=[task];return route.fulfill({status:202,json:task,headers});
     }
@@ -187,6 +188,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'Add authorized peer'}).click();
   await expect(panel.getByLabel('Send task to')).toHaveValue('fixture-peer');
   await panel.getByLabel('Task text').fill('Review the fixture task.');
+  const outboundImage=Buffer.from('\x89PNG\r\n\x1a\nfixture-image','binary');
+  a2aOutboundImageDataUrl=`data:image/png;base64,${outboundImage.toString('base64')}`;
+  await panel.getByLabel('Optional image').setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:outboundImage});
+  await expect(panel.getByText('Attached image: fixture.png')).toBeVisible();
   await panel.getByRole('button',{name:'Send task to selected peer'}).click();
   await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_SUBMITTED');
   await expect(panel.getByRole('region',{name:'Saved outbound A2A tasks'})).toContainText('remote-task-1');

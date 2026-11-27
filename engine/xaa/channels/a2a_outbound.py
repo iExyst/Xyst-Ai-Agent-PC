@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import ssl
 from collections.abc import Mapping
@@ -17,6 +18,33 @@ MAX_AGENT_CARD_BYTES = 65_536
 
 class A2AOutboundError(ValueError):
     """A remote A2A operation failed without exposing response or credential data."""
+
+
+class A2AUnsupportedInputError(A2AOutboundError):
+    """The peer does not advertise support for a requested media type."""
+
+
+def _sanitize_remote_task(value: dict[str, Any]) -> dict[str, Any]:
+    """Remove peer-supplied attachment bytes and URLs before task history is persisted."""
+
+    def sanitize(item: Any) -> Any:
+        if isinstance(item, list):
+            parts = cast(list[Any], item)
+            return [sanitize(part) for part in parts]
+        if isinstance(item, dict):
+            fields = cast(dict[str, Any], item)
+            if "raw" in fields or "url" in fields:
+                media_type = fields.get("mediaType")
+                return {
+                    "mediaType": media_type
+                    if isinstance(media_type, str)
+                    else "application/octet-stream",
+                    "text": "[Remote attachment omitted by X.A.A.]",
+                }
+            return {key: sanitize(nested) for key, nested in fields.items()}
+        return item
+
+    return cast(dict[str, Any], sanitize(value))
 
 
 def validate_agent_card_url(value: str) -> str:
@@ -63,12 +91,32 @@ class A2AOutboundClient:
         self._transport = transport
 
     async def send_task(
-        self, *, agent_card_url: str, bearer_token: str, text: str, message_id: str
+        self,
+        *,
+        agent_card_url: str,
+        bearer_token: str,
+        text: str,
+        message_id: str,
+        image: tuple[bytes, str] | None = None,
     ) -> dict[str, Any]:
         card_url = validate_agent_card_url(agent_card_url)
         async with self._client(bearer_token) as client:
             card = await self._json(client, "GET", card_url, limit=MAX_AGENT_CARD_BYTES)
             endpoint = self._jsonrpc_endpoint(card, card_url)
+            parts: list[dict[str, str]] = [{"text": text, "mediaType": "text/plain"}]
+            if image is not None:
+                image_bytes, media_type = image
+                input_modes = card.get("defaultInputModes")
+                if not isinstance(input_modes, list) or media_type not in input_modes:
+                    raise A2AUnsupportedInputError(
+                        "The peer does not advertise support for this image type."
+                    )
+                parts.append(
+                    {
+                        "raw": base64.b64encode(image_bytes).decode("ascii"),
+                        "mediaType": media_type,
+                    }
+                )
             response = await self._json(
                 client,
                 "POST",
@@ -82,7 +130,7 @@ class A2AOutboundClient:
                         "message": {
                             "messageId": message_id,
                             "role": "ROLE_USER",
-                            "parts": [{"text": text, "mediaType": "text/plain"}],
+                            "parts": parts,
                         }
                     },
                 },
@@ -94,7 +142,7 @@ class A2AOutboundClient:
         task = cast(dict[str, Any], task_value)
         if not isinstance(task.get("id"), str) or not task["id"]:
             raise A2AOutboundError("The peer returned an invalid task identity.")
-        return task
+        return _sanitize_remote_task(task)
 
     async def get_task(
         self, *, agent_card_url: str, bearer_token: str, task_id: str
@@ -123,7 +171,7 @@ class A2AOutboundClient:
         task_value = cast(dict[str, Any], task_value)
         if task_value.get("id") != task_id:
             raise A2AOutboundError("The peer returned a mismatched A2A task.")
-        return task_value
+        return _sanitize_remote_task(task_value)
 
     async def cancel_task(
         self, *, agent_card_url: str, bearer_token: str, task_id: str
@@ -152,7 +200,7 @@ class A2AOutboundClient:
         task = cast(dict[str, Any], task_value)
         if task.get("id") != task_id:
             raise A2AOutboundError("The peer returned a mismatched canceled A2A task.")
-        return task
+        return _sanitize_remote_task(task)
 
     def _client(self, bearer_token: str) -> httpx.AsyncClient:
         return httpx.AsyncClient(

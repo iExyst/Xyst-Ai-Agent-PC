@@ -422,8 +422,8 @@ export class EngineClient {
     return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}`,{method:'DELETE'});
   }
 
-  sendA2AOutboundTask(peerId:string,text:string,idempotencyKey:string): Promise<A2AOutboundTask> {
-    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}/tasks`,{method:'POST',body:JSON.stringify({text,idempotency_key:idempotencyKey})});
+  sendA2AOutboundTask(peerId:string,text:string,idempotencyKey:string,imageDataUrl?:string): Promise<A2AOutboundTask> {
+    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}/tasks`,{method:'POST',body:JSON.stringify({text,idempotency_key:idempotencyKey,...(imageDataUrl?{image_data_url:imageDataUrl}:{})})});
   }
 
   a2aOutboundTasks(peerId?:string): Promise<A2AOutboundTask[]> {

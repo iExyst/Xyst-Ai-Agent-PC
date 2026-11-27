@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import ipaddress
 import json
 import os
@@ -147,6 +148,7 @@ async def _run() -> dict[str, object]:
     AgentInterface = sdk_types.AgentInterface
     AgentSkill = sdk_types.AgentSkill
     TaskStateEnum = sdk_types.TaskState
+    observed_outbound_images: list[tuple[str, bytes]] = []
 
     class _SdkPeerExecutor(sdk_executor_module.AgentExecutor):
         async def execute(self, context: Any, event_queue: Any) -> None:
@@ -157,6 +159,12 @@ async def _run() -> dict[str, object]:
                 await event_queue.enqueue_event(task)
             updater = sdk_tasks.TaskUpdater(
                 event_queue=event_queue, task_id=task.id, context_id=task.context_id
+            )
+            observed_outbound_images.extend(
+                (part.media_type, part.raw)
+                for part in context.message.parts
+                if isinstance(getattr(part, "media_type", None), str)
+                and isinstance(getattr(part, "raw", None), bytes)
             )
             text = sdk_helpers.get_message_text(context.message)
             await updater.add_artifact(
@@ -246,7 +254,7 @@ async def _run() -> dict[str, object]:
             name="Independent SDK fixture",
             description="Deterministic A2A interoperability fixture",
             version="1.0.0",
-            default_input_modes=["text/plain"],
+            default_input_modes=["text/plain", "image/png"],
             default_output_modes=["text/plain"],
             capabilities=AgentCapabilities(streaming=False),
             supported_interfaces=[
@@ -261,7 +269,7 @@ async def _run() -> dict[str, object]:
                     id="deterministic-echo",
                     name="Deterministic echo",
                     description="Returns the submitted text in a test artifact",
-                    input_modes=["text/plain"],
+                    input_modes=["text/plain", "image/png"],
                     output_modes=["text/plain"],
                     tags=["test", "deterministic"],
                 )
@@ -463,6 +471,8 @@ async def _run() -> dict[str, object]:
                     raise AssertionError("The owner API did not save the outbound A2A peer.")
                 outbound_body = {
                     "text": "Return the deterministic acceptance response.",
+                    "image_data_url": "data:image/png;base64,"
+                    + base64.b64encode(b"\x89PNG\r\n\x1a\nfixture-image").decode("ascii"),
                     "idempotency_key": "sdk-outbound-acceptance-1",
                 }
                 outbound = await owner_client.post(
@@ -472,6 +482,19 @@ async def _run() -> dict[str, object]:
                     raise AssertionError(
                         f"The configured A2A peer task was not accepted: "
                         f"{outbound.status_code} {outbound.text}"
+                    )
+                expected_outbound_image = b"\x89PNG\r\n\x1a\nfixture-image"
+                if ("image/png", expected_outbound_image) not in observed_outbound_images:
+                    raise AssertionError(
+                        "The official SDK peer did not receive the outbound image part."
+                    )
+                serialized_outbound_task = json.dumps(outbound.json(), separators=(",", ":"))
+                if (
+                    base64.b64encode(expected_outbound_image).decode("ascii")
+                    in serialized_outbound_task
+                ):
+                    raise AssertionError(
+                        "The outbound task record retained raw remote image bytes."
                     )
                 duplicate = await owner_client.post(
                     f"/channels/a2a/peers/{peer.json()['id']}/tasks", json=outbound_body
@@ -545,6 +568,8 @@ async def _run() -> dict[str, object]:
                     "outbound_idempotent_replay": duplicate.json()["id"] == outbound.json()["id"],
                     "outbound_peer_implementation": "official a2a-sdk==1.3.1 server",
                     "outbound_peer_task_artifact_text": first_part["text"],
+                    "outbound_image_media_type": "image/png",
+                    "outbound_image_sha256": hashlib.sha256(expected_outbound_image).hexdigest(),
                     "outbound_cancel_state": cancellation.json()["cancel_state"],
                     "outbound_cancel_remote_state": cancellation.json()["remote_task"]["status"][
                         "state"

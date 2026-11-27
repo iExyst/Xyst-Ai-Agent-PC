@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {open} from '@tauri-apps/plugin-dialog';
 import type {A2AListenerStatus,A2AOutboundPeer,A2AOutboundTask,ChannelIdentityBinding,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 import {InlineConfirmation} from './InlineConfirmation.tsx';
@@ -33,6 +33,10 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [a2aPeerCredentialEdits,setA2aPeerCredentialEdits]=useState<Record<string,string>>({});
   const [a2aSelectedPeerId,setA2aSelectedPeerId]=useState('');
   const [a2aOutboundText,setA2aOutboundText]=useState('');
+  const [a2aOutboundImage,setA2aOutboundImage]=useState('');
+  const [a2aOutboundImageName,setA2aOutboundImageName]=useState('');
+  const [a2aImageReading,setA2aImageReading]=useState(false);
+  const a2aOutboundImageInput=useRef<HTMLInputElement>(null);
   const [a2aOutboundKey,setA2aOutboundKey]=useState(()=>crypto.randomUUID().replaceAll('-',''));
   const [a2aOutboundTasks,setA2aOutboundTasks]=useState<A2AOutboundTask[]>([]);
   const [a2aSelectedTask,setA2aSelectedTask]=useState<A2AOutboundTask>();
@@ -228,9 +232,25 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   async function sendA2AOutboundTask() {
     if(!a2aSelectedPeerId||!a2aOutboundText.trim())return;
     setBusy(true);setError('');
-    try {const task=await client.sendA2AOutboundTask(a2aSelectedPeerId,a2aOutboundText,a2aOutboundKey);setA2aSelectedTask(task);setA2aOutboundTasks(await client.a2aOutboundTasks());}
+    try {const task=await client.sendA2AOutboundTask(a2aSelectedPeerId,a2aOutboundText,a2aOutboundKey,a2aOutboundImage||undefined);setA2aSelectedTask(task);setA2aOutboundTasks(await client.a2aOutboundTasks());}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not submit the A2A task.');}
     finally {setBusy(false);}
+  }
+
+  function selectA2AOutboundImage(file:File|undefined) {
+    if(!file){setA2aOutboundImage('');setA2aOutboundImageName('');setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));return;}
+    if(file.size<1||file.size>3*1024*1024||!['image/png','image/jpeg','image/gif','image/webp'].includes(file.type)){
+      setA2aOutboundImage('');setA2aOutboundImageName('');setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));if(a2aOutboundImageInput.current)a2aOutboundImageInput.current.value='';setError('Choose a PNG, JPEG, GIF or WebP image no larger than 3 MiB.');return;
+    }
+    setA2aImageReading(true);
+    const reader=new FileReader();
+    reader.onerror=()=>{setA2aImageReading(false);setA2aOutboundImage('');setA2aOutboundImageName('');setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));if(a2aOutboundImageInput.current)a2aOutboundImageInput.current.value='';setError('The selected A2A image could not be read.');};
+    reader.onload=()=>{
+      setA2aImageReading(false);
+      if(typeof reader.result!=='string'||!reader.result.startsWith(`data:${file.type};base64,`)){setA2aOutboundImage('');setA2aOutboundImageName('');setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));if(a2aOutboundImageInput.current)a2aOutboundImageInput.current.value='';setError('The selected A2A image could not be encoded.');return;}
+      setA2aOutboundImage(reader.result);setA2aOutboundImageName(file.name);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));setError('');
+    };
+    reader.readAsDataURL(file);
   }
 
   async function refreshA2AOutboundTask(taskId:string) {
@@ -290,7 +310,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
       </>;
     })()}
     <h3>Agent-to-agent (A2A)</h3>
-    <p>A2A text requests use the shared coordinator in Observe mode with no workspace or tool grants. The peer secret is stored in Windows Credential Manager and shown once when created.</p>
+    <p>A2A requests use the shared coordinator in Observe mode with no workspace or tool grants. The peer secret is stored in Windows Credential Manager and shown once when created.</p>
     <div className="controls">
       {!a2a?.configured&&<button type="button" onClick={()=>void createA2ACredential()} disabled={busy}>Create A2A peer credential</button>}
       {a2a?.configured&&<button type="button" onClick={()=>void clearA2ACredential()} disabled={busy}>Clear A2A peer credential</button>}
@@ -312,7 +332,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
       {a2aListener&&<p role="status">A2A listener {a2aListener.listening?'is listening':'is stopped'} · {a2aListener.bind_address}:{a2aListener.port}</p>}
     </>}
     <h4>Authorized outbound peers</h4>
-    <p>Only a peer you add here can receive an outbound task. Sends happen only when you press the send button. HTTPS certificates are verified; an unclear delivery is marked for review and is never resent automatically.</p>
+      <p>Only a peer you add here can receive an outbound task. Text and any attached image are sent only when you press the send button. Images are limited to 3 MiB and are sent only if the peer advertises the normalized image type. HTTPS certificates are verified; an unclear delivery is marked for review and is never resent automatically.</p>
     <label htmlFor="a2a-peer-name">Peer name</label>
     <input id="a2a-peer-name" maxLength={80} value={a2aPeerName} onChange={event=>setA2aPeerName(event.target.value)} disabled={busy}/>
     <label htmlFor="a2a-peer-card-url">HTTPS Agent Card URL</label>
@@ -335,7 +355,10 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
       </details>)}
       <label htmlFor="a2a-outbound-text">Task text</label>
       <textarea id="a2a-outbound-text" maxLength={10000} value={a2aOutboundText} onChange={event=>{setA2aOutboundText(event.target.value);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));}} disabled={busy}/>
-      <div className="controls"><button type="button" onClick={()=>void sendA2AOutboundTask()} disabled={busy||!a2aSelectedPeerId||!a2aOutboundText.trim()||!a2aOutboundPeers.find(peer=>peer.id===a2aSelectedPeerId)?.configured}>Send task to selected peer</button><button type="button" onClick={()=>{setA2aOutboundText('');setA2aSelectedTask(undefined);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));}} disabled={busy}>New task</button></div>
+      <label htmlFor="a2a-outbound-image">Optional image</label>
+      <input ref={a2aOutboundImageInput} id="a2a-outbound-image" type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={event=>selectA2AOutboundImage(event.currentTarget.files?.[0])} disabled={busy||a2aImageReading}/>
+      {a2aOutboundImageName&&<p role="status">Attached image: {a2aOutboundImageName}</p>}
+      <div className="controls"><button type="button" onClick={()=>void sendA2AOutboundTask()} disabled={busy||a2aImageReading||!a2aSelectedPeerId||!a2aOutboundText.trim()||!a2aOutboundPeers.find(peer=>peer.id===a2aSelectedPeerId)?.configured}>Send task to selected peer</button><button type="button" onClick={()=>{setA2aOutboundText('');setA2aOutboundImage('');setA2aOutboundImageName('');setA2aSelectedTask(undefined);setA2aOutboundKey(crypto.randomUUID().replaceAll('-',''));if(a2aOutboundImageInput.current)a2aOutboundImageInput.current.value='';}} disabled={busy||a2aImageReading}>New task</button></div>
       {a2aOutboundTasks.length>0&&<section aria-label="Saved outbound A2A tasks"><h5>Saved outbound tasks</h5><ul>{a2aOutboundTasks.map(task=><li key={task.id}><button type="button" onClick={()=>setA2aSelectedTask(task)} disabled={busy}>{a2aOutboundPeers.find(peer=>peer.id===task.peer_id)?.name??'Peer'} · {task.state} · {task.remote_task_id??'remote task not confirmed'}</button><button type="button" onClick={()=>void refreshA2AOutboundTask(task.id)} disabled={busy||!task.remote_task_id}>Refresh remote task</button>{task.remote_task_id&&task.cancel_state!=='sent'&&canCancelA2ATask(task)&&<button type="button" onClick={()=>void cancelA2AOutboundTask(task.id)} disabled={busy||task.cancel_state==='sending'}>{task.cancel_state==='unknown'?'Retry remote cancellation':'Cancel remote task'}</button>}</li>)}</ul></section>}
       {a2aSelectedTask&&<section aria-label="Selected outbound A2A task"><h5>Outbound task result</h5><p>Delivery state: {a2aSelectedTask.state}{a2aSelectedTask.remote_task?.status?` · Remote state: ${String((a2aSelectedTask.remote_task.status as {state?:unknown}).state??'unknown')}`:''}</p><p>Cancellation: {a2aSelectedTask.cancel_state}{a2aSelectedTask.cancel_error?` · ${a2aSelectedTask.cancel_error}`:''}</p>{a2aSelectedTask.error&&<p role="status">{a2aSelectedTask.error}</p>}<pre>{JSON.stringify(a2aSelectedTask.remote_task,null,2)}</pre></section>}
     </>}

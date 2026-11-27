@@ -2731,6 +2731,8 @@ export interface components {
         A2AOutboundTaskCreate: {
             /** Idempotency Key */
             idempotency_key: string;
+            /** Image Data Url */
+            image_data_url?: string | null;
             /** Text */
             text: string;
         };

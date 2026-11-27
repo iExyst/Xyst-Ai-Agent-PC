@@ -71,7 +71,12 @@ from xaa.api.contracts import (
 )
 from xaa.channels import a2a as a2a_channel
 from xaa.channels.a2a_listener import A2AListener
-from xaa.channels.a2a_outbound import A2AOutboundClient, A2AOutboundError, validate_agent_card_url
+from xaa.channels.a2a_outbound import (
+    A2AOutboundClient,
+    A2AOutboundError,
+    A2AUnsupportedInputError,
+    validate_agent_card_url,
+)
 from xaa.channels.email import EmailConfig, EmailService, EmailStore
 from xaa.channels.telegram import TelegramApiError, TelegramBotApi, TelegramService, TelegramStore
 from xaa.channels.webhook import InvalidWebhook, parse_delivery, request_identity
@@ -3931,13 +3936,30 @@ def create_app(
     ) -> A2AOutboundTaskRecord:
         if credential_store is None:
             raise HTTPException(status_code=503, detail="OS credential storage is unavailable.")
+        image: tuple[bytes, str] | None = None
+        if payload.image_data_url is not None:
+            from xaa.runtime.image_input import decode_run_image_data_url
+
+            try:
+                normalized_image, normalized_type, _source_image, _source_type = (
+                    decode_run_image_data_url(payload.image_data_url)
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            image = (normalized_image, normalized_type)
         with run_store.atomic_connection() as connection:
             peer = connection.execute(
                 "SELECT id,agent_card_url FROM a2a_outbound_peers WHERE id=?", (peer_id,)
             ).fetchone()
             if peer is None:
                 raise HTTPException(status_code=404, detail="A2A peer was not found.")
-            digest = hashlib.sha256(payload.text.encode("utf-8")).hexdigest()
+            digest_builder = hashlib.sha256(payload.text.encode("utf-8"))
+            if image is not None:
+                digest_builder.update(b"\0")
+                digest_builder.update(image[1].encode("ascii"))
+                digest_builder.update(b"\0")
+                digest_builder.update(hashlib.sha256(image[0]).digest())
+            digest = digest_builder.hexdigest()
             existing = connection.execute(
                 "SELECT * FROM a2a_outbound_tasks WHERE peer_id=? AND idempotency_key=?",
                 (peer_id, payload.idempotency_key),
@@ -3946,7 +3968,7 @@ def create_app(
                 if str(existing["payload_digest"]) != digest:
                     raise HTTPException(
                         status_code=409,
-                        detail="This idempotency key was already used for different A2A task text.",
+                        detail="This idempotency key was already used for different A2A task content.",
                     )
                 if existing["state"] == "sending":
                     raise HTTPException(
@@ -3981,6 +4003,7 @@ def create_app(
                     bearer_token=token,
                     text=payload.text,
                     message_id=message_id,
+                    image=image,
                 )
                 remote_task_id = str(remote_task["id"])
                 context_id = remote_task.get("contextId")
@@ -3996,6 +4019,13 @@ def create_app(
                             task_id,
                         ),
                     )
+            except A2AUnsupportedInputError as exc:
+                with run_store.connection() as connection:
+                    connection.execute(
+                        "DELETE FROM a2a_outbound_tasks WHERE id=? AND state='sending'",
+                        (task_id,),
+                    )
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
             except A2AOutboundError as exc:
                 with run_store.connection() as connection:
                     connection.execute(
