@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from xaa.runtime.command_contracts import CommandGrant
 from xaa.runtime.states import RunState
@@ -131,6 +131,16 @@ class A2AListenerSettings(BaseModel):
     bind_address: Literal["127.0.0.1", "0.0.0.0"] = "127.0.0.1"
     port: int = Field(default=8766, ge=1024, le=65535)
     allow_network: bool = False
+    tls_cert_path: str | None = Field(default=None, min_length=1, max_length=1024)
+    tls_key_path: str | None = Field(default=None, min_length=1, max_length=1024)
+
+    @model_validator(mode="after")
+    def valid_tls_pair(self) -> "A2AListenerSettings":
+        if (self.tls_cert_path is None) != (self.tls_key_path is None):
+            raise ValueError("A2A TLS requires both a certificate and private key.")
+        if self.enabled and self.allow_network and self.tls_cert_path is None:
+            raise ValueError("Network A2A access requires a TLS certificate and private key.")
+        return self
 
 
 class A2AListenerStatus(BaseModel):
@@ -138,6 +148,8 @@ class A2AListenerStatus(BaseModel):
     bind_address: Literal["127.0.0.1", "0.0.0.0"]
     port: int = Field(ge=1024, le=65535)
     allow_network: bool
+    tls_cert_path: str | None = None
+    tls_key_path: str | None = None
     listening: bool
 
 

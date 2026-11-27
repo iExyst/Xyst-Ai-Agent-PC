@@ -2545,6 +2545,10 @@ export interface components {
              * @default 8766
              */
             port: number;
+            /** Tls Cert Path */
+            tls_cert_path?: string | null;
+            /** Tls Key Path */
+            tls_key_path?: string | null;
         };
         /** A2AListenerStatus */
         A2AListenerStatus: {
@@ -2561,6 +2565,10 @@ export interface components {
             listening: boolean;
             /** Port */
             port: number;
+            /** Tls Cert Path */
+            tls_cert_path?: string | null;
+            /** Tls Key Path */
+            tls_key_path?: string | null;
         };
         /** ArtifactRecord */
         ArtifactRecord: {

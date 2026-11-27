@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import {open} from '@tauri-apps/plugin-dialog';
 import type {A2AListenerStatus,ChannelIdentityBinding,EmailChannelStatus,EngineClient,TelegramChannelStatus,WebhookChannelStatus} from './api/client.ts';
 import {InlineConfirmation} from './InlineConfirmation.tsx';
 
@@ -18,6 +19,8 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [a2aSecret,setA2aSecret]=useState('');
   const [a2aNetwork,setA2aNetwork]=useState(false);
   const [a2aPort,setA2aPort]=useState('8766');
+  const [a2aTlsCertPath,setA2aTlsCertPath]=useState('');
+  const [a2aTlsKeyPath,setA2aTlsKeyPath]=useState('');
   const [identityBindings,setIdentityBindings]=useState<ChannelIdentityBinding[]>([]);
   const [identitySource,setIdentitySource]=useState('');
   const [identityTarget,setIdentityTarget]=useState('');
@@ -35,7 +38,7 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
   const [authservId,setAuthservId]=useState('');
 
   async function refresh() {
-    try {setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setA2a(await client.a2aStatus());const listener=await client.a2aListenerStatus();setA2aListener(listener);setA2aNetwork(listener.allow_network);setA2aPort(String(listener.port));setIdentityBindings(await client.channelIdentityBindings());setError('');}
+    try {setStatus(await client.telegramStatus());setWebhook(await client.webhookStatus());setA2a(await client.a2aStatus());const listener=await client.a2aListenerStatus();setA2aListener(listener);setA2aNetwork(listener.allow_network);setA2aPort(String(listener.port));setA2aTlsCertPath(listener.tls_cert_path??'');setA2aTlsKeyPath(listener.tls_key_path??'');setIdentityBindings(await client.channelIdentityBindings());setError('');}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not read Telegram status.');}
   }
   useEffect(()=>{void refresh();void client.emailStatus().then(setEmail).catch(failure=>setError(String(failure)));},[client]);
@@ -161,9 +164,23 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     const port=Number(a2aPort);
     if(!Number.isInteger(port)||port<1024||port>65535){setError('Choose an A2A port from 1024 through 65535.');return;}
     setBusy(true);setError('');
-    try {setA2aListener(await client.updateA2AListener({enabled,bind_address:a2aNetwork?'0.0.0.0':'127.0.0.1',port,allow_network:a2aNetwork}));}
+    try {setA2aListener(await client.updateA2AListener({enabled,bind_address:a2aNetwork?'0.0.0.0':'127.0.0.1',port,allow_network:a2aNetwork,tls_cert_path:a2aTlsCertPath||null,tls_key_path:a2aTlsKeyPath||null}));}
     catch(failure) {setError(failure instanceof Error?failure.message:'Could not update the A2A listener.');}
     finally {setBusy(false);}
+  }
+
+  async function chooseA2aTlsCert() {
+    try {
+      const selected=await open({directory:false,multiple:false,title:'Select A2A TLS certificate',filters:[{name:'PEM certificate',extensions:['pem','crt','cer']}]});
+      if(typeof selected==='string')setA2aTlsCertPath(selected);
+    } catch(failure) {setError(failure instanceof Error?failure.message:'Could not select the A2A TLS certificate.');}
+  }
+
+  async function chooseA2aTlsKey() {
+    try {
+      const selected=await open({directory:false,multiple:false,title:'Select A2A TLS private key',filters:[{name:'PEM private key',extensions:['pem','key']}]});
+      if(typeof selected==='string')setA2aTlsKeyPath(selected);
+    } catch(failure) {setError(failure instanceof Error?failure.message:'Could not select the A2A TLS private key.');}
   }
 
   return <section aria-labelledby="channels-title">
@@ -217,8 +234,12 @@ export function ChannelsPanel({client}:{client:EngineClient}) {
     {a2a?.configured&&<>
       <label htmlFor="a2a-listener-port">A2A listener port</label>
       <input id="a2a-listener-port" type="number" min={1024} max={65535} value={a2aPort} onChange={event=>setA2aPort(event.target.value)} disabled={busy}/>
-      <label htmlFor="a2a-network-access"><input id="a2a-network-access" type="checkbox" checked={a2aNetwork} onChange={event=>setA2aNetwork(event.target.checked)} disabled={busy}/> Allow connections from other devices on this trusted network (HTTP, unencrypted)</label>
-      <p>The A2A listener uses plain HTTP. Anyone able to monitor this network could capture the peer secret and task contents. Only enable it on a trusted network; do not expose its port to the internet. Only the Agent Card and A2A task endpoint are reachable; the owner API stays on loopback. Windows Firewall may still need an inbound rule.</p>
+      <label htmlFor="a2a-tls-cert">A2A TLS certificate (PEM)</label>
+      <div className="controls"><input id="a2a-tls-cert" type="text" value={a2aTlsCertPath} onChange={event=>setA2aTlsCertPath(event.target.value)} disabled={busy} /><button type="button" onClick={()=>void chooseA2aTlsCert()} disabled={busy}>Choose certificate</button></div>
+      <label htmlFor="a2a-tls-key">A2A TLS private key (PEM)</label>
+      <div className="controls"><input id="a2a-tls-key" type="text" value={a2aTlsKeyPath} onChange={event=>setA2aTlsKeyPath(event.target.value)} disabled={busy} /><button type="button" onClick={()=>void chooseA2aTlsKey()} disabled={busy}>Choose private key</button></div>
+      <label htmlFor="a2a-network-access"><input id="a2a-network-access" type="checkbox" checked={a2aNetwork} onChange={event=>setA2aNetwork(event.target.checked)} disabled={busy}/> Allow TLS connections from other devices on this network</label>
+      <p>Network access requires a matching certificate and private key. Peers must trust the certificate and use a hostname or IP address listed in it. The listener encrypts peer credentials and task contents; only the Agent Card and A2A task endpoint are reachable, while the owner API stays on loopback. Protect the private-key file and keep Windows Firewall rules scoped.</p>
       <div className="controls">
         <button type="button" onClick={()=>void saveA2AListener(true)} disabled={busy}>{a2aListener?.listening?'Apply A2A listener settings':'Enable A2A listener'}</button>
         {a2aListener?.enabled&&<button type="button" onClick={()=>void saveA2AListener(false)} disabled={busy}>Disable A2A listener</button>}

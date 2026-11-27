@@ -23,7 +23,7 @@ from xaa.runtime.states import ALLOWED_TRANSITIONS, RunState
 from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.conversation_index import install_index
 
-DATABASE_SCHEMA_VERSION = 44
+DATABASE_SCHEMA_VERSION = 45
 
 
 def _is_normalized_relative_workspace_path(path: str) -> bool:
@@ -727,7 +727,9 @@ class RunStore:
                     enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
                     bind_address TEXT NOT NULL DEFAULT '127.0.0.1',
                     port INTEGER NOT NULL DEFAULT 8766 CHECK(port BETWEEN 1024 AND 65535),
-                    allow_network INTEGER NOT NULL DEFAULT 0 CHECK(allow_network IN (0,1))
+                    allow_network INTEGER NOT NULL DEFAULT 0 CHECK(allow_network IN (0,1)),
+                    tls_cert_path TEXT,
+                    tls_key_path TEXT
                 );
                 INSERT OR IGNORE INTO a2a_listener_settings(id) VALUES(1);
                 CREATE TABLE IF NOT EXISTS telegram_pairing_codes (
@@ -1072,6 +1074,16 @@ class RunStore:
             }
             if "original_filename" not in artifact_columns:
                 connection.execute("ALTER TABLE artifacts ADD COLUMN original_filename TEXT")
+            a2a_listener_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(a2a_listener_settings)")
+            }
+            if "tls_cert_path" not in a2a_listener_columns:
+                connection.execute(
+                    "ALTER TABLE a2a_listener_settings ADD COLUMN tls_cert_path TEXT"
+                )
+            if "tls_key_path" not in a2a_listener_columns:
+                connection.execute("ALTER TABLE a2a_listener_settings ADD COLUMN tls_key_path TEXT")
             identity_event_schema = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='channel_identity_link_events'"
             ).fetchone()

@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import sqlite3
+import ssl
 import time
 import zipfile
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
@@ -1010,6 +1011,25 @@ class SkillPythonDependencyReview(BaseModel):
     decision: Literal["approved", "rejected"]
 
 
+def _validated_a2a_tls_files(
+    cert_path: str | None, key_path: str | None
+) -> tuple[str | None, str | None]:
+    if (cert_path is None) != (key_path is None):
+        raise ValueError("A2A TLS requires both a certificate and private key.")
+    if cert_path is None or key_path is None:
+        return None, None
+    paths = (Path(cert_path), Path(key_path))
+    if any(not path.is_absolute() or not path.is_file() for path in paths):
+        raise ValueError("A2A TLS files must be absolute paths to existing files.")
+    resolved = (str(paths[0].resolve(strict=True)), str(paths[1].resolve(strict=True)))
+    try:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=resolved[0], keyfile=resolved[1])
+    except (OSError, ssl.SSLError, ValueError):
+        raise ValueError("A2A TLS certificate and private key could not be loaded.") from None
+    return resolved
+
+
 def create_app(
     provider: LMStudioProvider | ProviderRouter,
     api_token: SecretStr,
@@ -1112,14 +1132,25 @@ def create_app(
         schedule_service.start()
         with run_store.connection() as connection:
             a2a_settings = connection.execute(
-                "SELECT enabled,bind_address,port FROM a2a_listener_settings WHERE id=1"
+                "SELECT enabled,bind_address,port,allow_network,tls_cert_path,tls_key_path "
+                "FROM a2a_listener_settings WHERE id=1"
             ).fetchone()
         if a2a_settings is not None and a2a_settings["enabled"]:
             try:
                 peer_token = credential_store.get("a2a-inbound") if credential_store else None
                 if peer_token is not None:
+                    certfile, keyfile = _validated_a2a_tls_files(
+                        a2a_settings["tls_cert_path"], a2a_settings["tls_key_path"]
+                    )
+                    if bool(a2a_settings["allow_network"]) and certfile is None:
+                        raise ValueError(
+                            "Network A2A access requires a configured TLS certificate."
+                        )
                     await a2a_listener.configure(
-                        str(a2a_settings["bind_address"]), int(a2a_settings["port"])
+                        str(a2a_settings["bind_address"]),
+                        int(a2a_settings["port"]),
+                        certfile=certfile,
+                        keyfile=keyfile,
                     )
             except (KeyringError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
                 logger.warning(
@@ -3586,7 +3617,7 @@ def create_app(
     def current_a2a_listener_status() -> A2AListenerStatus:
         with run_store.connection() as connection:
             row = connection.execute(
-                "SELECT enabled,bind_address,port,allow_network "
+                "SELECT enabled,bind_address,port,allow_network,tls_cert_path,tls_key_path "
                 "FROM a2a_listener_settings WHERE id=1"
             ).fetchone()
         if row is None:
@@ -3599,6 +3630,8 @@ def create_app(
             bind_address=cast(Literal["127.0.0.1", "0.0.0.0"], bind_address),
             port=int(row["port"]),
             allow_network=bool(row["allow_network"]),
+            tls_cert_path=str(row["tls_cert_path"]) if row["tls_cert_path"] else None,
+            tls_key_path=str(row["tls_key_path"]) if row["tls_key_path"] else None,
             listening=a2a_listener.running,
         )
 
@@ -3610,6 +3643,15 @@ def create_app(
     async def update_a2a_listener(
         payload: A2AListenerSettings, _: None = Depends(authenticate)
     ) -> A2AListenerStatus:
+        try:
+            certfile, keyfile = _validated_a2a_tls_files(
+                payload.tls_cert_path, payload.tls_key_path
+            )
+        except (OSError, ValueError):
+            raise HTTPException(
+                status_code=422,
+                detail="Choose a readable PEM certificate and matching private key.",
+            ) from None
         if payload.bind_address == "0.0.0.0" and not payload.allow_network:
             raise HTTPException(
                 status_code=422,
@@ -3634,7 +3676,12 @@ def create_app(
                     status_code=503, detail="Could not read the OS credential."
                 ) from exc
             try:
-                await a2a_listener.configure(payload.bind_address, payload.port)
+                await a2a_listener.configure(
+                    payload.bind_address,
+                    payload.port,
+                    certfile=certfile,
+                    keyfile=keyfile,
+                )
             except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
                 raise HTTPException(
                     status_code=409,
@@ -3644,13 +3691,16 @@ def create_app(
             await a2a_listener.close()
         with run_store.connection() as connection:
             connection.execute(
-                "UPDATE a2a_listener_settings SET enabled=?,bind_address=?,port=?,allow_network=? "
+                "UPDATE a2a_listener_settings SET enabled=?,bind_address=?,port=?,allow_network=?,"
+                "tls_cert_path=?,tls_key_path=? "
                 "WHERE id=1",
                 (
                     int(payload.enabled),
                     payload.bind_address,
                     payload.port,
                     int(payload.allow_network),
+                    certfile,
+                    keyfile,
                 ),
             )
         return current_a2a_listener_status()

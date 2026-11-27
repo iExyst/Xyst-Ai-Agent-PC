@@ -2235,6 +2235,8 @@ def test_a2a_listener_is_opt_in_persistent_and_filters_the_owner_api(workspace_t
             "bind_address": "127.0.0.1",
             "port": 8766,
             "allow_network": False,
+            "tls_cert_path": None,
+            "tls_key_path": None,
             "listening": False,
         }
         unconfirmed = client.put(
@@ -2257,6 +2259,17 @@ def test_a2a_listener_is_opt_in_persistent_and_filters_the_owner_api(workspace_t
         peer_secret = client.post("/channels/a2a/credential", headers=owner_headers).json()[
             "secret"
         ]
+        network_without_tls = client.put(
+            "/channels/a2a/listener",
+            headers=owner_headers,
+            json={
+                "enabled": True,
+                "bind_address": "0.0.0.0",
+                "port": port,
+                "allow_network": True,
+            },
+        )
+        assert network_without_tls.status_code == 422
         enabled = client.put(
             "/channels/a2a/listener",
             headers=owner_headers,

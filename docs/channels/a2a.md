@@ -6,12 +6,11 @@ X.A.A. accepts bounded text tasks through an authenticated A2A JSON-RPC listener
 
 1. Open **Tools & integrations → Messaging channels → Agent-to-agent (A2A)**.
 2. Create an A2A peer credential and copy the displayed secret to the connecting peer. X.A.A. stores the credential in Windows Credential Manager and shows the secret only once.
-3. Keep **Allow connections from other devices on this trusted network (HTTP, unencrypted)** unchecked for local-only use. To accept peers on a trusted LAN, check it and enable the listener. X.A.A. binds a separate port (8766 by default) and protects task requests with the peer secret.
-4. If Windows Firewall blocks inbound connections, add a rule for the selected port. Use the desktop's machine name or IP address when giving the Agent Card URL to another device; `0.0.0.0` is the bind address, not a client destination.
+3. Select a PEM TLS certificate and matching private key. The certificate must cover the machine name or IP address that peers will use. Keep the private-key file protected by your Windows account permissions.
+4. Keep **Allow TLS connections from other devices on this network** unchecked for local-only use. To accept peers on a LAN, check it and enable the listener. Network binding is refused without a valid certificate and private key. The Agent Card URL uses HTTPS, and connecting peers must trust the certificate.
+5. If Windows Firewall blocks inbound connections, add a rule for the selected port. Give peers the desktop's machine name or IP address; `0.0.0.0` is the bind address, not a client destination.
 
-The A2A listener currently uses plain HTTP. Anyone who can monitor the network may capture the peer secret and task contents. Only enable it on a trusted network; do not forward the port to the internet. TLS support is not implemented yet.
-
-The network listener exposes only `GET /.well-known/agent-card.json` and `POST /a2a`. The broader owner API remains bound to loopback. The peer credential can submit, stream, query, and cancel A2A tasks; it cannot access owner settings or grant tools/workspace permissions.
+The network listener exposes only `GET /.well-known/agent-card.json` and `POST /a2a`. The broader owner API remains bound to loopback. The peer credential can submit, stream, query, and cancel A2A tasks; it cannot access owner settings or grant tools/workspace permissions. TLS protects credentials and task contents in transit, but a publicly trusted certificate and a narrow firewall rule are still needed for peers outside the local machine.
 
 ## Supported protocol slice
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import ssl
 from collections.abc import Callable
 from typing import Any
 
@@ -62,29 +63,58 @@ class A2AListener:
         self._task: asyncio.Task[None] | None = None
         self.host: str | None = None
         self.port: int | None = None
+        self.certfile: str | None = None
+        self.keyfile: str | None = None
 
     @property
     def running(self) -> bool:
         return self._server is not None and self._server.started
 
-    async def configure(self, host: str, port: int) -> None:
+    async def configure(
+        self,
+        host: str,
+        port: int,
+        *,
+        certfile: str | None = None,
+        keyfile: str | None = None,
+    ) -> None:
         if not host or len(host) > 253 or not 1 <= port <= 65535:
             raise ValueError("A2A listener address is invalid.")
-        if self.running and self.host == host and self.port == port:
+        if (certfile is None) != (keyfile is None):
+            raise ValueError("A2A TLS requires both a certificate and private key.")
+        if host == "0.0.0.0" and certfile is None:
+            raise ValueError("A2A listeners bound to network interfaces require TLS.")
+        if certfile is not None and keyfile is not None:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(certfile=certfile, keyfile=keyfile)
+        if (
+            self.running
+            and self.host == host
+            and self.port == port
+            and self.certfile == certfile
+            and self.keyfile == keyfile
+        ):
             return
-        old = (self.host, self.port)
+        old = (self.host, self.port, self.certfile, self.keyfile)
         await self.close()
         try:
-            await self._start(host, port)
+            await self._start(host, port, certfile=certfile, keyfile=keyfile)
         except Exception:
             if old[0] is not None and old[1] is not None:
                 try:
-                    await self._start(old[0], old[1])
+                    await self._start(old[0], old[1], certfile=old[2], keyfile=old[3])
                 except (OSError, RuntimeError, TimeoutError, ValueError):
                     await self.close()
             raise
 
-    async def _start(self, host: str, port: int) -> None:
+    async def _start(
+        self,
+        host: str,
+        port: int,
+        *,
+        certfile: str | None,
+        keyfile: str | None,
+    ) -> None:
         config = uvicorn.Config(
             self._app,
             host=host,
@@ -94,6 +124,8 @@ class A2AListener:
             access_log=False,
             proxy_headers=False,
             forwarded_allow_ips="",
+            ssl_certfile=certfile,
+            ssl_keyfile=keyfile,
         )
         server = _ManagedUvicornServer(config)
         task = asyncio.create_task(server.serve(), name="a2a-network-listener")
@@ -114,6 +146,8 @@ class A2AListener:
             await asyncio.sleep(0.025)
         self.host = host
         self.port = port
+        self.certfile = certfile
+        self.keyfile = keyfile
 
     async def close(self) -> None:
         server, task = self._server, self._task
@@ -121,6 +155,8 @@ class A2AListener:
         self._task = None
         self.host = None
         self.port = None
+        self.certfile = None
+        self.keyfile = None
         if server is None or task is None:
             return
         server.should_exit = True

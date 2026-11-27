@@ -131,6 +131,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
     if(path==='/channels/a2a/listener'&&request.method()==='PUT'){
       const body=request.postDataJSON();
       expect(body.allow_network).toBe(true);expect(body.bind_address).toBe('0.0.0.0');expect(body.port).toBe(9876);
+      expect(body.tls_cert_path).toBe('C:\\acceptance\\a2a-cert.pem');expect(body.tls_key_path).toBe('C:\\acceptance\\a2a-key.pem');
       a2aListener={...body,listening:body.enabled};
       return route.fulfill({json:a2aListener,headers});
     }
@@ -149,8 +150,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'Create A2A peer credential'}).click();
   await expect(panel.getByRole('region',{name:'New A2A peer credential'})).toContainText('one-time-a2a-peer-secret-with-at-least-32-characters');
   await panel.getByLabel('A2A listener port').fill('9876');
-  await panel.getByLabel('Allow connections from other devices on this trusted network (HTTP, unencrypted)').check();
-  await expect(panel.getByText(/plain HTTP.*capture the peer secret and task contents/)).toBeVisible();
+  await panel.getByLabel('A2A TLS certificate (PEM)').fill('C:\\acceptance\\a2a-cert.pem');
+  await panel.getByLabel('A2A TLS private key (PEM)').fill('C:\\acceptance\\a2a-key.pem');
+  await panel.getByLabel('Allow TLS connections from other devices on this network').check();
+  await expect(panel.getByText(/Network access requires a matching certificate and private key/)).toBeVisible();
   await panel.getByRole('button',{name:'Enable A2A listener'}).click();
   await expect(panel.getByText('A2A listener is listening · 0.0.0.0:9876')).toBeVisible();
   await panel.getByRole('button',{name:'Disable A2A listener'}).click();

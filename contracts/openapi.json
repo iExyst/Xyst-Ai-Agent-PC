@@ -48,6 +48,32 @@
             "minimum": 1024.0,
             "title": "Port",
             "type": "integer"
+          },
+          "tls_cert_path": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Cert Path"
+          },
+          "tls_key_path": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Key Path"
           }
         },
         "required": [
@@ -83,6 +109,28 @@
             "minimum": 1024.0,
             "title": "Port",
             "type": "integer"
+          },
+          "tls_cert_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Cert Path"
+          },
+          "tls_key_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tls Key Path"
           }
         },
         "required": [

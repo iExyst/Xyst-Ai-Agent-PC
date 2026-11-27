@@ -312,7 +312,7 @@ def test_stopping_a_run_durably_requests_session_cleanup(workspace_tmp_path):
     assert [item.id for item in journal.terminal()] == [session.id]
 
 
-def test_schema_42_database_migrates_the_docker_session_journal(workspace_tmp_path):
+def test_schema_42_database_migrates_docker_journal_and_a2a_tls_settings(workspace_tmp_path):
     store, _run_id, _owner = setup_run(workspace_tmp_path)
     with store.connection() as connection:
         connection.execute("DROP INDEX docker_sessions_state_updated")
@@ -326,7 +326,10 @@ def test_schema_42_database_migrates_the_docker_session_journal(workspace_tmp_pa
         listener_table = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='a2a_listener_settings'"
         ).fetchone()
-    assert version == 44
+        listener_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(a2a_listener_settings)")
+        }
+    assert version == 45
     assert {
         "id",
         "run_id",
@@ -338,3 +341,4 @@ def test_schema_42_database_migrates_the_docker_session_journal(workspace_tmp_pa
         "active_execution_id",
     } <= columns
     assert listener_table is not None
+    assert {"tls_cert_path", "tls_key_path"} <= listener_columns

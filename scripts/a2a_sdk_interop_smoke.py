@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import os
 import socket
+import ssl
 import tempfile
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +17,10 @@ from uuid import uuid4
 
 import httpx
 import uvicorn
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.credentials import CredentialStore
@@ -68,6 +75,34 @@ def _free_port() -> int:
         return int(listener.getsockname()[1])
 
 
+def _write_test_certificate(certificate_path: Path, private_key_path: Path) -> None:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])
+    now = datetime.now(UTC)
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=1))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
+            critical=False,
+        )
+        .sign(private_key, hashes.SHA256())
+    )
+    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    private_key_path.write_bytes(
+        private_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+
+
 async def _wait_started(server: uvicorn.Server, task: asyncio.Task[None]) -> None:
     deadline = asyncio.get_running_loop().time() + 10
     while not server.started:
@@ -99,6 +134,9 @@ async def _run() -> dict[str, object]:
     TaskState = sdk_types.TaskState
     with tempfile.TemporaryDirectory(prefix="xaa-a2a-sdk-") as temporary:
         database = Path(temporary) / "runs.sqlite3"
+        certificate_path = Path(temporary) / "a2a-test-cert.pem"
+        private_key_path = Path(temporary) / "a2a-test-key.pem"
+        _write_test_certificate(certificate_path, private_key_path)
         store = RunStore(database)
         app = create_app(
             _DeterministicProvider(),
@@ -112,8 +150,8 @@ async def _run() -> dict[str, object]:
             )
             connection.execute(
                 "UPDATE a2a_listener_settings SET enabled=1,bind_address='127.0.0.1',"
-                "port=?,allow_network=0 WHERE id=1",
-                (_free_port(),),
+                "port=?,allow_network=0,tls_cert_path=?,tls_key_path=? WHERE id=1",
+                (_free_port(), str(certificate_path), str(private_key_path)),
             )
         owner_port = _free_port()
         server = uvicorn.Server(
@@ -135,10 +173,12 @@ async def _run() -> dict[str, object]:
                 ).fetchone()
             if listener_row is None:
                 raise RuntimeError("A2A listener settings were not available.")
-            peer_url = f"http://127.0.0.1:{int(listener_row['port'])}"
+            peer_url = f"https://127.0.0.1:{int(listener_row['port'])}"
+            tls_context = ssl.create_default_context(cafile=str(certificate_path))
             async with httpx.AsyncClient(
                 headers={"Authorization": f"Bearer {PEER_TOKEN}"},
                 timeout=15,
+                verify=tls_context,
                 event_hooks={"response": [_report_http_error]},
             ) as http_client:
                 resolver = A2ACardResolver(http_client, peer_url)
@@ -195,6 +235,7 @@ async def _run() -> dict[str, object]:
                     "sdk": "a2a-sdk==1.3.1",
                     "protocol_version": card.supported_interfaces[0].protocol_version,
                     "transport": "JSONRPC",
+                    "secure_transport": "HTTPS",
                     "stream_state": stream_state,
                     "task_id": task_id,
                     "artifact_id": streamed_artifact_id,
