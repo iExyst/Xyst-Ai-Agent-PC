@@ -30,6 +30,7 @@ test('save Telegram token securely, pair an account and clear the credential',as
   let a2aOutboundSendCount=0;
   let a2aOutboundImageDataUrl='';
   let a2aOutboundDocumentDataUrl='';
+  let a2aOutboundAudioDataUrl='';
   let identityBindings:any[]=[
     {id:'telegram-binding',channel:'telegram',account_id:'bot-1',external_identity:'456',session_id:'telegram-session',session_channel:'telegram',identity_link_id:null,authorized:true,title:'Telegram history',link_created_at:null},
     {id:'email-binding',channel:'email',account_id:'mailbox-1',external_identity:'owner@example.test',session_id:'email-session',session_channel:'email',identity_link_id:null,authorized:true,title:'Email history',link_created_at:null},
@@ -133,9 +134,10 @@ test('save Telegram token securely, pair an account and clear the credential',as
       return route.fulfill({status:201,json:peer,headers});
     }
     if(path==='/channels/a2a/peers/fixture-peer/tasks'&&request.method()==='POST'){
-      const body=request.postDataJSON();expect(body.text).toBe('Review the fixture task.');expect(body.idempotency_key).toMatch(/^[a-f0-9]{32}$/);a2aOutboundSendCount++;
-      if(a2aOutboundSendCount===1){expect(body.image_data_url).toBe(a2aOutboundImageDataUrl);expect(body.document_data_url).toBeUndefined();}
-      else {expect(body.image_data_url).toBeUndefined();expect(body.document_data_url).toBe(a2aOutboundDocumentDataUrl);expect(body.document_filename).toBe('notes.md');}
+      const body=request.postDataJSON();a2aOutboundSendCount++;expect(body.text).toBe(a2aOutboundSendCount===3?'Listen to the fixture recording.':'Review the fixture task.');expect(body.idempotency_key).toMatch(/^[a-f0-9]{32}$/);
+      if(a2aOutboundSendCount===1){expect(body.image_data_url).toBe(a2aOutboundImageDataUrl);expect(body.document_data_url).toBeUndefined();expect(body.audio_data_url).toBeUndefined();}
+      else if(a2aOutboundSendCount===2){expect(body.image_data_url).toBeUndefined();expect(body.document_data_url).toBe(a2aOutboundDocumentDataUrl);expect(body.document_filename).toBe('notes.md');expect(body.audio_data_url).toBeUndefined();}
+      else {expect(body.image_data_url).toBeUndefined();expect(body.document_data_url).toBeUndefined();expect(body.audio_data_url).toBe(a2aOutboundAudioDataUrl);expect(body.audio_filename).toBe('fixture.wav');}
       const task={id:`local-task-${a2aOutboundSendCount}`,peer_id:'fixture-peer',idempotency_key:body.idempotency_key,state:'sent',remote_task_id:`remote-task-${a2aOutboundSendCount}`,remote_context_id:'context-1',remote_task:{id:`remote-task-${a2aOutboundSendCount}`,status:{state:'TASK_STATE_SUBMITTED'}},cancel_state:'not_requested',cancel_error:null,error:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
       a2aOutboundTasks=[...a2aOutboundTasks,task];return route.fulfill({status:202,json:task,headers});
     }
@@ -208,6 +210,17 @@ test('save Telegram token securely, pair an account and clear the credential',as
   await panel.getByRole('button',{name:'Send task to selected peer'}).click();
   await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_SUBMITTED');
   expect(a2aOutboundSendCount).toBe(2);
+  await panel.getByRole('button',{name:'New task'}).click();
+  await panel.getByLabel('Task text').fill('Listen to the fixture recording.');
+  const wavSamples=Buffer.alloc(320);
+  const outboundAudio=Buffer.alloc(44+wavSamples.length);
+  outboundAudio.write('RIFF',0,'ascii');outboundAudio.writeUInt32LE(outboundAudio.length-8,4);outboundAudio.write('WAVEfmt ',8,'ascii');outboundAudio.writeUInt32LE(16,16);outboundAudio.writeUInt16LE(1,20);outboundAudio.writeUInt16LE(1,22);outboundAudio.writeUInt32LE(16000,24);outboundAudio.writeUInt32LE(32000,28);outboundAudio.writeUInt16LE(2,32);outboundAudio.writeUInt16LE(16,34);outboundAudio.write('data',36,'ascii');outboundAudio.writeUInt32LE(wavSamples.length,40);wavSamples.copy(outboundAudio,44);
+  a2aOutboundAudioDataUrl=`data:audio/wav;base64,${outboundAudio.toString('base64')}`;
+  await panel.getByLabel('Optional audio (PCM WAV; up to 4 MiB and 10 minutes)').setInputFiles({name:'fixture.wav',mimeType:'audio/wav',buffer:outboundAudio});
+  await expect(panel.getByText('Attached audio: fixture.wav')).toBeVisible();
+  await panel.getByRole('button',{name:'Send task to selected peer'}).click();
+  await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_SUBMITTED');
+  expect(a2aOutboundSendCount).toBe(3);
   await panel.getByRole('button',{name:'Refresh remote task'}).first().click();
   await expect(panel.getByRole('region',{name:'Selected outbound A2A task'})).toContainText('TASK_STATE_WORKING');
   page.once('dialog',dialog=>dialog.accept());

@@ -2729,6 +2729,10 @@ export interface components {
         };
         /** A2AOutboundTaskCreate */
         A2AOutboundTaskCreate: {
+            /** Audio Data Url */
+            audio_data_url?: string | null;
+            /** Audio Filename */
+            audio_filename?: string | null;
             /** Document Data Url */
             document_data_url?: string | null;
             /** Document Filename */

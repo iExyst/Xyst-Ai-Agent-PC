@@ -11,8 +11,10 @@ import os
 import socket
 import ssl
 import tempfile
+import wave
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
+from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -32,6 +34,16 @@ from xaa.storage.runs import RunStore
 
 OWNER_TOKEN = "a2a-sdk-owner-token-for-local-acceptance"
 PEER_TOKEN = "a2a-sdk-peer-token-for-local-acceptance"
+
+
+def _fixture_wav() -> bytes:
+    output = BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16_000)
+        wav_file.writeframes(b"\x00\x00" * 160)
+    return output.getvalue()
 
 
 class _Credentials:
@@ -150,6 +162,7 @@ async def _run() -> dict[str, object]:
     TaskStateEnum = sdk_types.TaskState
     observed_outbound_images: list[tuple[str, bytes]] = []
     observed_outbound_documents: list[tuple[str, bytes, str | None]] = []
+    observed_outbound_audio: list[tuple[str, bytes, str | None]] = []
 
     class _SdkPeerExecutor(sdk_executor_module.AgentExecutor):
         async def execute(self, context: Any, event_queue: Any) -> None:
@@ -180,6 +193,12 @@ async def _run() -> dict[str, object]:
                     "text/markdown",
                     "text/plain",
                 }
+                and isinstance(getattr(part, "raw", None), bytes)
+            )
+            observed_outbound_audio.extend(
+                (part.media_type, part.raw, getattr(part, "filename", None))
+                for part in context.message.parts
+                if getattr(part, "media_type", None) == "audio/wav"
                 and isinstance(getattr(part, "raw", None), bytes)
             )
             text = sdk_helpers.get_message_text(context.message)
@@ -270,7 +289,7 @@ async def _run() -> dict[str, object]:
             name="Independent SDK fixture",
             description="Deterministic A2A interoperability fixture",
             version="1.0.0",
-            default_input_modes=["text/plain", "image/png", "text/markdown"],
+            default_input_modes=["text/plain", "image/png", "text/markdown", "audio/wav"],
             default_output_modes=["text/plain"],
             capabilities=AgentCapabilities(streaming=False),
             supported_interfaces=[
@@ -285,7 +304,7 @@ async def _run() -> dict[str, object]:
                     id="deterministic-echo",
                     name="Deterministic echo",
                     description="Returns the submitted text in a test artifact",
-                    input_modes=["text/plain", "image/png", "text/markdown"],
+                    input_modes=["text/plain", "image/png", "text/markdown", "audio/wav"],
                     output_modes=["text/plain"],
                     tags=["test", "deterministic"],
                 )
@@ -619,6 +638,36 @@ async def _run() -> dict[str, object]:
                     raise AssertionError(
                         "The outbound task record retained raw remote document bytes."
                     )
+                outbound_audio_bytes = _fixture_wav()
+                outbound_audio_body = {
+                    "text": "Listen to the fixture clip.",
+                    "audio_data_url": "data:audio/wav;base64,"
+                    + base64.b64encode(outbound_audio_bytes).decode("ascii"),
+                    "audio_filename": "fixture.wav",
+                    "idempotency_key": "sdk-outbound-audio-acceptance-1",
+                }
+                outbound_audio = await owner_client.post(
+                    f"/channels/a2a/peers/{peer.json()['id']}/tasks",
+                    json=outbound_audio_body,
+                )
+                if outbound_audio.status_code != 202 or outbound_audio.json()["state"] != "sent":
+                    raise AssertionError(
+                        "The configured A2A peer did not accept the outbound audio task."
+                    )
+                if (
+                    "audio/wav",
+                    outbound_audio_bytes,
+                    "fixture.wav",
+                ) not in observed_outbound_audio:
+                    raise AssertionError(
+                        "The official SDK peer did not receive the WAV bytes and filename."
+                    )
+                if base64.b64encode(outbound_audio_bytes).decode("ascii") in json.dumps(
+                    outbound_audio.json(), separators=(",", ":")
+                ):
+                    raise AssertionError(
+                        "The outbound task record retained raw remote audio bytes."
+                    )
                 duplicate = await owner_client.post(
                     f"/channels/a2a/peers/{peer.json()['id']}/tasks", json=outbound_body
                 )
@@ -696,6 +745,9 @@ async def _run() -> dict[str, object]:
                     "outbound_document_media_type": "text/markdown",
                     "outbound_document_filename": "fixture.md",
                     "outbound_document_sha256": hashlib.sha256(outbound_document_bytes).hexdigest(),
+                    "outbound_audio_media_type": "audio/wav",
+                    "outbound_audio_filename": "fixture.wav",
+                    "outbound_audio_sha256": hashlib.sha256(outbound_audio_bytes).hexdigest(),
                     "outbound_cancel_state": cancellation.json()["cancel_state"],
                     "outbound_cancel_remote_state": cancellation.json()["remote_task"]["status"][
                         "state"

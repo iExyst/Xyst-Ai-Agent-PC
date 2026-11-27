@@ -230,6 +230,31 @@
       "A2AOutboundTaskCreate": {
         "additionalProperties": false,
         "properties": {
+          "audio_data_url": {
+            "anyOf": [
+              {
+                "maxLength": 5600000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Data Url"
+          },
+          "audio_filename": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Filename"
+          },
           "document_data_url": {
             "anyOf": [
               {

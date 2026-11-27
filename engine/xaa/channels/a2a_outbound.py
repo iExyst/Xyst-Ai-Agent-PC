@@ -16,6 +16,7 @@ import httpx
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_AGENT_CARD_BYTES = 65_536
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
+MAX_AUDIO_BYTES = 4 * 1024 * 1024
 DOCUMENT_MEDIA_TYPES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -60,6 +61,33 @@ def decode_document_data_url(value: str, filename: str | None) -> tuple[bytes, s
     ):
         raise ValueError("Document filename must be a plain filename without path characters.")
     return content, media_type, filename
+
+
+def decode_audio_data_url(value: str, filename: str | None) -> tuple[bytes, str | None]:
+    """Decode and validate one bounded PCM WAV selected by the owner."""
+    header, separator, encoded = value.partition(",")
+    if not separator or header != "data:audio/wav;base64":
+        raise ValueError("The audio attachment must be a WAV base64 data URL.")
+    if len(encoded) > ((MAX_AUDIO_BYTES + 2) // 3) * 4:
+        raise ValueError("Audio attachment exceeds 4 MiB.")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error):
+        raise ValueError("Audio attachment encoding is invalid.") from None
+    if not content or len(content) > MAX_AUDIO_BYTES:
+        raise ValueError("Audio attachment must be between 1 byte and 4 MiB.")
+    from xaa.runtime.local_transcription import TranscriptionError, validate_wav
+
+    try:
+        validate_wav(content)
+    except TranscriptionError as exc:
+        raise ValueError(str(exc)) from None
+    if filename is not None and (
+        any(ord(character) < 32 or character in "/\\:" for character in filename)
+        or filename in {".", ".."}
+    ):
+        raise ValueError("Audio filename must be a plain filename without path characters.")
+    return content, filename
 
 
 def _sanitize_remote_task(value: dict[str, Any]) -> dict[str, Any]:
@@ -137,6 +165,7 @@ class A2AOutboundClient:
         message_id: str,
         image: tuple[bytes, str] | None = None,
         document: tuple[bytes, str, str | None] | None = None,
+        audio: tuple[bytes, str | None] | None = None,
     ) -> dict[str, Any]:
         card_url = validate_agent_card_url(agent_card_url)
         async with self._client(bearer_token) as client:
@@ -173,6 +202,35 @@ class A2AOutboundClient:
                 part = {
                     "raw": base64.b64encode(document_bytes).decode("ascii"),
                     "mediaType": media_type,
+                }
+                if filename:
+                    part["filename"] = filename
+                parts.append(part)
+            if audio is not None:
+                audio_bytes, filename = audio
+                if not 0 < len(audio_bytes) <= MAX_AUDIO_BYTES:
+                    raise A2AOutboundError("The selected audio attachment is invalid or too large.")
+                from xaa.runtime.local_transcription import TranscriptionError, validate_wav
+
+                try:
+                    validate_wav(audio_bytes)
+                except TranscriptionError as exc:
+                    raise A2AOutboundError(str(exc)) from None
+                if filename is not None and (
+                    any(ord(character) < 32 or character in "/\\:" for character in filename)
+                    or filename in {".", ".."}
+                ):
+                    raise A2AOutboundError(
+                        "Audio filename must be a plain filename without path characters."
+                    )
+                input_modes = card.get("defaultInputModes")
+                if not isinstance(input_modes, list) or "audio/wav" not in input_modes:
+                    raise A2AUnsupportedInputError(
+                        "The peer does not advertise support for WAV audio."
+                    )
+                part = {
+                    "raw": base64.b64encode(audio_bytes).decode("ascii"),
+                    "mediaType": "audio/wav",
                 }
                 if filename:
                     part["filename"] = filename

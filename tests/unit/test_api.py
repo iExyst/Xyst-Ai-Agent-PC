@@ -2647,7 +2647,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
 
     secret = "remote-peer-token-" + ("s" * 48)
     active_secret = [secret]
-    active_modes = [["text/plain", "image/png", "text/markdown"]]
+    active_modes = [["text/plain", "image/png", "text/markdown", "audio/wav"]]
     sends: list[dict[str, Any]] = []
     cancels: list[dict[str, Any]] = []
 
@@ -2867,6 +2867,73 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             ).status_code
             == 409
         )
+        import wave
+        from io import BytesIO
+
+        wav_buffer = BytesIO()
+        with wave.open(wav_buffer, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(16_000)
+            wav_file.writeframes(b"\x00\x00" * 160)
+        wav_bytes = wav_buffer.getvalue()
+        wav_encoded = base64.b64encode(wav_bytes).decode("ascii")
+        audio_body = {
+            "text": "Listen to this short clip.",
+            "audio_data_url": "data:audio/wav;base64," + wav_encoded,
+            "audio_filename": "fixture.wav",
+            "idempotency_key": "review-audio-001",
+        }
+        sent_audio = client.post(
+            f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=audio_body
+        )
+        assert sent_audio.status_code == 202, sent_audio.text
+        assert sent_audio.json()["state"] == "sent"
+        assert len(sends) == 4
+        assert sends[3]["params"]["message"]["parts"] == [
+            {"text": "Listen to this short clip.", "mediaType": "text/plain"},
+            {"raw": wav_encoded, "mediaType": "audio/wav", "filename": "fixture.wav"},
+        ]
+        assert wav_encoded not in sent_audio.text
+        with store.connection() as connection:
+            saved_audio_task = connection.execute(
+                "SELECT remote_task_json FROM a2a_outbound_tasks WHERE id=?",
+                (sent_audio.json()["id"],),
+            ).fetchone()
+        assert wav_encoded not in str(saved_audio_task[0])
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=audio_body
+            ).json()["id"]
+            == sent_audio.json()["id"]
+        )
+        different_audio = {
+            **audio_body,
+            "audio_data_url": "data:audio/wav;base64,"
+            + base64.b64encode(wav_bytes + b"\x00").decode("ascii"),
+        }
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=different_audio
+            ).status_code
+            == 409
+        )
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json={**audio_body, "audio_data_url": "data:audio/wav;base64,@@@"},
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json={**audio_body, "audio_filename": "../fixture.wav"},
+            ).status_code
+            == 422
+        )
         assert (
             client.post(
                 f"/channels/a2a/peers/{peer_id}/tasks",
@@ -2875,6 +2942,19 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
                     **document_body,
                     "image_data_url": image_data,
                     "idempotency_key": "both-attachments-001",
+                },
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json={
+                    **audio_body,
+                    "document_data_url": document_body["document_data_url"],
+                    "document_filename": "notes.md",
+                    "idempotency_key": "audio-and-document-001",
                 },
             ).status_code
             == 422
@@ -2904,7 +2984,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             ).status_code
             == 422
         )
-        assert len(sends) == 3
+        assert len(sends) == 4
         active_modes[0] = ["text/plain"]
         unsupported = client.post(
             f"/channels/a2a/peers/{peer_id}/tasks",
@@ -2912,7 +2992,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             json={**image_body, "idempotency_key": "unsupported-image-001"},
         )
         assert unsupported.status_code == 422
-        assert len(sends) == 3
+        assert len(sends) == 4
         assert all(
             task["idempotency_key"] != "unsupported-image-001"
             for task in client.get("/channels/a2a/outbound-tasks", headers=headers).json()
@@ -2920,7 +3000,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         polled = client.get(f"/channels/a2a/outbound-tasks/{first.json()['id']}", headers=headers)
         assert polled.status_code == 200
         assert polled.json()["remote_task"]["status"]["state"] == "TASK_STATE_WORKING"
-        assert len(sends) == 3
+        assert len(sends) == 4
         assert polled.json()["cancel_state"] == "not_requested"
         cancelled = client.post(
             f"/channels/a2a/outbound-tasks/{first.json()['id']}/cancel", headers=headers
@@ -2933,7 +3013,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         )
         assert repeated_cancel.json()["cancel_state"] == "sent"
         assert len(cancels) == 1
-        assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 3
+        assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 4
         assert client.delete(f"/channels/a2a/peers/{peer_id}", headers=headers).status_code == 409
 
         run = store.create_run(

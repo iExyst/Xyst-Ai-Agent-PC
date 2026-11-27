@@ -422,8 +422,8 @@ export class EngineClient {
     return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}`,{method:'DELETE'});
   }
 
-  sendA2AOutboundTask(peerId:string,text:string,idempotencyKey:string,imageDataUrl?:string,documentDataUrl?:string,documentFilename?:string): Promise<A2AOutboundTask> {
-    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}/tasks`,{method:'POST',body:JSON.stringify({text,idempotency_key:idempotencyKey,...(imageDataUrl?{image_data_url:imageDataUrl}:{}),...(documentDataUrl?{document_data_url:documentDataUrl,document_filename:documentFilename}:{})})});
+  sendA2AOutboundTask(peerId:string,text:string,idempotencyKey:string,imageDataUrl?:string,documentDataUrl?:string,documentFilename?:string,audioDataUrl?:string,audioFilename?:string): Promise<A2AOutboundTask> {
+    return this.#request(`/channels/a2a/peers/${encodeURIComponent(peerId)}/tasks`,{method:'POST',body:JSON.stringify({text,idempotency_key:idempotencyKey,...(imageDataUrl?{image_data_url:imageDataUrl}:{}),...(documentDataUrl?{document_data_url:documentDataUrl,document_filename:documentFilename}:{}),...(audioDataUrl?{audio_data_url:audioDataUrl,audio_filename:audioFilename}:{})})});
   }
 
   a2aOutboundTasks(peerId?:string): Promise<A2AOutboundTask[]> {

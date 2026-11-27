@@ -148,14 +148,22 @@ class A2AOutboundTaskCreate(BaseModel):
     image_data_url: str | None = Field(default=None, max_length=4_300_000)
     document_data_url: str | None = Field(default=None, max_length=5_600_000)
     document_filename: str | None = Field(default=None, min_length=1, max_length=255)
+    audio_data_url: str | None = Field(default=None, max_length=5_600_000)
+    audio_filename: str | None = Field(default=None, min_length=1, max_length=255)
     idempotency_key: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
     @model_validator(mode="after")
     def validate_attachment_choice(self) -> "A2AOutboundTaskCreate":
-        if self.image_data_url is not None and self.document_data_url is not None:
-            raise ValueError("Attach one image or document to an A2A task, not both.")
+        attachments = sum(
+            value is not None
+            for value in (self.image_data_url, self.document_data_url, self.audio_data_url)
+        )
+        if attachments > 1:
+            raise ValueError("Attach only one image, document or audio file to an A2A task.")
         if self.document_filename is not None and self.document_data_url is None:
             raise ValueError("A document filename requires a document attachment.")
+        if self.audio_filename is not None and self.audio_data_url is None:
+            raise ValueError("An audio filename requires an audio attachment.")
         return self
 
     @field_validator("text")
