@@ -2729,6 +2729,10 @@ export interface components {
         };
         /** A2AOutboundTaskCreate */
         A2AOutboundTaskCreate: {
+            /** Document Data Url */
+            document_data_url?: string | null;
+            /** Document Filename */
+            document_filename?: string | null;
             /** Idempotency Key */
             idempotency_key: string;
             /** Image Data Url */
