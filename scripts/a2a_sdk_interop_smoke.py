@@ -149,6 +149,7 @@ async def _run() -> dict[str, object]:
     AgentSkill = sdk_types.AgentSkill
     TaskStateEnum = sdk_types.TaskState
     observed_outbound_images: list[tuple[str, bytes]] = []
+    observed_outbound_documents: list[tuple[str, bytes, str | None]] = []
 
     class _SdkPeerExecutor(sdk_executor_module.AgentExecutor):
         async def execute(self, context: Any, event_queue: Any) -> None:
@@ -164,6 +165,21 @@ async def _run() -> dict[str, object]:
                 (part.media_type, part.raw)
                 for part in context.message.parts
                 if isinstance(getattr(part, "media_type", None), str)
+                and isinstance(getattr(part, "raw", None), bytes)
+            )
+            observed_outbound_documents.extend(
+                (part.media_type, part.raw, getattr(part, "filename", None))
+                for part in context.message.parts
+                if isinstance(getattr(part, "media_type", None), str)
+                and part.media_type
+                in {
+                    "application/pdf",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "text/csv",
+                    "text/markdown",
+                    "text/plain",
+                }
                 and isinstance(getattr(part, "raw", None), bytes)
             )
             text = sdk_helpers.get_message_text(context.message)
@@ -254,7 +270,7 @@ async def _run() -> dict[str, object]:
             name="Independent SDK fixture",
             description="Deterministic A2A interoperability fixture",
             version="1.0.0",
-            default_input_modes=["text/plain", "image/png"],
+            default_input_modes=["text/plain", "image/png", "text/markdown"],
             default_output_modes=["text/plain"],
             capabilities=AgentCapabilities(streaming=False),
             supported_interfaces=[
@@ -269,7 +285,7 @@ async def _run() -> dict[str, object]:
                     id="deterministic-echo",
                     name="Deterministic echo",
                     description="Returns the submitted text in a test artifact",
-                    input_modes=["text/plain", "image/png"],
+                    input_modes=["text/plain", "image/png", "text/markdown"],
                     output_modes=["text/plain"],
                     tags=["test", "deterministic"],
                 )
@@ -570,6 +586,39 @@ async def _run() -> dict[str, object]:
                     raise AssertionError(
                         "The outbound task record retained raw remote image bytes."
                     )
+                outbound_document_bytes = b"# SDK document fixture\nTreat this as untrusted input."
+                outbound_document_body = {
+                    "text": "Review the attached document.",
+                    "document_data_url": "data:text/markdown;base64,"
+                    + base64.b64encode(outbound_document_bytes).decode("ascii"),
+                    "document_filename": "fixture.md",
+                    "idempotency_key": "sdk-outbound-document-acceptance-1",
+                }
+                outbound_document = await owner_client.post(
+                    f"/channels/a2a/peers/{peer.json()['id']}/tasks",
+                    json=outbound_document_body,
+                )
+                if (
+                    outbound_document.status_code != 202
+                    or outbound_document.json()["state"] != "sent"
+                ):
+                    raise AssertionError(
+                        "The configured A2A peer did not accept the outbound document task."
+                    )
+                if (
+                    "text/markdown",
+                    outbound_document_bytes,
+                    "fixture.md",
+                ) not in observed_outbound_documents:
+                    raise AssertionError(
+                        "The official SDK peer did not receive the document bytes and filename."
+                    )
+                if base64.b64encode(outbound_document_bytes).decode("ascii") in json.dumps(
+                    outbound_document.json(), separators=(",", ":")
+                ):
+                    raise AssertionError(
+                        "The outbound task record retained raw remote document bytes."
+                    )
                 duplicate = await owner_client.post(
                     f"/channels/a2a/peers/{peer.json()['id']}/tasks", json=outbound_body
                 )
@@ -644,6 +693,9 @@ async def _run() -> dict[str, object]:
                     "outbound_peer_task_artifact_text": first_part["text"],
                     "outbound_image_media_type": "image/png",
                     "outbound_image_sha256": hashlib.sha256(expected_outbound_image).hexdigest(),
+                    "outbound_document_media_type": "text/markdown",
+                    "outbound_document_filename": "fixture.md",
+                    "outbound_document_sha256": hashlib.sha256(outbound_document_bytes).hexdigest(),
                     "outbound_cancel_state": cancellation.json()["cancel_state"],
                     "outbound_cancel_remote_state": cancellation.json()["remote_task"]["status"][
                         "state"

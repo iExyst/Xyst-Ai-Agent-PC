@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import ssl
 from collections.abc import Mapping
@@ -14,6 +15,15 @@ import httpx
 
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_AGENT_CARD_BYTES = 65_536
+MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
+DOCUMENT_MEDIA_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+    "text/markdown",
+    "text/plain",
+}
 
 
 class A2AOutboundError(ValueError):
@@ -22,6 +32,34 @@ class A2AOutboundError(ValueError):
 
 class A2AUnsupportedInputError(A2AOutboundError):
     """The peer does not advertise support for a requested media type."""
+
+
+def decode_document_data_url(value: str, filename: str | None) -> tuple[bytes, str, str | None]:
+    """Decode one bounded supported document selected by the owner."""
+    header, separator, encoded = value.partition(",")
+    prefix = "data:"
+    suffix = ";base64"
+    if not separator or not header.startswith(prefix) or not header.endswith(suffix):
+        raise ValueError("The document attachment must be a base64 data URL.")
+    media_type = header[len(prefix) : -len(suffix)]
+    if media_type not in DOCUMENT_MEDIA_TYPES:
+        raise ValueError(
+            "Choose a supported PDF, DOCX, XLSX, CSV, Markdown or UTF-8 text document."
+        )
+    if len(encoded) > ((MAX_DOCUMENT_BYTES + 2) // 3) * 4:
+        raise ValueError("Document attachment exceeds 4 MiB.")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error):
+        raise ValueError("Document attachment encoding is invalid.") from None
+    if not content or len(content) > MAX_DOCUMENT_BYTES:
+        raise ValueError("Document attachment must be between 1 byte and 4 MiB.")
+    if filename is not None and (
+        any(ord(character) < 32 or character in "/\\:" for character in filename)
+        or filename in {".", ".."}
+    ):
+        raise ValueError("Document filename must be a plain filename without path characters.")
+    return content, media_type, filename
 
 
 def _sanitize_remote_task(value: dict[str, Any]) -> dict[str, Any]:
@@ -98,6 +136,7 @@ class A2AOutboundClient:
         text: str,
         message_id: str,
         image: tuple[bytes, str] | None = None,
+        document: tuple[bytes, str, str | None] | None = None,
     ) -> dict[str, Any]:
         card_url = validate_agent_card_url(agent_card_url)
         async with self._client(bearer_token) as client:
@@ -117,6 +156,27 @@ class A2AOutboundClient:
                         "mediaType": media_type,
                     }
                 )
+            if document is not None:
+                document_bytes, media_type, filename = document
+                if (
+                    media_type not in DOCUMENT_MEDIA_TYPES
+                    or not 0 < len(document_bytes) <= MAX_DOCUMENT_BYTES
+                ):
+                    raise A2AOutboundError(
+                        "The selected document attachment is invalid or too large."
+                    )
+                input_modes = card.get("defaultInputModes")
+                if not isinstance(input_modes, list) or media_type not in input_modes:
+                    raise A2AUnsupportedInputError(
+                        "The peer does not advertise support for this document type."
+                    )
+                part = {
+                    "raw": base64.b64encode(document_bytes).decode("ascii"),
+                    "mediaType": media_type,
+                }
+                if filename:
+                    part["filename"] = filename
+                parts.append(part)
             response = await self._json(
                 client,
                 "POST",

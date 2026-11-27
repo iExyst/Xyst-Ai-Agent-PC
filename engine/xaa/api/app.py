@@ -3947,6 +3947,16 @@ def create_app(
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             image = (normalized_image, normalized_type)
+        document: tuple[bytes, str, str | None] | None = None
+        if payload.document_data_url is not None:
+            from xaa.channels.a2a_outbound import decode_document_data_url
+
+            try:
+                document = decode_document_data_url(
+                    payload.document_data_url, payload.document_filename
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         with run_store.atomic_connection() as connection:
             peer = connection.execute(
                 "SELECT id,agent_card_url FROM a2a_outbound_peers WHERE id=?", (peer_id,)
@@ -3959,6 +3969,13 @@ def create_app(
                 digest_builder.update(image[1].encode("ascii"))
                 digest_builder.update(b"\0")
                 digest_builder.update(hashlib.sha256(image[0]).digest())
+            if document is not None:
+                digest_builder.update(b"\0")
+                digest_builder.update(document[1].encode("ascii"))
+                digest_builder.update(b"\0")
+                digest_builder.update(hashlib.sha256(document[0]).digest())
+                digest_builder.update(b"\0")
+                digest_builder.update((document[2] or "").encode("utf-8"))
             digest = digest_builder.hexdigest()
             existing = connection.execute(
                 "SELECT * FROM a2a_outbound_tasks WHERE peer_id=? AND idempotency_key=?",
@@ -4004,6 +4021,7 @@ def create_app(
                     text=payload.text,
                     message_id=message_id,
                     image=image,
+                    document=document,
                 )
                 remote_task_id = str(remote_task["id"])
                 context_id = remote_task.get("contextId")

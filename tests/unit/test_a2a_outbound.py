@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import base64
 import json
 
 import httpx
 import pytest
-from xaa.channels.a2a_outbound import A2AOutboundClient, A2AOutboundError, validate_agent_card_url
+from xaa.channels.a2a_outbound import (
+    A2AOutboundClient,
+    A2AOutboundError,
+    A2AUnsupportedInputError,
+    decode_document_data_url,
+    validate_agent_card_url,
+)
 
 
 @pytest.mark.parametrize(
@@ -25,6 +32,21 @@ def test_outbound_agent_card_url_requires_clean_https_origin(value: str) -> None
 
 def test_outbound_agent_card_accepts_a_valid_origin_root() -> None:
     assert validate_agent_card_url("https://agent.example.test") == "https://agent.example.test"
+
+
+def test_decode_document_data_url_is_bounded_and_rejects_paths() -> None:
+    encoded = base64.b64encode(b"# Hello").decode("ascii")
+    assert decode_document_data_url(f"data:text/markdown;base64,{encoded}", "hello.md") == (
+        b"# Hello",
+        "text/markdown",
+        "hello.md",
+    )
+    with pytest.raises(ValueError, match="plain filename"):
+        decode_document_data_url(f"data:text/plain;base64,{encoded}", "..\\secret.txt")
+    with pytest.raises(ValueError, match="encoding"):
+        decode_document_data_url("data:text/plain;base64,@@@", "text.txt")
+    with pytest.raises(ValueError, match="supported"):
+        decode_document_data_url(f"data:application/octet-stream;base64,{encoded}", "file.bin")
 
 
 @pytest.mark.asyncio
@@ -152,3 +174,83 @@ async def test_outbound_client_bounds_decompressed_response_size() -> None:
             text="hello",
             message_id="message-3",
         )
+
+
+@pytest.mark.asyncio
+async def test_outbound_client_sends_advertised_document_bytes_and_filename() -> None:
+    calls: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "defaultInputModes": ["text/plain", "text/markdown"],
+                    "supportedInterfaces": [
+                        {
+                            "url": "https://agent.example.test/a2a",
+                            "protocolBinding": "JSONRPC",
+                            "protocolVersion": "1.0",
+                        }
+                    ],
+                },
+            )
+        body = json.loads(request.content)
+        calls.append(body)
+        return httpx.Response(
+            200,
+            json={"jsonrpc": "2.0", "id": body["id"], "result": {"id": "remote-1"}},
+        )
+
+    content = b"# Notes\nUntrusted peer input."
+    client = A2AOutboundClient(transport=httpx.MockTransport(handler))
+    await client.send_task(
+        agent_card_url="https://agent.example.test/.well-known/agent-card.json",
+        bearer_token="z" * 48,
+        text="Review this note.",
+        message_id="message-doc-1",
+        document=(content, "text/markdown", "notes.md"),
+    )
+    assert calls[0]["params"]["message"]["parts"] == [
+        {"text": "Review this note.", "mediaType": "text/plain"},
+        {
+            "raw": base64.b64encode(content).decode("ascii"),
+            "mediaType": "text/markdown",
+            "filename": "notes.md",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_outbound_client_rejects_unadvertised_document_before_post() -> None:
+    posted = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal posted
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "defaultInputModes": ["text/plain"],
+                    "supportedInterfaces": [
+                        {
+                            "url": "https://agent.example.test/a2a",
+                            "protocolBinding": "JSONRPC",
+                            "protocolVersion": "1.0",
+                        }
+                    ],
+                },
+            )
+        posted = True
+        return httpx.Response(200, json={})
+
+    client = A2AOutboundClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(A2AUnsupportedInputError, match="document type"):
+        await client.send_task(
+            agent_card_url="https://agent.example.test/.well-known/agent-card.json",
+            bearer_token="z" * 48,
+            text="Review this note.",
+            message_id="message-doc-2",
+            document=(b"notes", "text/markdown", "notes.md"),
+        )
+    assert posted is False

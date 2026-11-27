@@ -230,6 +230,31 @@
       "A2AOutboundTaskCreate": {
         "additionalProperties": false,
         "properties": {
+          "document_data_url": {
+            "anyOf": [
+              {
+                "maxLength": 5600000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Data Url"
+          },
+          "document_filename": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Filename"
+          },
           "idempotency_key": {
             "pattern": "^[A-Za-z0-9_-]{1,64}$",
             "title": "Idempotency Key",

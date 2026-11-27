@@ -2561,7 +2561,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
 
     secret = "remote-peer-token-" + ("s" * 48)
     active_secret = [secret]
-    active_modes = [["text/plain", "image/png"]]
+    active_modes = [["text/plain", "image/png", "text/markdown"]]
     sends: list[dict[str, Any]] = []
     cancels: list[dict[str, Any]] = []
 
@@ -2741,6 +2741,84 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             == 409
         )
         assert len(sends) == 2
+        document_bytes = b"# Notes\nUntrusted reference."
+        document_body = {
+            "text": "Review the attached note.",
+            "document_data_url": "data:text/markdown;base64,"
+            + base64.b64encode(document_bytes).decode("ascii"),
+            "document_filename": "notes.md",
+            "idempotency_key": "review-document-001",
+        }
+        sent_document = client.post(
+            f"/channels/a2a/peers/{peer_id}/tasks", headers=headers, json=document_body
+        )
+        assert sent_document.status_code == 202
+        assert sent_document.json()["state"] == "sent"
+        assert len(sends) == 3
+        assert sends[2]["params"]["message"]["parts"] == [
+            {"text": "Review the attached note.", "mediaType": "text/plain"},
+            {
+                "raw": base64.b64encode(document_bytes).decode("ascii"),
+                "mediaType": "text/markdown",
+                "filename": "notes.md",
+            },
+        ]
+        assert base64.b64encode(document_bytes).decode("ascii") not in sent_document.text
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json=document_body,
+            ).json()["id"]
+            == sent_document.json()["id"]
+        )
+        renamed_document = {**document_body, "document_filename": "different.md"}
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json=renamed_document,
+            ).status_code
+            == 409
+        )
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json={
+                    **document_body,
+                    "image_data_url": image_data,
+                    "idempotency_key": "both-attachments-001",
+                },
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json={
+                    **document_body,
+                    "document_data_url": "data:text/markdown;base64,@@@",
+                    "idempotency_key": "bad-document-001",
+                },
+            ).status_code
+            == 422
+        )
+        unsupported_document = {
+            **document_body,
+            "idempotency_key": "unsupported-document-001",
+        }
+        active_modes[0] = ["text/plain", "image/png"]
+        assert (
+            client.post(
+                f"/channels/a2a/peers/{peer_id}/tasks",
+                headers=headers,
+                json=unsupported_document,
+            ).status_code
+            == 422
+        )
+        assert len(sends) == 3
         active_modes[0] = ["text/plain"]
         unsupported = client.post(
             f"/channels/a2a/peers/{peer_id}/tasks",
@@ -2748,7 +2826,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             json={**image_body, "idempotency_key": "unsupported-image-001"},
         )
         assert unsupported.status_code == 422
-        assert len(sends) == 2
+        assert len(sends) == 3
         assert all(
             task["idempotency_key"] != "unsupported-image-001"
             for task in client.get("/channels/a2a/outbound-tasks", headers=headers).json()
@@ -2756,7 +2834,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         polled = client.get(f"/channels/a2a/outbound-tasks/{first.json()['id']}", headers=headers)
         assert polled.status_code == 200
         assert polled.json()["remote_task"]["status"]["state"] == "TASK_STATE_WORKING"
-        assert len(sends) == 2
+        assert len(sends) == 3
         assert polled.json()["cancel_state"] == "not_requested"
         cancelled = client.post(
             f"/channels/a2a/outbound-tasks/{first.json()['id']}/cancel", headers=headers
@@ -2769,7 +2847,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         )
         assert repeated_cancel.json()["cancel_state"] == "sent"
         assert len(cancels) == 1
-        assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 2
+        assert len(client.get("/channels/a2a/outbound-tasks", headers=headers).json()) == 3
         assert client.delete(f"/channels/a2a/peers/{peer_id}", headers=headers).status_code == 409
 
         run = store.create_run(
