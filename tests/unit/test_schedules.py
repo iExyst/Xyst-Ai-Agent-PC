@@ -89,7 +89,8 @@ def test_dispatch_failure_does_not_drop_other_durable_schedule_occurrences(
 def test_daily_ambiguous_wall_time_runs_once_at_earlier_fall_back_instant(
     workspace_tmp_path: Path,
 ) -> None:
-    store = RunStore(workspace_tmp_path / "dst-fold.sqlite3")
+    database = workspace_tmp_path / "dst-fold.sqlite3"
+    store = RunStore(database)
     schedule = ScheduleStore(store).create(
         objective="Inspect the workspace",
         acceptance_criteria=[],
@@ -110,9 +111,14 @@ def test_daily_ambiguous_wall_time_runs_once_at_earlier_fall_back_instant(
     assert service.tick(datetime(2025, 11, 2, 5, 0, tzinfo=UTC)) == []
     first_occurrence = service.tick(datetime(2025, 11, 2, 5, 45, tzinfo=UTC))
     assert len(first_occurrence) == 1
-    assert service.tick(datetime(2025, 11, 2, 6, 0, tzinfo=UTC)) == []
 
-    saved = ScheduleStore(store).get(schedule["id"])
+    # Simulate a desktop/engine restart between the two repeated 01:00 hours.
+    # The occurrence claim and next local time must survive reopening SQLite.
+    restarted_store = RunStore(database)
+    restarted_service = ScheduleService(restarted_store, submitted.append)
+    assert restarted_service.tick(datetime(2025, 11, 2, 6, 0, tzinfo=UTC)) == []
+
+    saved = ScheduleStore(restarted_store).get(schedule["id"])
     assert saved is not None
     assert len(saved["executions"]) == 1
     assert saved["executions"][0]["state"] == "queued"
