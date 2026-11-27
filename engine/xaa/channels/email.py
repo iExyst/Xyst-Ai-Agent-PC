@@ -10,13 +10,14 @@ import re
 import smtplib
 import sqlite3
 import ssl
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
 from email.policy import default
 from email.utils import make_msgid, parseaddr
-from typing import Any, cast
+from html.parser import HTMLParser
+from typing import Any, ClassVar, cast
 from uuid import uuid4
 
 from xaa.credentials import CredentialStore
@@ -147,22 +148,126 @@ def _decode_payload(payload: object, charset: str | None) -> str:
         return payload.decode("utf-8", errors="replace")
 
 
-def _plain_body(message: Message) -> str:
+class _EmailHtmlTextParser(HTMLParser):
+    """Collect bounded visible HTML text without rendering or fetching remote content."""
+
+    _SKIP: ClassVar[frozenset[str]] = frozenset(
+        {"head", "script", "style", "template", "svg", "noscript"}
+    )
+    _BLOCK: ClassVar[frozenset[str]] = frozenset(
+        {
+            "address",
+            "article",
+            "blockquote",
+            "br",
+            "dd",
+            "div",
+            "dl",
+            "dt",
+            "fieldset",
+            "figcaption",
+            "figure",
+            "footer",
+            "form",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "header",
+            "hr",
+            "li",
+            "main",
+            "ol",
+            "p",
+            "pre",
+            "section",
+            "table",
+            "td",
+            "th",
+            "tr",
+            "ul",
+        }
+    )
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._skip_depth = 0
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        _ = attrs
+        if tag in self._SKIP:
+            self._skip_depth += 1
+        elif self._skip_depth == 0 and tag in self._BLOCK:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP and self._skip_depth:
+            self._skip_depth -= 1
+        elif self._skip_depth == 0 and tag in self._BLOCK:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0:
+            self._parts.append(data)
+
+    def text(self) -> str:
+        lines = (" ".join(line.split()) for line in "".join(self._parts).splitlines())
+        return "\n".join(line for line in lines if line)[:MAX_EMAIL_BODY]
+
+
+def _html_text(value: str) -> str:
+    parser = _EmailHtmlTextParser()
+    try:
+        parser.feed(value[:MAX_EMAIL_BYTES])
+        parser.close()
+    except (AssertionError, ValueError):
+        return ""
+    return parser.text()
+
+
+def _body_parts(message: Message[Any, Any]) -> Iterator[Message[Any, Any]]:
+    if message.get_content_disposition() == "attachment" or message.get_filename():
+        return
     if message.is_multipart():
-        for part in message.walk():
-            if (
-                part.get_content_disposition() == "attachment"
-                or part.get_content_type() != "text/plain"
-            ):
+        payload: object = message.get_payload()
+        if isinstance(payload, list):
+            for part in cast(list[object], payload):
+                if isinstance(part, Message):
+                    yield from _body_parts(cast("Message[Any, Any]", part))
+        return
+    yield message
+
+
+def _plain_body(message: Message[Any, Any]) -> str:
+    if message.is_multipart():
+        html_body: str | None = None
+        for part in _body_parts(message):
+            content_type = part.get_content_type()
+            if content_type not in {"text/plain", "text/html"}:
                 continue
             payload = part.get_payload(decode=True)
-            if payload:
-                return _decode_payload(payload, part.get_content_charset())[:MAX_EMAIL_BODY]
-        return ""
-    payload = message.get_payload(decode=True)
-    if not payload:
-        return ""
-    return _decode_payload(payload, message.get_content_charset())[:MAX_EMAIL_BODY]
+            if not payload:
+                continue
+            decoded = _decode_payload(payload, part.get_content_charset())
+            if content_type == "text/plain":
+                return decoded[:MAX_EMAIL_BODY]
+            if html_body is None:
+                html_body = decoded
+        return _html_text(html_body) if html_body is not None else ""
+    for part in _body_parts(message):
+        if part.get_content_type() not in {"text/plain", "text/html"}:
+            continue
+        payload = part.get_payload(decode=True)
+        if not payload:
+            continue
+        decoded = _decode_payload(payload, part.get_content_charset())
+        if part.get_content_type() == "text/html":
+            return _html_text(decoded)
+        return decoded[:MAX_EMAIL_BODY]
+    return ""
 
 
 class EmailStore:

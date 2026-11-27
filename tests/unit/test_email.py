@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from pydantic import SecretStr
 from starlette.testclient import TestClient
-from xaa.channels.email import EmailConfig, EmailService, EmailStore, _automated
+from xaa.channels.email import EmailConfig, EmailService, EmailStore, _automated, _plain_body
 from xaa.storage.runs import RunStore, utc_now
 
 
@@ -126,6 +126,100 @@ def test_email_requires_trusted_aligned_dmarc_result() -> None:
         )
     )
     assert not _authenticated_sender(forged, "owner@example.test", "mx.example.test")
+
+
+def test_email_extracts_bounded_visible_text_from_html_without_loading_remote_content() -> None:
+    from email.parser import BytesParser
+    from email.policy import default
+
+    message = EmailMessage()
+    message.set_content(
+        """<!doctype html><html><head><title>Hidden title</title>
+        <style>.secret { color: red }</style></head><body>
+        <p>Hello <strong>owner</strong> &amp; team.</p>
+        <script>ignore-this-script</script>
+        <img src="https://example.test/tracker.png" alt="ignored image">
+        <a href="https://example.test/private">Read the report</a>
+        </body></html>""",
+        subtype="html",
+    )
+    parsed = BytesParser(policy=default).parsebytes(message.as_bytes())
+
+    body = _plain_body(parsed)
+
+    assert "Hello owner & team." in body
+    assert "Read the report" in body
+    assert "Hidden title" not in body
+    assert "color: red" not in body
+    assert "ignore-this-script" not in body
+    assert "example.test" not in body
+    assert "ignored image" not in body
+
+
+def test_email_prefers_plain_alternative_and_ignores_html_attachments() -> None:
+    from email.parser import BytesParser
+    from email.policy import default
+
+    message = EmailMessage()
+    message.set_content("Plain text is preferred.")
+    message.add_alternative("<p>HTML alternative</p>", subtype="html")
+    message.add_attachment(
+        b"<p>Attachment is not input</p>",
+        maintype="text",
+        subtype="html",
+        filename="attached.html",
+    )
+    parsed = BytesParser(policy=default).parsebytes(message.as_bytes())
+
+    assert _plain_body(parsed).strip() == "Plain text is preferred."
+
+
+def test_email_does_not_extract_text_from_attached_forwarded_messages() -> None:
+    from email.parser import BytesParser
+    from email.policy import default
+
+    forwarded = EmailMessage()
+    forwarded.set_content("Forwarded attachment text is not input.")
+    message = EmailMessage()
+    message.set_content("The actual message body.")
+    message.add_attachment(forwarded)
+    parsed = BytesParser(policy=default).parsebytes(message.as_bytes())
+
+    assert _plain_body(parsed).strip() == "The actual message body."
+
+
+def test_email_accepts_html_only_body_into_the_shared_observe_run(workspace_tmp_path) -> None:
+    runs = RunStore(workspace_tmp_path / "email-html.sqlite3")
+    store = EmailStore(runs)
+    config = EmailConfig.parse(
+        {
+            "address": "agent@example.test",
+            "password": "secret",
+            "imap_host": "imap.example.test",
+            "smtp_host": "smtp.example.test",
+            "allowed_senders": "owner@example.test",
+            "authserv_id": "mx.example.test",
+        }
+    )
+    mailbox_id = store.save_config(config)
+    message = EmailMessage()
+    message["From"] = "owner@example.test"
+    message["To"] = "agent@example.test"
+    message["Message-ID"] = make_msgid()
+    message["Authentication-Results"] = "mx.example.test; dmarc=pass header.from=example.test"
+    message.set_content(
+        "<p>Summarize <b>this</b> report.</p><script>do not include this</script>",
+        subtype="html",
+    )
+
+    run_id = store.accept_message(mailbox_id, "77", "1", message.as_bytes(), "fixture/model")
+
+    assert run_id is not None
+    run = runs.get_run(run_id)
+    assert run["mode"] == "observe"
+    assert run["workspace"] is None
+    assert run["objective"] == "Summarize this report."
+    assert "do not include" not in run["objective"]
 
 
 def test_email_ingress_is_allowlisted_idempotent_and_delivery_is_never_ambiguous_retry(
