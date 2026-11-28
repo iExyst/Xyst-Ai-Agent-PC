@@ -114,7 +114,21 @@ export class EngineClient {
       throw new Error('X.A.A. could not reach its local engine. Check that the desktop app is running, then try again.');
     }
     if (!response.ok) {
-      throw new EngineRequestError(response.status, `Engine request failed (${response.status}).`);
+      let message = `Engine request failed (${response.status}).`;
+      if (response.status === 422 && path === '/runs' && typeof init.body === 'string') {
+        try {
+          const input = JSON.parse(init.body) as Record<string, unknown>;
+          if (input.transcription_provider === 'windows_offline' && typeof input.audio === 'string') {
+            const payload = await response.clone().json() as {detail?: unknown};
+            if (typeof payload.detail === 'string' &&
+                payload.detail.startsWith('Windows recognized this audio with low confidence.') &&
+                payload.detail.length <= 512) {
+              message = payload.detail;
+            }
+          }
+        } catch {}
+      }
+      throw new EngineRequestError(response.status, message);
     }
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;

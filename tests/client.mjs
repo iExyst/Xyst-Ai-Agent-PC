@@ -74,6 +74,23 @@ test('engine HTTP failures explain a useful next step', async () => {
   }
 });
 
+test('Windows offline speech confidence rejection is shown on the objective form', async () => {
+  const detail = 'Windows recognized this audio with low confidence. Speak clearly and try again, or select a local speech service.';
+  const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () =>
+    Response.json({detail}, {status:422}));
+  await assert.rejects(client.createRun({
+    objective: 'Transcribe this recording',
+    model: 'fixture/model',
+    workspace: 'C:\\fixture',
+    audio: 'data:audio/wav;base64,AA==',
+    transcription_provider: 'windows_offline',
+  }), error => {
+    assert.match(error.message, /low confidence.*Speak clearly and try again/);
+    assert.equal(error.status, 422);
+    return true;
+  });
+});
+
 test('engine connection failures do not leak raw browser network errors', async () => {
   const client = new EngineClient('http://127.0.0.1:8765', 'x'.repeat(32), async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(client.systemResources(), {message:/could not reach its local engine.*desktop app is running/});
