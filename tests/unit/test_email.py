@@ -188,6 +188,89 @@ def test_email_does_not_extract_text_from_attached_forwarded_messages() -> None:
     assert _plain_body(parsed).strip() == "The actual message body."
 
 
+def test_email_accepts_one_bounded_document_from_an_authorized_sender(workspace_tmp_path) -> None:
+    runs = RunStore(workspace_tmp_path / "email-document.sqlite3")
+    store = EmailStore(runs)
+    config = EmailConfig.parse(
+        {
+            "address": "agent@example.test",
+            "password": "secret",
+            "imap_host": "imap.example.test",
+            "smtp_host": "smtp.example.test",
+            "allowed_senders": "owner@example.test",
+            "authserv_id": "mx.example.test",
+        }
+    )
+    mailbox_id = store.save_config(config)
+    message = EmailMessage()
+    message["From"] = "owner@example.test"
+    message["To"] = "agent@example.test"
+    message["Message-ID"] = make_msgid()
+    message["Authentication-Results"] = "mx.example.test; dmarc=pass header.from=example.test"
+    message.set_content("Summarize the attached report.")
+    source = b"Quarterly report marker: ORCHID-4821"
+    message.add_attachment(
+        source,
+        maintype="text",
+        subtype="plain",
+        filename="../quarterly.txt",
+    )
+
+    run_id = store.accept_message(mailbox_id, "77", "6", message.as_bytes(), "fixture/model")
+
+    assert run_id is not None
+    assert runs.document_attachment(run_id) == (source, "text/plain", "quarterly.txt")
+    assert "ORCHID-4821" in (runs.document_text(run_id) or "")
+    with runs.connection() as connection:
+        rows = connection.execute(
+            "SELECT provenance FROM artifacts WHERE run_id=? ORDER BY provenance", (run_id,)
+        ).fetchall()
+        events = connection.execute(
+            "SELECT COUNT(*) FROM run_events WHERE run_id=? AND event_type='run.document_attached'",
+            (run_id,),
+        ).fetchone()[0]
+    assert {row["provenance"] for row in rows} == {
+        "user.input_document",
+        "user.input_document_text",
+    }
+    assert events == 1
+    assert store.accept_message(mailbox_id, "77", "6", message.as_bytes(), "fixture/model") is None
+    with runs.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 2
+
+
+def test_email_ignores_multiple_supported_attachments(workspace_tmp_path) -> None:
+    runs = RunStore(workspace_tmp_path / "email-multiple-documents.sqlite3")
+    store = EmailStore(runs)
+    mailbox_id = store.save_config(
+        EmailConfig.parse(
+            {
+                "address": "agent@example.test",
+                "password": "secret",
+                "imap_host": "imap.example.test",
+                "smtp_host": "smtp.example.test",
+                "allowed_senders": "owner@example.test",
+                "authserv_id": "mx.example.test",
+            }
+        )
+    )
+    message = EmailMessage()
+    message["From"] = "owner@example.test"
+    message["To"] = "agent@example.test"
+    message["Message-ID"] = make_msgid()
+    message["Authentication-Results"] = "mx.example.test; dmarc=pass header.from=example.test"
+    message.set_content("Review the files.")
+    message.add_attachment(b"First report.", maintype="text", subtype="plain", filename="a.txt")
+    message.add_attachment(b"Second report.", maintype="text", subtype="plain", filename="b.txt")
+
+    run_id = store.accept_message(mailbox_id, "77", "7", message.as_bytes(), "fixture/model")
+
+    assert run_id is not None
+    assert runs.document_attachment(run_id) is None
+    assert runs.document_text(run_id) is None
+
+
 def test_email_accepts_html_only_body_into_the_shared_observe_run(workspace_tmp_path) -> None:
     runs = RunStore(workspace_tmp_path / "email-html.sqlite3")
     store = EmailStore(runs)

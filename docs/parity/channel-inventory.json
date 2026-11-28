@@ -3241,7 +3241,7 @@
         "engine/xaa/channels/email.py"
       ],
       "xaa_implementation_status": "implemented_partial",
-      "xaa_implemented_scope": "Allowlisted plain-text and bounded HTML-to-text ingress with threaded text replies and durable ambiguous-send reconciliation. HTML is never rendered and attachments are ignored; live mailbox interoperability and broader email parity remain open.",
+      "xaa_implemented_scope": "Allowlisted plain-text and bounded HTML-to-text ingress, plus one supported PDF/DOCX/XLSX/UTF-8 text/Markdown/CSV document up to 4 MiB as a retained untrusted run artifact; threaded text replies and durable ambiguous-send reconciliation. HTML is never rendered; multiple, unsupported, invalid, or oversized attachments are ignored. Live mailbox interoperability and broader email parity remain open.",
       "transport_observation": "Polled IMAP receive and SMTP send",
       "acceptance_id": "CHANNEL-EMAIL",
       "acceptance": "Verify TLS/authentication, mailbox UID/message-ID deduplication, sender authorization, thread headers and automated-mail loop prevention.",

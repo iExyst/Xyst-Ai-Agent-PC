@@ -1,6 +1,6 @@
 # Email channel setup and operation
 
-X.A.A. supports an IMAP mailbox with SMTP replies. The adapter polls at a bounded interval, processes at most 20 newly received messages per cycle, and limits message input and output. It accepts plain-text bodies and converts HTML-only bodies to bounded plain text without rendering markup or fetching links and images. It does not process attachments, commands, or bulk recipients.
+X.A.A. supports an IMAP mailbox with SMTP replies. The adapter polls at a bounded interval, processes at most 20 newly received messages per cycle, and limits message input and output. It accepts plain-text bodies and converts HTML-only bodies to bounded plain text without rendering markup or fetching links and images. A message from an authorized sender may include one supported PDF, DOCX, XLSX, UTF-8 TXT, Markdown, or CSV document up to 4 MiB. The source file and bounded extracted text are retained as run artifacts. Multiple, unsupported, oversized, or invalid attachments are ignored; attached HTML and forwarded messages are never processed.
 
 ## Configure a mailbox
 
@@ -14,7 +14,7 @@ Authorized private email starts an Observe-mode run with no workspace, file, bro
 
 Replies go only to the exact allowlisted sender. Each reply uses durable `pending → sending → sent/failed/unknown` state. If SMTP may have accepted a message but the client loses the result, X.A.A. records `unknown` and does not retry automatically, preventing duplicate messages. The desktop lists each uncertain reply by sender, mailbox UID, run, and timestamp. The owner must check the configured mailbox's Sent folder and destination before marking it delivered or retrying it. The authenticated API scopes reconciliation to the currently configured mailbox, requires explicit destination-checked confirmation, only changes a still-unknown record, and stores the resolution in a durable audit table. A retry returns the existing reply to the normal outbox; a mistaken retry can still duplicate mail.
 
-The adapter currently supports one configured mailbox and plain-text run context; attachments are ignored, including attached HTML and forwarded messages. Use a dedicated mailbox and a provider that stamps a trusted Authentication-Results header. Fixture tests verify plain and HTML body extraction, script/style suppression, attachment exclusion, authserv pinning, DMARC alignment, sender allowlisting, deduplication, run scoping, secret handling, ambiguous-send recovery, and owner-reviewed reconciliation; live IMAP/SMTP interoperability still requires a user-configured account.
+The adapter currently supports one configured mailbox and plain-text or one supported document attachment in run context. Use a dedicated mailbox and a provider that stamps a trusted Authentication-Results header. Fixture tests verify plain and HTML body extraction, script/style suppression, unsupported attachment exclusion, bounded document extraction and retention, authserv pinning, DMARC alignment, sender allowlisting, deduplication, run scoping, secret handling, ambiguous-send recovery, and owner-reviewed reconciliation; live IMAP/SMTP interoperability still requires a user-configured account.
 
 ## Crash recovery acceptance
 

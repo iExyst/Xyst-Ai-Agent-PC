@@ -32,7 +32,7 @@ XAA_CHANNEL_SLICES: dict[str, XaaChannelSlice] = {
         "module": "engine/xaa/channels/email.py",
         "modules": ["engine/xaa/channels/email.py"],
         "status": "implemented_partial",
-        "scope": "Allowlisted plain-text and bounded HTML-to-text ingress with threaded text replies and durable ambiguous-send reconciliation. HTML is never rendered and attachments are ignored; live mailbox interoperability and broader email parity remain open.",
+        "scope": "Allowlisted plain-text and bounded HTML-to-text ingress, plus one supported PDF/DOCX/XLSX/UTF-8 text/Markdown/CSV document up to 4 MiB as a retained untrusted run artifact; threaded text replies and durable ambiguous-send reconciliation. HTML is never rendered; multiple, unsupported, invalid, or oversized attachments are ignored. Live mailbox interoperability and broader email parity remain open.",
     },
     "webhook": {
         "module": "engine/xaa/channels/webhook.py plus authenticated API ingress",

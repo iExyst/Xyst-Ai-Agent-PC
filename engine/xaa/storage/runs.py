@@ -1877,6 +1877,92 @@ class RunStore:
             raise ValueError("Run image failed artifact integrity verification.")
         return f"data:{row['media_type']};base64," + base64.b64encode(content).decode("ascii")
 
+    def insert_document_artifacts(
+        self,
+        connection: sqlite3.Connection,
+        run_id: str,
+        content: bytes,
+        media_type: str,
+        extracted_text: str,
+        filename: str | None = None,
+    ) -> tuple[str, str]:
+        """Persist one validated document and its extracted text inside a caller's transaction."""
+        extensions = {
+            "application/pdf": "pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+            "text/plain": "txt",
+            "text/markdown": "md",
+            "text/csv": "csv",
+        }
+        if media_type not in extensions or not content or len(content) > 4 * 1024 * 1024:
+            raise ValueError("Email document is outside the supported size or media limits.")
+        if not extracted_text or len(extracted_text) > 49_000:
+            raise ValueError("Extracted email document text is empty or exceeds its storage limit.")
+        artifacts = self.path.parent / "artifacts"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        now = utc_now()
+        records = [
+            (
+                content,
+                media_type,
+                "user.input_document",
+                safe_upload_filename(filename, media_type),
+            ),
+            (extracted_text.encode("utf-8"), "text/plain", "user.input_document_text", None),
+        ]
+        staged: list[tuple[str, str, bytes, str, str, str | None]] = []
+        paths: list[Path] = []
+        try:
+            for data, artifact_type, provenance, display_name in records:
+                extension = extensions.get(artifact_type, "txt")
+                storage_key = f"{uuid.uuid4().hex}.{extension}"
+                target = artifacts / storage_key
+                with target.open("xb") as stream:
+                    stream.write(data)
+                paths.append(target)
+                staged.append(
+                    (
+                        str(uuid.uuid4()),
+                        storage_key,
+                        data,
+                        artifact_type,
+                        provenance,
+                        display_name,
+                    )
+                )
+            for artifact_id, storage_key, data, artifact_type, provenance, display_name in staged:
+                connection.execute(
+                    "INSERT INTO artifacts (id,run_id,task_id,media_type,storage_key,size_bytes,sha256,provenance,created_at,original_filename) "
+                    "VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        artifact_id,
+                        run_id,
+                        artifact_type,
+                        storage_key,
+                        len(data),
+                        hashlib.sha256(data).hexdigest(),
+                        provenance,
+                        now,
+                        display_name,
+                    ),
+                )
+            self.record_event(
+                connection,
+                run_id,
+                "run.document_attached",
+                {
+                    "artifact_id": staged[0][0],
+                    "extracted_text_artifact_id": staged[1][0],
+                    "media_type": media_type,
+                },
+            )
+        except BaseException:
+            for path in paths:
+                path.unlink(missing_ok=True)
+            raise
+        return staged[0][0], staged[1][0]
+
     def document_attachment(self, run_id: str) -> tuple[bytes, str, str | None] | None:
         """Read and integrity-check the single managed document input for a run."""
         with self._connection() as connection:

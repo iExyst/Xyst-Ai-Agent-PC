@@ -1,4 +1,4 @@
-"""Text-only IMAP/SMTP channel with sender allowlists and durable deduplication."""
+"""IMAP/SMTP channel with sender allowlists and durable deduplication."""
 
 from __future__ import annotations
 
@@ -21,11 +21,22 @@ from typing import Any, ClassVar, cast
 from uuid import uuid4
 
 from xaa.credentials import CredentialStore
+from xaa.runtime.document_input import extract_document_text
+from xaa.storage.artifact_names import safe_upload_filename
 from xaa.storage.runs import RunStore, utc_now
 
 logger = logging.getLogger(__name__)
 MAX_EMAIL_BODY = 32_000
-MAX_EMAIL_BYTES = 96_000
+MAX_EMAIL_BYTES = 6 * 1024 * 1024
+MAX_EMAIL_ATTACHMENT_BYTES = 4 * 1024 * 1024
+DOCUMENT_MEDIA_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+}
 AUTOMATED_HEADERS = ("Auto-Submitted", "Precedence", "List-Unsubscribe", "X-Auto-Response-Suppress")
 AUTOMATED_SENDERS = (
     "noreply",
@@ -270,6 +281,46 @@ def _plain_body(message: Message[Any, Any]) -> str:
     return ""
 
 
+def _document_attachment(
+    message: Message[Any, Any],
+) -> tuple[bytes, str, str, str] | None:
+    """Return one bounded, extractable document attachment; ambiguity fails closed."""
+    supported: list[tuple[bytes, str, str, str]] = []
+    if not message.is_multipart():
+        return None
+    payload = message.get_payload()
+    if not isinstance(payload, list):
+        return None
+    for item in cast(list[object], payload):
+        if not isinstance(item, Message):
+            continue
+        if item.is_multipart() and item.get_content_type() != "message/rfc822":
+            nested = _document_attachment(cast("Message[Any, Any]", item))
+            if nested is not None:
+                supported.append(nested)
+            continue
+        if item.get_content_type() == "message/rfc822":
+            continue
+        filename = item.get_filename()
+        if item.get_content_disposition() != "attachment" and not filename:
+            continue
+        media_type = item.get_content_type().lower()
+        if media_type not in DOCUMENT_MEDIA_TYPES:
+            continue
+        data = item.get_payload(decode=True)
+        if not isinstance(data, bytes) or not data or len(data) > MAX_EMAIL_ATTACHMENT_BYTES:
+            continue
+        try:
+            text = extract_document_text(data, media_type)
+        except (ValueError, OSError):
+            continue
+        supported.append((data, media_type, safe_upload_filename(filename, media_type), text))
+        # Extraction is bounded; a second candidate makes selection ambiguous.
+        if len(supported) > 1:
+            return None
+    return supported[0] if len(supported) == 1 else None
+
+
 class EmailStore:
     def __init__(self, runs: RunStore) -> None:
         self.runs = runs
@@ -454,6 +505,8 @@ class EmailStore:
                     ("ignored", mailbox_id, uid_validity, uid),
                 )
                 return None
+            attachment = _document_attachment(message)
+            extracted_document_text = attachment[3] if attachment else None
             session = connection.execute(
                 "SELECT s.id FROM channel_bindings b JOIN sessions s ON s.id=b.session_id WHERE b.channel='email' AND b.account_id=? AND b.external_identity=? AND b.authorized=1",
                 (mailbox_id, sender),
@@ -505,6 +558,15 @@ class EmailStore:
                 "UPDATE email_messages SET session_id=?,run_id=?,state='queued',delivery_state='pending',updated_at=? WHERE mailbox_id=? AND uid_validity=? AND uid=?",
                 (session_id, run_id, now, mailbox_id, uid_validity, uid),
             )
+            if attachment is not None and extracted_document_text is not None:
+                self.runs.insert_document_artifacts(
+                    connection,
+                    run_id,
+                    attachment[0],
+                    attachment[1],
+                    extracted_document_text,
+                    attachment[2],
+                )
             return run_id
 
     def claim_delivery(self, mailbox_id: str) -> dict[str, str] | None:
