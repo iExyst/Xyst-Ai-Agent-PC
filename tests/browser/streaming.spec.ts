@@ -43,6 +43,8 @@ for(const reconnect of [false,true])test(reconnect?'interrupted stream resumes i
   const activity=page.getByRole('list',{name:'Run activity history'});
   const currentActivity=page.getByRole('region',{name:'Current activity'});
   await expect(activity).toHaveAttribute('aria-live','off');
+  await expect(currentActivity.getByRole('status')).toHaveAttribute('aria-live','polite');
+  await expect(currentActivity.getByRole('status')).toHaveAttribute('aria-atomic','true');
   if(reconnect){
     await expect(runStatus).toHaveText('Run status: Running');
     await expect(page.getByRole('heading',{name:'Candidate answer',exact:true})).toBeVisible();
