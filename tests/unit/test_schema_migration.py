@@ -1022,12 +1022,18 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
         max_seconds=60,
     )
     with store.connection() as connection:
+        connection.execute(
+            "INSERT INTO memories(id,kind,scope,content,provenance,confidence,created_at,updated_at,schema_version) "
+            "VALUES ('legacy-preference', 'preference', 'local-user', 'Keep answers concise', 'user', 1.0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 1)"
+        )
         connection.execute("DROP TABLE task_identity_memories")
         connection.execute("DROP TABLE skill_python_dependency_locks")
         connection.execute("DROP TABLE skill_python_dependency_environments")
         connection.execute("DROP TABLE skill_npm_dependency_locks")
         connection.execute("DROP TABLE skill_npm_dependency_environments")
         connection.execute("DROP TABLE idempotent_schedule_requests")
+        connection.execute("DROP TABLE a2a_outbound_tasks")
+        connection.execute("DROP TABLE a2a_outbound_peers")
         connection.execute("ALTER TABLE specialist_profiles DROP COLUMN procedure_skill_id")
         connection.execute(
             "ALTER TABLE specialist_profiles DROP COLUMN procedure_python_environment_digest"
@@ -1037,6 +1043,9 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
         )
         connection.execute("ALTER TABLE tasks DROP COLUMN procedure_snapshot")
         connection.execute("ALTER TABLE artifacts DROP COLUMN original_filename")
+        connection.execute("ALTER TABLE memories DROP COLUMN source_uri")
+        connection.execute("ALTER TABLE a2a_listener_settings DROP COLUMN tls_cert_path")
+        connection.execute("ALTER TABLE a2a_listener_settings DROP COLUMN tls_key_path")
         connection.execute("PRAGMA user_version=35")
 
     migrated = RunStore(database)
@@ -1052,6 +1061,13 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
     assert ScheduleStore(migrated).get(schedule["id"])["objective"] == (
         "Keep a pre-migration schedule"
     )
+    with migrated.connection() as connection:
+        legacy_memory = connection.execute(
+            "SELECT content,source_uri FROM memories WHERE id='legacy-preference'"
+        ).fetchone()
+    assert legacy_memory is not None
+    assert legacy_memory["content"] == "Keep answers concise"
+    assert legacy_memory["source_uri"] is None
     migrated_task = TaskStore(migrated).records(run["id"])[0]
     assert migrated_task["id"] == f"{run['id']}:legacy-task"
     assert migrated_task["objective"] == "Keep a legacy task"
@@ -1069,6 +1085,8 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
             "skill_npm_dependency_environments",
             "idempotent_schedule_requests",
             "task_identity_memories",
+            "a2a_outbound_peers",
+            "a2a_outbound_tasks",
         }.issubset(tables)
         profile_columns = {
             row["name"] for row in connection.execute("PRAGMA table_info(specialist_profiles)")
@@ -1081,6 +1099,16 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
         }.issubset(profile_columns)
         assert "procedure_snapshot" in task_columns
         assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SCHEMA_VERSION
+        memory_columns = {row["name"] for row in connection.execute("PRAGMA table_info(memories)")}
+        listener_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(a2a_listener_settings)")
+        }
+        outbound_task_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(a2a_outbound_tasks)")
+        }
+        assert "source_uri" in memory_columns
+        assert {"tls_cert_path", "tls_key_path"}.issubset(listener_columns)
+        assert {"cancel_state", "cancel_error"}.issubset(outbound_task_columns)
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
