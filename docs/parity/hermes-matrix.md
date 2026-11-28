@@ -1250,3 +1250,6 @@ The Windows Telegram WAV slice now has a local end-to-end acceptance using synth
 ## Reattempt prompted human-speech recognition (2026-11-28)
 
 A prompted 35-second Windows System.Speech check again received zero input across 280 events and returned `silent_input` ([report](../../.acceptance/windows-microphone-speech-d413357f-48ca-462a-9e73-be0bac476453/report.json)). No microphone audio was retained, and the run used no network or model inference. The selected default input supplies no signal, so this does not verify human-speech recognition or promote Hermes voice parity.
+## Exclude unsupported AVIF from the frozen Windows engine (2026-11-28)
+
+The Windows PyInstaller build now excludes Pillow's unused AVIF plugin and native codec. X.A.A.'s declared raster support is PNG/JPEG/GIF/WebP; AVIF is not accepted by the image-input path. The rebuilt engine's archive is 78,210,224 bytes compressed and 188,087,942 bytes (179.37 MiB) expanded, leaving about 12.63 MiB below the 192 MiB AppContainer cap, compared with the previous 186.91 MiB. The focused image and Telegram tests pass (45 tests), the frozen AppContainer readiness acceptance passes all nine isolation/cleanup checks, and Ruff, formatting and Pyright pass. Exact-source hosted CI and installer acceptance are pending; no parity status is promoted from this package optimization.

@@ -125,6 +125,12 @@ def main() -> None:
             # directly. Excluding NumPy avoids bundling its large OpenBLAS DLL.
             "--exclude-module",
             "numpy",
+            # X.A.A. accepts PNG, JPEG, GIF and WebP; the unused optional AVIF
+            # codec adds a large native Pillow extension to the AppContainer runtime.
+            "--exclude-module",
+            "PIL.AvifImagePlugin",
+            "--exclude-module",
+            "PIL._avif",
             "--collect-all",
             "acp",
             *metadata_arguments,
