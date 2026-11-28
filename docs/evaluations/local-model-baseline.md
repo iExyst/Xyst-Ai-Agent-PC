@@ -43,3 +43,17 @@ Ran `uv run python scripts/benchmark_local_models.py --repetitions 1` on Windows
 All 12 proposed tool calls were parseable and schema-valid; no completion envelope was invalid. Both 0.5B runs stopped with `filesystem_worker_interrupted` before a journaled public tool call. The 0.6B edit hallucinated `expected_sha256` rather than using the hash from its read, was safely rejected as `file_changed`, repeatedly claimed the file had changed despite independent verification, and exhausted context. The 9B edit run stopped at `diagnostic_output_limit` before task execution. Both read-nonce successes reached candidate verification with the exact random marker and no file edits. The 9B trial reused a preexisting 32,768-context instance; the other models were loaded by the harness at 16,384 context. No instance was unloaded if it existed before the run.
 
 Full per-trial tokens, request timings, host-resource samples, state journals, and fixture evidence are in `.acceptance/e41d302d-7f54-4b6d-b463-fd1bf1e819ba/report.json` and its `trial-*` subdirectories. Resource samples are host-wide, not process-attributed. This one repetition measures observed bounded behavior, not a stable completion rate; tool-schema validity did not predict success. It does not justify a production default. Broader repeated reliability, streaming, cancellation/recovery, complex coding, multi-agent behavior, and per-process peak-resource measurements remain open.
+
+## Three-repetition comparison (2026-11-28)
+
+Ran `uv run python scripts/benchmark_local_models.py --repetitions 3` on the same Windows 11 / RTX 5080 hardware. All models loaded at 16,384 context and were unloaded by the harness afterward; `lms ps` reported no loaded models. The 18 trials yielded 7 exact-fixture passes:
+
+| Model identifier | Read nonce | Targeted edit | Total passed | Median trial seconds | Median request seconds |
+|---|---:|---:|---:|---:|---:|
+| `qwen2.5-0.5b-instruct` | 1/3 | 0/3 | 1/6 | 2.69 | 0.361 |
+| `qwen3-0.6b` | 1/3 | 0/3 | 1/6 | 13.91 | 1.394 |
+| `qwen/qwen3.5-9b` | 3/3 | 2/3 | 5/6 | 27.21 | 2.975 |
+
+All 50 proposed tool calls were parseable and schema-valid, with zero invalid completion envelopes. The smaller-model edit cases blocked on exhausted iteration budget, filesystem-worker interruption, or context exhaustion; their read trials sometimes reached verification without the required nonce. The 9B model passed all three reads and two edits; its remaining edit failed with a 45-second `TimeoutError`. Model outputs and independent fixture checks remain authoritative: a schema-valid proposal did not guarantee the expected file state. The full report and per-trial SQLite journals are in `.acceptance/7319ea61-48ab-4a49-81c0-9356e5754ecd/`.
+
+The benchmark process exited successfully and recorded `benchmark_complete: true`; Python also emitted a Windows Proactor `ConnectionResetError` callback during final connection teardown. This did not coincide with a failed report write, and no model remained loaded, but the teardown warning is retained as a harness/runtime cleanup limitation. Three repetitions of two simple cases remain too small to estimate general reliability or select a default model. Streaming, cancellation/recovery, complex coding, multi-agent reliability, and process-attributed peak-resource testing remain open.
