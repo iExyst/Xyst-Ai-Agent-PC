@@ -1,6 +1,6 @@
 # Xyst AI Agent user guide
 
-**Development preview · updated 2026-11-14**
+**Development preview · updated 2026-11-28**
 
 Xyst AI Agent (X.A.A.) is a Windows-first local agent application. It sends model requests to the LM Studio server you configure, records runs in SQLite, and requires explicit review before accepting agent results. The product is still under development; this guide describes behavior currently present in the repository and does not claim full Hermes parity or production release readiness.
 
@@ -17,14 +17,14 @@ For a development build, follow the commands in the repository [README](../READM
 
 ## First launch
 
-1. Start LM Studio's local server. The default address is `http://127.0.0.1:1234`; the desktop setup panel can change it to another HTTP loopback address.
+1. Start LM Studio's local server. The default address is `http://127.0.0.1:1234`; **Model setup** can change it to another HTTP loopback address.
 2. The packaged desktop connects to its bundled local engine automatically. If the engine was started separately for development, enter that engine's API token; the renderer holds it in memory for the current window.
-3. In **LM Studio setup**, check the connection, discover models, and select the exact model ID to use.
+3. In **Model setup**, check the connection, discover models, and select the exact model ID to use.
 4. Run the harmless structured tool diagnostic. Tool use stays unavailable when the diagnostic fails.
 5. Choose a project folder with the workspace picker.
 6. Start the **read-only onboarding demonstration**. It reads project documentation in Observe mode. Inspect its answer and evidence, then submit the explicit final review.
 
-If LM Studio requires authentication, save its token through **LM Studio setup** or `uv run xaa credentials set`. X.A.A. stores that provider credential in Windows Credential Manager. Restart the engine after using the CLI credential command. See [provider settings](architecture/provider-settings.md).
+If LM Studio requires authentication, save its token through **Model setup** or `uv run xaa credentials set`. X.A.A. stores that provider credential in Windows Credential Manager. Restart the engine after using the CLI credential command. See [provider settings](architecture/provider-settings.md).
 
 ## Run a project objective
 
@@ -48,7 +48,7 @@ The desktop can record from a selected microphone as mono 16 kHz PCM WAV, with a
 - **Windows offline speech** uses the System.Speech recognizer and language installed in Windows. Audio is processed locally; this option does not need a transcription URL, download a model, or send audio to a cloud service.
 - **Configured local speech service** requires a running service that accepts OpenAI-compatible `POST /v1/audio/transcriptions` requests and returns JSON with a nonempty `text` field. Enter its full loopback URL in **Local speech service URL**; the default is `http://127.0.0.1:8000/v1/audio/transcriptions`. X.A.A. sends multipart `audio/wav` data with `model=whisper-1` and `response_format=json`. The address must use a numeric loopback IP (`127.0.0.1` or `::1`) and the exact route. Hostnames such as `localhost`, LAN addresses, redirects, URL credentials and proxy routing are rejected. LM Studio's chat server at its default port 1234 is not a transcription service for this flow.
 
-The submitted WAV is retained as a run artifact, and the returned transcript is stored as untrusted input for the run. Windows offline recognition has passed a local synthetic speech check through both source and frozen engine; this does not establish accuracy for human speech, accents, language packs, or physical-microphone recordings. Starting the agent run still requires a configured language model.
+The submitted WAV is retained as a run artifact, and the returned transcript is stored as untrusted input for the run. The native Windows desktop now passes physical-device enumeration, signal capture, WAV creation, and stream cleanup on this host ([acceptance report](../.acceptance/physical-microphone-158b005f-ea8b-4c34-b6e9-42e542720369/report.json)). That diagnostic discarded audio and did not submit it for transcription. Windows offline recognition has passed a local synthetic speech check through both source and frozen engine, but a prompted physical-microphone check misrecognized “Hello world” as “MIFF Callahan” at 5.4% confidence ([report](../.acceptance/windows-microphone-speech-9a912f5d-40f9-413e-9e4d-3b213f869f33/report.json)). Human speech accuracy, language packs, and microphone-to-transcript acceptance therefore remain open. Starting the agent run still requires a configured language model.
 
 Specialists work on bounded assignments. Their file edits are isolated proposals until the user previews and integrates them. Existing workspaces are not changed by an isolated command; explicit file integration is a separate reviewed operation.
 
@@ -106,6 +106,7 @@ List and rename saved terminal or desktop conversations with `xaa sessions list`
 - Use pause/resume when the run should retain its saved state and continue later.
 - Use cancel to stop a run. Cancellation cannot reverse an external action that already completed.
 - To stop the whole desktop agent, open **Settings** and choose **Quit and stop the agent**. This exits the desktop and its engine; it does not delete saved data or reverse an external action that already completed. On the next startup, X.A.A. applies its normal recovery rules to interrupted work.
+- Closing the main window hides X.A.A. in the system tray and keeps its engine running by default. Change **Settings → App behavior → When the main window closes** to **Quit and stop the agent** if you prefer closing the window to stop it.
 - If a command or MCP write ends with an unknown outcome, inspect the saved event and reconciliation controls before deciding what to do. For MCP writes, the run blocks, later calls in that same model response are recorded as not started, and you must inspect the external system and reconcile before resuming. X.A.A. does not automatically repeat the ambiguous write.
 - In **Settings → Portable backup**, save a verified `.xaa-backup` bundle before a significant upgrade or data move. The bundle contains the SQLite snapshot and referenced managed artifacts and is not encrypted.
 - To restore from the desktop, choose **Restore backup into a new profile**, select the bundle and a parent folder, then review the generated profile path. The current profile remains unchanged until you explicitly select **Restart X.A.A. and use this restored profile** and confirm the restart. Settings can switch back to the default profile; the original data remains on disk.
