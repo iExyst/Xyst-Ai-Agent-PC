@@ -287,6 +287,18 @@ jobs:
       - name: Verify MCP tool, resource and prompt catalog refresh in the desktop UI
         run: npm run test:browser -- tests/browser/mcp.spec.ts
         timeout-minutes: 5
+      - name: Verify Telegram WAV ingress with Windows offline recognition
+        if: steps.python-scope.outputs.run == 'true'
+        run: uv run python scripts/telegram_wav_acceptance.py
+        timeout-minutes: 3
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.python-scope.outputs.run == 'true'
+        with:
+          name: telegram-wav-acceptance-${{ github.run_id }}
+          path: .acceptance/telegram-wav-*/report.json
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 90
       - run: uv run pytest -q
         if: steps.python-scope.outputs.run == 'true'
       - name: Verify A2A JSON-RPC with the official Python SDK
