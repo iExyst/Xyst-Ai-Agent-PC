@@ -1283,7 +1283,9 @@ class TelegramService:
                         else:
                             document_bytes = raw_document
                             document_media_type = media_type.lower()
-                            filename = "voice-note.ogg" if is_voice else media_input.get("file_name")
+                            filename = (
+                                "voice-note.ogg" if is_voice else media_input.get("file_name")
+                            )
                             document_filename = filename if isinstance(filename, str) else None
                 result = self.store.process_update(
                     identity,

@@ -46,7 +46,9 @@ def verify_audio_decoder_resources(executable: Path) -> dict[str, str]:
     )
     fingerprints: dict[str, str] = {}
     for suffix in required_suffixes:
-        member = next((name for normalized, name in names.items() if normalized.endswith(suffix)), None)
+        member = next(
+            (name for normalized, name in names.items() if normalized.endswith(suffix)), None
+        )
         if member is None:
             raise RuntimeError(f"Frozen engine is missing audio decoder resource {suffix}.")
         data: bytes = archive.extract(member)
