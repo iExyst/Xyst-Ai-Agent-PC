@@ -1,6 +1,9 @@
 import asyncio
+import json
 import time
+from typing import Any
 
+import httpx
 import pytest
 from xaa.providers.lm_studio import ContextLimitError, LMStudioProvider
 from xaa.providers.tokenization import PromptCount, PromptCountError, PromptCountRequest
@@ -9,6 +12,41 @@ from xaa.runtime.specialists import SpecialistRunner
 from xaa.runtime.task_graph import TaskDefinition
 from xaa.storage.runs import RunStore
 from xaa.storage.tasks import TaskStore
+
+
+@pytest.mark.asyncio
+async def test_chat_can_disable_reasoning_without_changing_default_requests() -> None:
+    payloads: list[dict[str, Any]] = []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        payloads.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "summary"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
+            },
+        )
+
+    provider = LMStudioProvider(transport=httpx.MockTransport(respond))
+    try:
+        await provider.chat(
+            model="fixture",
+            messages=[{"role": "user", "content": "summarize"}],
+            max_output_tokens=32,
+            reasoning_effort="none",
+        )
+        await provider.chat(model="fixture", messages=[{"role": "user", "content": "chat"}])
+        assert payloads[0]["reasoning_effort"] == "none"
+        assert payloads[0]["max_tokens"] == 32
+        assert "reasoning_effort" not in payloads[1]
+    finally:
+        await provider.close()
 
 
 class CountedProvider(LMStudioProvider):

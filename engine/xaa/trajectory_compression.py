@@ -525,7 +525,12 @@ async def compress_jsonl_with_lm_studio(
         if count.prompt_tokens + target_tokens > count.context_length:
             raise ProviderError("Summarization prompt exceeds the loaded model context window.")
         response = await provider.chat(
-            model=model, messages=messages, max_output_tokens=target_tokens
+            model=model,
+            messages=messages,
+            max_output_tokens=target_tokens,
+            # The summary is a bounded extraction task. On reasoning models, this
+            # preserves the requested answer budget for the summary itself.
+            reasoning_effort="none",
         )
         choice = validate_completion(response)
         if choice.finish_reason in {"length", "content_filter"}:

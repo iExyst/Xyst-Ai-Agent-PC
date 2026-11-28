@@ -9,7 +9,7 @@ import json
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -34,6 +34,7 @@ DIAGNOSTIC_OUTPUT_TOKENS = 512
 CHAT_RETRY_DELAY_SECONDS = 0.25
 
 AdmissionCallback = Callable[[int, int], None]
+ReasoningEffort = Literal["none"]
 
 DiagnosticRequest = Callable[
     [str, list[dict[str, Any]], list[dict[str, Any]] | None], Awaitable[dict[str, Any]]
@@ -705,9 +706,12 @@ class LMStudioProvider:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
         on_admission: AdmissionCallback | None = None,
         require_exact_context: bool = False,
     ) -> dict[str, Any]:
+        if reasoning_effort not in {None, "none"}:
+            raise ValueError("LM Studio reasoning effort must be None or 'none'.")
         exact_context = self.exact_context or require_exact_context
         if exact_context and max_output_tokens is None:
             max_output_tokens = 512
@@ -725,7 +729,13 @@ class LMStudioProvider:
                 on_admission=on_admission,
                 require_exact_context=exact_context,
             )
-            response = await self._chat(model=model, messages=messages, tools=prepared, **options)
+            response = await self._chat(
+                model=model,
+                messages=messages,
+                tools=prepared,
+                reasoning_effort=reasoning_effort,
+                **options,
+            )
             self._validate_prompt_usage(counted, response.get("usage"))
             return response
 
@@ -996,8 +1006,11 @@ class LMStudioProvider:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
         if max_output_tokens is not None:
             self.output_options(max_output_tokens)
             payload[self._output_token_parameter] = max_output_tokens
