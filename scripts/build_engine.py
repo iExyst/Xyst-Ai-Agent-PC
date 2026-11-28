@@ -10,6 +10,7 @@ from typing import Any
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
+from xaa.runtime.frozen_archive import verify_frozen_runtime_size
 from xaa.runtime.wsl_transport import RESOURCE_NAMES, profile_fingerprint
 
 
@@ -152,10 +153,12 @@ def main() -> None:
         check=True,
     )
     executable = destination / "xaa-engine-x86_64-pc-windows-msvc.exe"
+    expanded_bytes = verify_frozen_runtime_size(executable)
     resources = verify_execution_resources(executable)
     audio_resources = verify_audio_decoder_resources(executable)
     manifest = {
         "engine_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
+        "engine_expanded_bytes": expanded_bytes,
         "profile_sha256": profile_fingerprint()[0],
         "resource_sha256": resources,
         "audio_resource_sha256": audio_resources,

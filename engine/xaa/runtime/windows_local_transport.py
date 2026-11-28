@@ -18,6 +18,7 @@ from types import CodeType
 from typing import Any, Literal, cast
 
 from xaa.runtime.command_contracts import CommandIntent
+from xaa.runtime.execution_limits import MAX_SHIM_RUNTIME_BYTES
 from xaa.runtime.mcp_appcontainer import (
     BOOTSTRAP_PREFIX,
     ERROR_FRAME_PREFIX,
@@ -39,7 +40,6 @@ MAX_INTERACTIVE_FRAME_BYTES = 3 * 1024 * 1024
 MAX_PRIVATE_WORKSPACE_BYTES = 32 * 1024 * 1024
 MAX_PRIVATE_RUNTIME_BYTES = 256 * 1024 * 1024
 MAX_PRIVATE_COMMAND_BYTES = MAX_PRIVATE_WORKSPACE_BYTES + MAX_PRIVATE_RUNTIME_BYTES
-MAX_SHIM_RUNTIME_BYTES = 192 * 1024 * 1024
 MAX_PRIVATE_WORKSPACE_ENTRIES = 50_000
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
