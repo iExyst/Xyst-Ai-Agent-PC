@@ -221,9 +221,26 @@ def test_paired_private_photo_without_vision_capability_creates_no_run(
     }
     result = store.process_update(IDENTITY, update, model="fixture/text", reject_image=True)
     assert result["state"] == "vision_unavailable"
+    delivery = store.claim_delivery(IDENTITY.account_id)
+    assert delivery is not None
+    assert delivery["run_id"] is None
+    assert "vision-capable model" in delivery["text"]
+    assert store.claim_delivery(IDENTITY.account_id) is None
+    store.finish_delivery(
+        IDENTITY.account_id,
+        update["update_id"],
+        state="sent",
+        message_id=42,
+        text=delivery["text"],
+    )
     with runs.connection() as connection:
         assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
         assert connection.execute("SELECT count(*) FROM artifacts").fetchone()[0] == 0
+        assert tuple(
+            connection.execute(
+                "SELECT role,content,run_id FROM messages ORDER BY sequence DESC LIMIT 1"
+            ).fetchone()
+        ) == ("assistant", delivery["text"], None)
 
 
 def test_unpaired_users_and_group_chats_cannot_create_runs(workspace_tmp_path: Path) -> None:

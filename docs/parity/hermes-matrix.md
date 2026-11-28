@@ -1,3 +1,7 @@
+## Explain unsupported Telegram photos to the linked user (2026-11-27)
+
+Paired private users receive a fixed explanation when a photo cannot be processed because vision is unavailable or image validation fails. The runless notice uses the same durable outbox, update deduplication, and unknown-delivery reconciliation as run replies, and a confirmed sent notice is retained in session history without a run association. Focused Telegram tests (31), Ruff, production Pyright and diff checks pass. No live bot was used. This improves the implemented photo path but does not promote Telegram or Hermes channel parity beyond partial; live bot interoperability and other media remain open.
+
 ## Recheck local physical-microphone speech capture (2026-11-27)
 
 The user-authorized local Windows offline speech check listened for up to 35 seconds but received no audio signal: 280 level events, 0% peak, and `silent_input` ([report](../../.acceptance/windows-microphone-speech-95237a79-c08a-4e93-a8bb-61b4e45e03f4/report.json)). The native capture path separately verifies device selection and stream cleanup, and rejects silent capture without retaining or transcribing audio ([report](../../.acceptance/physical-microphone-1662cf86-7c18-440b-88c7-4b36089ad53e/report.json)). No audio was retained; no network or model inference occurred. This does not verify speech recognition or promote Hermes voice parity.

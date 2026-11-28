@@ -569,6 +569,7 @@ class TelegramStore:
                         session_id = str(binding["session_id"])
                         if reject_image:
                             state = "vision_unavailable"
+                            delivery_state = "pending"
                         elif model is None:
                             state = "model_unavailable"
                         elif len(content) > MAX_TEXT_CHARS:
@@ -670,7 +671,7 @@ class TelegramStore:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT u.update_id,u.chat_id,u.run_id,r.state FROM telegram_updates u JOIN runs r ON r.id=u.run_id WHERE u.account_id=? AND u.delivery_state='pending' AND r.state IN (?,?,?,?) ORDER BY u.update_id LIMIT 1",
+                "SELECT u.update_id,u.chat_id,u.run_id,u.state,r.state AS run_state FROM telegram_updates u LEFT JOIN runs r ON r.id=u.run_id WHERE u.account_id=? AND u.delivery_state='pending' AND (u.state='vision_unavailable' OR r.state IN (?,?,?,?)) ORDER BY u.update_id LIMIT 1",
                 (
                     account_id,
                     RunState.COMPLETED.value,
@@ -681,21 +682,26 @@ class TelegramStore:
             ).fetchone()
             if row is None:
                 return None
-            events = connection.execute(
-                "SELECT payload FROM run_events WHERE run_id=? AND event_type='model.message' ORDER BY sequence DESC",
-                (row["run_id"],),
-            ).fetchall()
-            text: str | None = None
-            for event in events:
-                payload = json.loads(event["payload"])
-                payload_mapping = as_mapping(payload)
-                message = as_mapping(payload_mapping.get("message")) if payload_mapping else None
-                candidate = message.get("content") if message is not None else None
-                if isinstance(candidate, str) and candidate.strip():
-                    text = candidate.strip()
-                    break
-            if str(row["state"]) != RunState.COMPLETED.value:
-                text = "X.A.A. could not complete this objective. Open the desktop app to review the saved run status."
+            if str(row["state"]) == "vision_unavailable":
+                text = "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
+            else:
+                events = connection.execute(
+                    "SELECT payload FROM run_events WHERE run_id=? AND event_type='model.message' ORDER BY sequence DESC",
+                    (row["run_id"],),
+                ).fetchall()
+                text = None
+                for event in events:
+                    payload = json.loads(event["payload"])
+                    payload_mapping = as_mapping(payload)
+                    message = (
+                        as_mapping(payload_mapping.get("message")) if payload_mapping else None
+                    )
+                    candidate = message.get("content") if message is not None else None
+                    if isinstance(candidate, str) and candidate.strip():
+                        text = candidate.strip()
+                        break
+                if str(row["run_state"]) != RunState.COMPLETED.value:
+                    text = "X.A.A. could not complete this objective. Open the desktop app to review the saved run status."
             if text is None:
                 connection.execute(
                     "UPDATE telegram_updates SET delivery_state='failed',updated_at=? WHERE account_id=? AND update_id=? AND delivery_state='pending'",
@@ -711,7 +717,7 @@ class TelegramStore:
             return {
                 "update_id": int(row["update_id"]),
                 "chat_id": str(row["chat_id"]),
-                "run_id": str(row["run_id"]),
+                "run_id": str(row["run_id"]) if row["run_id"] is not None else None,
                 "text": text[:MAX_TEXT_CHARS],
             }
 
@@ -736,7 +742,13 @@ class TelegramStore:
                 "UPDATE telegram_updates SET delivery_state=?,delivery_message_id=?,updated_at=? WHERE account_id=? AND update_id=? AND delivery_state='sending'",
                 (state, message_id, utc_now(), account_id, update_id),
             ).rowcount
-            if changed == 1 and state == "sent" and row is not None and text:
+            if (
+                changed == 1
+                and state == "sent"
+                and row is not None
+                and row["session_id"] is not None
+                and text
+            ):
                 session_id = str(row["session_id"])
                 sequence = connection.execute(
                     "SELECT COALESCE(MAX(sequence),0)+1 FROM messages WHERE session_id=?",
