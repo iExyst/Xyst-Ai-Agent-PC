@@ -1,7 +1,21 @@
-param([string]$AcceptanceId = [guid]::NewGuid().ToString('N'))
+param(
+    [string]$AcceptanceId = [guid]::NewGuid().ToString('N'),
+    [string]$InstallerDirectory = 'build/installer'
+)
 $ErrorActionPreference = 'Stop'
 $workspace = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $acceptanceParent = [IO.Path]::GetFullPath((Join-Path $workspace '.acceptance')).TrimEnd('\') + '\'
+$defaultInstallerDirectory = [IO.Path]::GetFullPath((Join-Path $workspace 'build/installer'))
+$candidateInstallerDirectory = if ([IO.Path]::IsPathRooted($InstallerDirectory)) {
+    [IO.Path]::GetFullPath($InstallerDirectory)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $workspace $InstallerDirectory))
+}
+if (-not (Test-Path -LiteralPath (Join-Path $candidateInstallerDirectory 'manifest.json')) -or
+    ($candidateInstallerDirectory -ne $defaultInstallerDirectory -and
+        -not $candidateInstallerDirectory.StartsWith($acceptanceParent, [StringComparison]::OrdinalIgnoreCase))) {
+    throw 'Installer directory must be build/installer or a verified acceptance directory under .acceptance.'
+}
 if ($AcceptanceId -notmatch '^[A-Za-z0-9-]{1,80}$') { throw 'Acceptance ID contains unsupported characters.' }
 $root = [IO.Path]::GetFullPath((Join-Path $acceptanceParent ('installed-appcontainer-' + $AcceptanceId)))
 $install = Join-Path $root 'install'
@@ -12,10 +26,10 @@ New-Item -ItemType Directory -Path $root | Out-Null
 $report = @{ passed = $false; install_path = $install; readiness = $null; command = $null }
 $uninstaller = Join-Path $install 'uninstall.exe'
 try {
-    $manifest = Get-Content -LiteralPath (Join-Path $workspace 'build/installer/manifest.json') -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath (Join-Path $candidateInstallerDirectory 'manifest.json') -Raw | ConvertFrom-Json
     $installerName = $manifest.artifacts.installer.filename
     if ([IO.Path]::GetFileName($installerName) -ne $installerName) { throw 'Installer manifest filename escaped its staging directory.' }
-    $installer = (Resolve-Path -LiteralPath (Join-Path $workspace (Join-Path 'build/installer' $installerName))).Path
+    $installer = (Resolve-Path -LiteralPath (Join-Path $candidateInstallerDirectory $installerName)).Path
     if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $manifest.artifacts.installer.sha256) { throw 'Installer checksum mismatch.' }
     $setup = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$install") -WindowStyle Hidden -Wait -PassThru
     if ($setup.ExitCode -ne 0) { throw "Installer exit code $($setup.ExitCode)." }
