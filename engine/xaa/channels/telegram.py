@@ -18,6 +18,7 @@ from uuid import uuid4
 import httpx
 
 from xaa.credentials import CredentialStore
+from xaa.runtime.document_input import extract_document_text
 from xaa.storage.runs import RunState, RunStore, utc_now
 from xaa.storage.schedules import MAX_SCHEDULE_DELIVERY_ATTEMPTS, quiet_hours_active
 
@@ -30,6 +31,15 @@ TELEGRAM_API_TIMEOUT_SECONDS = 35
 TELEGRAM_API_CONNECT_TIMEOUT_SECONDS = 10
 MAX_TELEGRAM_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_TELEGRAM_IMAGE_BYTES = 3 * 1024 * 1024
+MAX_TELEGRAM_DOCUMENT_BYTES = 4 * 1024 * 1024
+TELEGRAM_DOCUMENT_MEDIA_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+}
 TELEGRAM_SEND_CONTRACT: dict[str, Any] = {
     "name": "telegram.send_message",
     "version": "1",
@@ -204,7 +214,7 @@ class TelegramBotApi:
 
     async def get_file(self, file_id: str) -> str:
         if not file_id or len(file_id) > 512:
-            raise TelegramApiError("Telegram returned an invalid image reference.", definitive=True)
+            raise TelegramApiError("Telegram returned an invalid media reference.", definitive=True)
         result = as_mapping(await self.call("getFile", {"file_id": file_id}))
         path = result.get("file_path") if result is not None else None
         if (
@@ -216,10 +226,10 @@ class TelegramBotApi:
             or any(part in {"", ".", ".."} for part in path.split("/"))
             or re.fullmatch(r"[A-Za-z0-9_./-]+", path) is None
         ):
-            raise TelegramApiError("Telegram returned an invalid image path.", definitive=True)
+            raise TelegramApiError("Telegram returned an invalid media path.", definitive=True)
         return path
 
-    async def download_file(self, path: str) -> bytes:
+    async def download_file(self, path: str, *, max_bytes: int = MAX_TELEGRAM_IMAGE_BYTES) -> bytes:
         if (
             not path
             or path.startswith("/")
@@ -236,22 +246,24 @@ class TelegramBotApi:
                 follow_redirects=False,
             ) as response:
                 if response.status_code != 200:
-                    raise TelegramApiError("Telegram image download failed.", definitive=False)
+                    raise TelegramApiError("Telegram media download failed.", definitive=False)
                 declared = response.headers.get("content-length")
-                if declared is not None and int(declared) > MAX_TELEGRAM_IMAGE_BYTES:
+                if declared is not None and int(declared) > max_bytes:
+                    size = "3 MiB" if max_bytes == MAX_TELEGRAM_IMAGE_BYTES else "4 MiB"
                     raise TelegramApiError(
-                        "Telegram image exceeds the 3 MiB limit.", definitive=True
+                        f"Telegram media exceeds the {size} limit.", definitive=True
                     )
                 body = bytearray()
                 async for chunk in response.aiter_bytes():
                     body.extend(chunk)
-                    if len(body) > MAX_TELEGRAM_IMAGE_BYTES:
+                    if len(body) > max_bytes:
+                        size = "3 MiB" if max_bytes == MAX_TELEGRAM_IMAGE_BYTES else "4 MiB"
                         raise TelegramApiError(
-                            "Telegram image exceeds the 3 MiB limit.", definitive=True
+                            f"Telegram media exceeds the {size} limit.", definitive=True
                         )
                 return bytes(body)
         except (httpx.HTTPError, ValueError):
-            raise TelegramApiError("Telegram image download failed.", definitive=False) from None
+            raise TelegramApiError("Telegram media download failed.", definitive=False) from None
 
     async def send_message(self, chat_id: str, text: str) -> int:
         result = as_mapping(
@@ -499,7 +511,26 @@ class TelegramStore:
         image_bytes: bytes | None = None,
         image_media_type: str | None = None,
         image_rejection: str | None = None,
+        document_bytes: bytes | None = None,
+        document_media_type: str | None = None,
+        document_filename: str | None = None,
+        document_text: str | None = None,
     ) -> dict[str, Any]:
+        document_values = (document_bytes, document_media_type, document_text)
+        if any(value is not None for value in document_values) and not all(
+            value is not None for value in document_values
+        ):
+            raise ValueError(
+                "Telegram document bytes, media type, and extracted text are required together."
+            )
+        if document_bytes is not None and (
+            image_bytes is not None
+            or document_media_type not in TELEGRAM_DOCUMENT_MEDIA_TYPES
+            or not document_bytes
+            or len(document_bytes) > MAX_TELEGRAM_DOCUMENT_BYTES
+            or not document_text
+        ):
+            raise ValueError("Telegram document failed media, extraction, or size validation.")
         update_id = update.get("update_id")
         if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
             return {"state": "invalid", "run_id": None}
@@ -535,6 +566,8 @@ class TelegramStore:
         )
         if image_bytes is not None and not content:
             content = "Describe the attached image."
+        if document_bytes is not None and not content:
+            content = "Summarize the attached document."
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             inserted = connection.execute(
@@ -552,7 +585,12 @@ class TelegramStore:
                 )
                 return {"state": previous["state"], "run_id": previous["run_id"], "duplicate": True}
 
-            if private and (content or image_bytes is not None or image_rejection is not None):
+            if private and (
+                content
+                or image_bytes is not None
+                or image_rejection is not None
+                or document_bytes is not None
+            ):
                 pair_match = PAIR_COMMAND.fullmatch(content)
                 if pair_match is not None:
                     code_hash = self.hash_pairing_code(pair_match.group(1))
@@ -695,6 +733,17 @@ class TelegramStore:
                                     run_id,
                                     "run.image_attached",
                                     {"artifact_id": artifact_id, "media_type": image_media_type},
+                                )
+                            if document_bytes is not None:
+                                assert document_media_type is not None
+                                assert document_text is not None
+                                self.runs.insert_document_artifacts(
+                                    connection,
+                                    run_id,
+                                    document_bytes,
+                                    document_media_type,
+                                    document_text,
+                                    document_filename,
                                 )
                             connection.execute(
                                 "UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id)
@@ -1072,6 +1121,10 @@ class TelegramService:
                 image_bytes: bytes | None = None
                 image_media_type: str | None = None
                 image_rejection: str | None = None
+                document_bytes: bytes | None = None
+                document_media_type: str | None = None
+                document_filename: str | None = None
+                document_text: str | None = None
                 message = as_mapping(update.get("message"))
                 photos = message.get("photo") if message else None
                 if (
@@ -1134,6 +1187,38 @@ class TelegramService:
                                 image_media_type = None
                         else:
                             image_rejection = "image_invalid"
+                document = as_mapping(message.get("document")) if message else None
+                if (
+                    image_bytes is None
+                    and document is not None
+                    and selected_model is not None
+                    and self.store.is_authorized_private_update(identity, update)
+                ):
+                    media_type = document.get("mime_type")
+                    file_id = document.get("file_id")
+                    file_size = document.get("file_size")
+                    if (
+                        isinstance(media_type, str)
+                        and media_type.lower() in TELEGRAM_DOCUMENT_MEDIA_TYPES
+                        and isinstance(file_id, str)
+                        and (
+                            file_size is None
+                            or (type(file_size) is int and file_size <= MAX_TELEGRAM_DOCUMENT_BYTES)
+                        )
+                    ):
+                        path = await api.get_file(file_id)
+                        raw_document = await api.download_file(
+                            path, max_bytes=MAX_TELEGRAM_DOCUMENT_BYTES
+                        )
+                        try:
+                            document_text = extract_document_text(raw_document, media_type.lower())
+                        except (ValueError, OSError):
+                            document_text = None
+                        else:
+                            document_bytes = raw_document
+                            document_media_type = media_type.lower()
+                            filename = document.get("file_name")
+                            document_filename = filename if isinstance(filename, str) else None
                 result = self.store.process_update(
                     identity,
                     update,
@@ -1141,6 +1226,10 @@ class TelegramService:
                     image_bytes=image_bytes,
                     image_media_type=image_media_type,
                     image_rejection=image_rejection,
+                    document_bytes=document_bytes,
+                    document_media_type=document_media_type,
+                    document_filename=document_filename,
+                    document_text=document_text,
                 )
                 if result["run_id"]:
                     self.submit(str(result["run_id"]))

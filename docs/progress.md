@@ -1,3 +1,9 @@
+## Accept bounded Telegram document input (2026-11-28)
+
+Paired private Telegram users can send one supported PDF, DOCX, XLSX, UTF-8 TXT, Markdown, or CSV document up to 4 MiB. The service checks the pairing and private-chat binding before `getFile`, bounds the download, validates the MIME type and extracts supported text through the shared parser. It retains the sanitized source filename, original document, and extracted text in checksum-managed untrusted run artifacts in the deduplicated update transaction. Unsupported, malformed, and oversized documents are ignored; scanned PDFs without extractable text remain unsupported on this channel.
+
+The focused Telegram suite passes (**37 tests**); Ruff and production Pyright pass. No live Telegram bot or model was used. Exact-source hosted Windows CI and installer acceptance are pending.
+
 ## Accept one bounded email document attachment (2026-11-28)
 
 Email ingress now accepts one validated PDF, DOCX, XLSX, UTF-8 TXT, Markdown, or CSV attachment up to 4 MiB after sender allowlisting, trusted aligned DMARC, and automated-message checks pass. Unsupported, invalid, oversized, and ambiguous multiple attachments are ignored. The original file and extracted text are retained as checksum-managed untrusted run artifacts and the source filename is sanitized. MIME input is bounded to 6 MiB so a maximum-sized attachment can fit through base64 transfer encoding. UID/UIDVALIDITY reservation, run, session message, outbox state, and document metadata are saved through the existing SQLite transaction.

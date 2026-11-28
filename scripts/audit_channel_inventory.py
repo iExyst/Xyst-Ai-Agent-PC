@@ -26,7 +26,7 @@ XAA_CHANNEL_SLICES: dict[str, XaaChannelSlice] = {
         "module": "engine/xaa/channels/telegram.py",
         "modules": ["engine/xaa/channels/telegram.py"],
         "status": "implemented_partial",
-        "scope": "Authorized private text ingress and bounded JPEG/PNG photo ingress for vision-capable models, private pairing, durable update deduplication and reply delivery. Unsupported photos receive runless notices. Live bot acceptance, other media and topic parity remain open.",
+        "scope": "Authorized private text ingress, bounded JPEG/PNG photo ingress for vision-capable models, and one validated PDF/DOCX/XLSX/UTF-8 text/Markdown/CSV document up to 4 MiB as retained untrusted source and extracted-text artifacts. Private pairing, durable update deduplication and reply delivery are enforced. Unsupported photos receive runless notices; invalid/unsupported documents are ignored. Live bot acceptance, other media and topic parity remain open.",
     },
     "email": {
         "module": "engine/xaa/channels/email.py",

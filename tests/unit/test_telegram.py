@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.channels.telegram import (
+    MAX_TELEGRAM_DOCUMENT_BYTES,
     MAX_TELEGRAM_RESPONSE_BYTES,
     MAX_TEXT_CHARS,
     TELEGRAM_SEND_CONTRACT,
@@ -243,6 +244,55 @@ def test_paired_private_photo_without_vision_capability_creates_no_run(
                 "SELECT role,content,run_id FROM messages ORDER BY sequence DESC LIMIT 1"
             ).fetchone()
         ) == ("assistant", delivery["text"], None)
+
+
+def test_paired_private_document_is_retained_once_with_extracted_text(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "telegram-document.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store)
+    update = {
+        "update_id": 3,
+        "message": {
+            "document": {"file_name": "../brief.txt", "mime_type": "text/plain"},
+            "caption": "Summarize this file.",
+            "from": {"id": 123},
+            "chat": {"id": 123, "type": "private"},
+        },
+    }
+    source = b"Private report marker: MAPLE-9207"
+    extracted = source.decode("utf-8")
+
+    first = store.process_update(
+        IDENTITY,
+        update,
+        model="fixture/model",
+        document_bytes=source,
+        document_media_type="text/plain",
+        document_filename="../brief.txt",
+        document_text=extracted,
+    )
+    duplicate = store.process_update(
+        IDENTITY,
+        update,
+        model="fixture/model",
+        document_bytes=source,
+        document_media_type="text/plain",
+        document_filename="../brief.txt",
+        document_text=extracted,
+    )
+
+    assert first["state"] == "queued"
+    assert duplicate["duplicate"] is True
+    assert runs.document_attachment(str(first["run_id"])) == (
+        source,
+        "text/plain",
+        "brief.txt",
+    )
+    assert "MAPLE-9207" in (runs.document_text(str(first["run_id"])) or "")
+    with runs.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 2
 
 
 def test_invalid_telegram_photo_notice_does_not_blame_model_capability(
@@ -883,6 +933,31 @@ def test_telegram_image_download_uses_fixed_host_and_enforces_size_limit() -> No
     asyncio.run(scenario())
 
 
+def test_telegram_document_download_enforces_four_mib_limit() -> None:
+    import asyncio
+
+    async def scenario() -> None:
+        async def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-length": str(MAX_TELEGRAM_DOCUMENT_BYTES + 1)},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            api = TelegramBotApi("fixture-token", client=client)
+            try:
+                await api.download_file(
+                    "documents/brief.txt", max_bytes=MAX_TELEGRAM_DOCUMENT_BYTES
+                )
+            except TelegramApiError as failure:
+                assert failure.definitive
+                assert "4 MiB" in str(failure)
+            else:
+                raise AssertionError("Oversized Telegram document was accepted")
+
+    asyncio.run(scenario())
+
+
 def test_service_cycle_routes_vision_capable_private_photo_to_shared_run(
     workspace_tmp_path: Path,
 ) -> None:
@@ -948,6 +1023,109 @@ def test_service_cycle_routes_vision_capable_private_photo_to_shared_run(
         == "data:image/jpeg;base64,"
         + __import__("base64").b64encode(image_fixture("JPEG")).decode()
     )
+
+
+def test_service_cycle_routes_supported_document_for_paired_private_user(
+    workspace_tmp_path: Path,
+) -> None:
+    import asyncio
+
+    runs = RunStore(workspace_tmp_path / "telegram-document-cycle.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store)
+    with runs.connection() as connection:
+        now = utc_now()
+        connection.execute(
+            "INSERT INTO provider_profiles VALUES ('lm-studio','lm-studio','http://127.0.0.1:1234','fixture/model',NULL,NULL,?,?)",
+            (now, now),
+        )
+    source = b"Telegram document marker: CEDAR-617"
+    update = {
+        "update_id": 2,
+        "message": {
+            "document": {
+                "file_id": "fixture-document",
+                "file_name": "brief.txt",
+                "mime_type": "text/plain",
+                "file_size": len(source),
+            },
+            "caption": "Find the marker.",
+            "from": {"id": 123},
+            "chat": {"id": 123, "type": "private"},
+        },
+    }
+    unpaired_update = {
+        "update_id": 3,
+        "message": {
+            "document": {
+                "file_id": "unpaired-document",
+                "file_name": "brief.txt",
+                "mime_type": "text/plain",
+                "file_size": len(source),
+            },
+            "caption": "Do not fetch this file.",
+            "from": {"id": 555},
+            "chat": {"id": 555, "type": "private"},
+        },
+    }
+
+    class FixtureApi(FakeTelegramBotApi):
+        def __init__(self, token):
+            super().__init__(token)
+            self.fetched: list[str] = []
+
+        async def get_updates(self, _offset):
+            return [update, unpaired_update]
+
+        async def get_file(self, file_id):
+            self.fetched.append(file_id)
+            return "documents/brief.txt"
+
+        async def download_file(self, _path, *, max_bytes):
+            assert max_bytes == MAX_TELEGRAM_DOCUMENT_BYTES
+            return source
+
+    class Credentials(MemoryCredentials):
+        def __init__(self) -> None:
+            super().__init__()
+            self.values["telegram-bot"] = "fixture-token"
+
+    submitted: list[str] = []
+    apis: list[FixtureApi] = []
+
+    def api_factory(token):
+        api = FixtureApi(token)
+        apis.append(api)
+        return api
+
+    service = TelegramService(
+        runs,
+        Credentials(),
+        submitted.append,
+        api_factory=api_factory,
+    )
+    asyncio.run(service.cycle())
+    with runs.connection() as connection:
+        row = connection.execute(
+            "SELECT run_id,state FROM telegram_updates WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        ).fetchone()
+
+    assert row["state"] == "queued"
+    assert submitted == [row["run_id"]]
+    assert runs.document_attachment(row["run_id"]) == (
+        source,
+        "text/plain",
+        "brief.txt",
+    )
+    assert "CEDAR-617" in (runs.document_text(row["run_id"]) or "")
+    assert apis[0].fetched == ["fixture-document"]
+    with runs.connection() as connection:
+        unpaired = connection.execute(
+            "SELECT state FROM telegram_updates WHERE account_id=? AND update_id=3",
+            (IDENTITY.account_id,),
+        ).fetchone()
+        assert unpaired["state"] == "ignored"
 
 
 def test_telegram_rate_limit_above_policy_bound_is_not_retryable() -> None:
