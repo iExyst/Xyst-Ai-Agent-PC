@@ -25,6 +25,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from PIL import Image
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.channels.a2a_outbound import A2AOutboundClient
@@ -32,6 +33,13 @@ from xaa.credentials import CredentialStore
 from xaa.providers.lm_studio import LMStudioProvider, ModelCapabilities, ModelInfo
 from xaa.runtime import windows_speech
 from xaa.storage.runs import RunStore
+
+
+def png_fixture_bytes() -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), (20, 80, 160)).save(output, format="PNG")
+    return output.getvalue()
+
 
 OWNER_TOKEN = "a2a-sdk-owner-token-for-local-acceptance"
 PEER_TOKEN = "a2a-sdk-peer-token-for-local-acceptance"
@@ -441,7 +449,7 @@ async def _run() -> dict[str, object]:
                     raise AssertionError("Task polling did not preserve the candidate response.")
                 if len(task.history) != 2:
                     raise AssertionError("Task polling did not return user/agent history.")
-                image_bytes = b"\x89PNG\r\n\x1a\nA2A SDK image fixture"
+                image_bytes = png_fixture_bytes()
                 image_request = SendMessageRequest(
                     message=Message(
                         role=Role.ROLE_USER,
@@ -658,10 +666,11 @@ async def _run() -> dict[str, object]:
                 )
                 if peer.status_code != 201:
                     raise AssertionError("The owner API did not save the outbound A2A peer.")
+                expected_outbound_image = png_fixture_bytes()
                 outbound_body = {
                     "text": "Return the deterministic acceptance response.",
                     "image_data_url": "data:image/png;base64,"
-                    + base64.b64encode(b"\x89PNG\r\n\x1a\nfixture-image").decode("ascii"),
+                    + base64.b64encode(expected_outbound_image).decode("ascii"),
                     "idempotency_key": "sdk-outbound-acceptance-1",
                 }
                 outbound = await owner_client.post(
@@ -672,7 +681,6 @@ async def _run() -> dict[str, object]:
                         f"The configured A2A peer task was not accepted: "
                         f"{outbound.status_code} {outbound.text}"
                     )
-                expected_outbound_image = b"\x89PNG\r\n\x1a\nfixture-image"
                 if ("image/png", expected_outbound_image) not in observed_outbound_images:
                     raise AssertionError(
                         "The official SDK peer did not receive the outbound image part."
