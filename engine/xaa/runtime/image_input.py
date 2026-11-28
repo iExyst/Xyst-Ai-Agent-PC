@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import warnings
 from io import BytesIO
 
 from PIL import Image
@@ -37,10 +38,32 @@ def decode_run_image_data_url(
     if media_type in CONVERTIBLE_IMAGE_FORMATS:
         normalized = convert_animated_image_to_png(raw, CONVERTIBLE_IMAGE_FORMATS[media_type])
         return normalized, "image/png", raw, media_type
-    signature = b"\x89PNG\r\n\x1a\n" if media_type == "image/png" else b"\xff\xd8\xff"
-    if not raw.startswith(signature):
-        raise ValueError("Run image content does not match its declared type.")
+    validate_static_image(raw, media_type)
     return raw, media_type, None, None
+
+
+def validate_static_image(raw: bytes, media_type: str) -> None:
+    """Decode a bounded PNG/JPEG and reject mislabeled, malformed or oversized rasters."""
+    expected_format = {"image/png": "PNG", "image/jpeg": "JPEG"}.get(media_type)
+    if expected_format is None:
+        raise ValueError("Run image must be a PNG, JPEG, GIF or WebP image.")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(raw), formats=[expected_format]) as image:
+                width, height = image.size
+                if (
+                    image.format != expected_format
+                    or width < 1
+                    or height < 1
+                    or width > MAX_IMAGE_DIMENSION
+                    or height > MAX_IMAGE_DIMENSION
+                    or width * height > MAX_IMAGE_PIXELS
+                ):
+                    raise ValueError("Run image exceeds the bounded image dimensions.")
+                image.load()
+    except (OSError, SyntaxError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise ValueError("Run image could not be safely decoded.") from None
 
 
 def convert_animated_image_to_png(raw: bytes, expected_format: str) -> bytes:

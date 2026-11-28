@@ -49,6 +49,16 @@ class FakeProvider(LMStudioProvider):
         return None
 
 
+def png_fixture_bytes(color: tuple[int, int, int] = (20, 80, 160)) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    output = BytesIO()
+    Image.new("RGB", (2, 2), color).save(output, format="PNG")
+    return output.getvalue()
+
+
 class TextReplyProvider(FakeProvider):
     async def chat(self, **kwargs):
         return {
@@ -1172,7 +1182,7 @@ def test_run_image_is_validated_stored_as_artifact_and_reconstructed(workspace_t
 
     store = RunStore(workspace_tmp_path / "run-image.sqlite3")
     headers = {"Authorization": f"Bearer {TOKEN}"}
-    png = b"\x89PNG\r\n\x1a\nfixture-image"
+    png = png_fixture_bytes()
     encoded = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
 
     class VisionProvider(FakeProvider):
@@ -2253,7 +2263,7 @@ def test_a2a_inline_image_is_gated_and_saved_as_managed_input(workspace_tmp_path
         ]
         secret = client.post("/channels/a2a/credential", headers=owner_headers).json()["secret"]
         peer_headers = {"Authorization": f"Bearer {secret}"}
-        png = b"\x89PNG\r\n\x1a\nfixture-image"
+        png = png_fixture_bytes()
         encoded = base64.b64encode(png).decode("ascii")
         rpc = {
             "jsonrpc": "2.0",
@@ -2880,7 +2890,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
             json={"text": "Different text.", "idempotency_key": "review-001"},
         )
         assert conflict.status_code == 409
-        image_bytes = b"\x89PNG\r\n\x1a\nfixture-image"
+        image_bytes = png_fixture_bytes()
         image_data = "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
         image_body = {
             "text": "Describe this picture.",
@@ -2908,7 +2918,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         assert sends[1]["params"]["message"]["parts"] == [
             {"text": "Describe this picture.", "mediaType": "text/plain"},
             {
-                "raw": base64.b64encode(b"\x89PNG\r\n\x1a\nfixture-image").decode("ascii"),
+                "raw": base64.b64encode(image_bytes).decode("ascii"),
                 "mediaType": "image/png",
             },
         ]
@@ -2921,7 +2931,7 @@ def test_a2a_outbound_peer_send_poll_idempotency_and_secret_storage(workspace_tm
         different_image = {
             **image_body,
             "image_data_url": "data:image/png;base64,"
-            + base64.b64encode(b"\x89PNG\r\n\x1a\ndifferent-image").decode("ascii"),
+            + base64.b64encode(png_fixture_bytes((160, 40, 20))).decode("ascii"),
         }
         assert (
             client.post(

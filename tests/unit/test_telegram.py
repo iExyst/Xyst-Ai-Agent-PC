@@ -91,6 +91,16 @@ def pair_user(store: TelegramStore, user_id: int = 123) -> str:
     return str(user_id)
 
 
+def image_fixture(image_format: str) -> bytes:
+    from io import BytesIO
+
+    from PIL import Image
+
+    output = BytesIO()
+    Image.new("RGB", (2, 2), (12, 120, 210)).save(output, format=image_format)
+    return output.getvalue()
+
+
 def queued_scheduled_delivery(runs: RunStore) -> tuple[TelegramStore, str]:
     from xaa.scheduler.service import ScheduleService
     from xaa.storage.schedules import ScheduleStore
@@ -173,7 +183,7 @@ def test_paired_private_photo_is_attached_once_to_the_durable_run(
             "chat": {"id": 123, "type": "private"},
         },
     }
-    image = b"\x89PNG\r\n\x1a\nfixture"
+    image = image_fixture("PNG")
     first = store.process_update(
         IDENTITY, update, model="fixture/vision", image_bytes=image, image_media_type="image/png"
     )
@@ -771,7 +781,7 @@ def test_service_cycle_routes_vision_capable_private_photo_to_shared_run(
             return "photos/fixture.jpg"
 
         async def download_file(self, _path):
-            return b"\xff\xd8\xfffixture-image"
+            return image_fixture("JPEG")
 
     class Credentials(MemoryCredentials):
         def __init__(self) -> None:
@@ -802,7 +812,7 @@ def test_service_cycle_routes_vision_capable_private_photo_to_shared_run(
     assert (
         runs.image_data_url(str(row["run_id"]))
         == "data:image/jpeg;base64,"
-        + __import__("base64").b64encode(b"\xff\xd8\xfffixture-image").decode()
+        + __import__("base64").b64encode(image_fixture("JPEG")).decode()
     )
 
 
