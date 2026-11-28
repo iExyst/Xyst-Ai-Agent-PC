@@ -62,6 +62,48 @@ const exactContextRequested=process.env.XAA_EXACT_CONTEXT==='1';
 const taskQuotaRequested=process.env.XAA_NATIVE_TASK_QUOTA==='1';
 let taskQuotaVerified=false;
 const plan = process.env.XAA_NATIVE_PLAN === '1' || specialists || taskQuotaRequested;
+const nativeModelLabel = 'Local model or compatible provider model';
+const nativeModelSelect = page => page.getByLabel(nativeModelLabel, { exact: true });
+async function openModelSetup(page) {
+  const select = nativeModelSelect(page);
+  if (!(await select.isVisible().catch(() => false))) {
+    await page.getByRole('link', { name: 'Model setup', exact: true }).click();
+  }
+  await select.waitFor({ timeout: 20000 });
+}
+async function openWorkspace(page) {
+  const heading = page.getByRole('heading', { name: 'Workspace', exact: true });
+  if (!(await heading.isVisible().catch(() => false))) {
+    await page.getByRole('link', { name: 'New objective', exact: true }).click();
+  }
+  await heading.waitFor({ timeout: 20000 });
+}
+async function openRunLimits(page) {
+  const advanced = page.locator('details.advanced-options');
+  if (!(await advanced.evaluate(element => element.open))) {
+    await advanced.locator(':scope > summary').click();
+  }
+  const iterationLimit = page.getByLabel('Iteration limit', { exact: true });
+  if (!(await iterationLimit.isVisible())) {
+    await advanced.locator('details > summary').click();
+  }
+  await iterationLimit.waitFor({ state: 'visible', timeout: 10000 });
+}
+async function selectModelInSetup(page, model, connection) {
+  await openModelSetup(page);
+  await nativeModelSelect(page).selectOption(model);
+  await expect.poll(async () => {
+    const response = await fetch(`${connection.base_url}/providers/lm-studio/config`, {
+      headers: { Authorization: `Bearer ${connection.token}` },
+    });
+    if (!response.ok) throw new Error('Could not verify the saved native model selection.');
+    return (await response.json()).selected_model;
+  }, { timeout: 20000 }).toBe(model);
+}
+async function selectNativeModel(page, model, connection) {
+  await selectModelInSetup(page, model, connection);
+  await openWorkspace(page);
+}
 try {
   for (let attempt = 0; attempt < 60; attempt++) {
     try { browser = await chromium.connectOverCDP('http://127.0.0.1:19222'); break; }
@@ -69,13 +111,15 @@ try {
   }
   if (!browser) throw new Error('Native WebView did not expose test connection');
   const page = browser.contexts()[0].pages()[0];
-  await page.getByLabel('Local model').waitFor({ timeout: 20000 });
-  const count = await page.getByLabel('Local model').locator('option').evaluateAll(options=>options.filter(option=>option.value).length);
+  await openModelSetup(page);
+  const count = await nativeModelSelect(page).locator('option').evaluateAll(options=>options.filter(option=>option.value).length);
   if (!count) throw new Error('Native app did not discover models');
-  if(await page.getByLabel('Local model').inputValue()!=='')throw new Error('Native app silently selected an unbenchmarked default model');
+  if(await nativeModelSelect(page).inputValue()!=='')throw new Error('Native app silently selected an unbenchmarked default model');
+  if (!providerSetupRequested && !onboardingRequested) await openWorkspace(page);
   connection = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('engine_connection'));
   const headers={Authorization:`Bearer ${connection.token}`};
   if(providerSetupRequested){
+    await openModelSetup(page);
     const initial=await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json();
     if(initial.endpoint!=='http://127.0.0.1:1234')throw new Error('Native provider setup did not start with the default LM Studio endpoint');
     await page.getByLabel('LM Studio server address').fill('http://localhost:1234');
@@ -94,7 +138,7 @@ try {
       if(!loaded.ok)throw new Error(`Could not load installed tool-diagnostic fixture: ${await loaded.text()}`);
       instance=(await loaded.json()).instance_id;
     }
-    await page.getByLabel('Local model').selectOption(providerModel);
+    await nativeModelSelect(page).selectOption(providerModel);
     await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model),{timeout:20000}).toBe(providerModel);
     let diagnosticResponse;
     page.on('response',async response=>{
@@ -108,7 +152,7 @@ try {
     }catch(error){
       throw new Error(`Native provider diagnostic failed: ${JSON.stringify(diagnosticResponse??null)}`,{cause:error});
     }
-    await page.getByLabel('Local model').selectOption('');
+    await nativeModelSelect(page).selectOption('');
     await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBeNull();
     if(instance){
       const unloaded=await fetch(`${connection.base_url}/models/unload`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({instance_id:instance})});
@@ -119,8 +163,10 @@ try {
     }
     providerSetupVerified=true;
     await writeFile(path.join(root,'provider-setup.json'),JSON.stringify({passed:true,initial_endpoint:initial.endpoint,saved_endpoint:saved.endpoint,discovered_model_count:count,selected_model_during_diagnostic:providerModel,real_tool_round_trip:true,selection_cleared:true,model_loaded_by_test:!modelWasLoaded,model_unloaded_by_test:!modelWasLoaded},null,2));
+    await openWorkspace(page);
   }
   if(onboardingRequested){
+    await openModelSetup(page);
     const model='qwen/qwen3.5-9b';
     let diagnosticAttempts=0;
     let demoRequest;
@@ -133,13 +179,14 @@ try {
     const load=await fetch(`${connection.base_url}/models/load`,{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({model,context_length:16384})});
     if(!load.ok)throw new Error(`Could not load installed onboarding model: ${await load.text()}`);
     instance=(await load.json()).instance_id;
-    await page.getByLabel('Local model').selectOption(model);
+    await nativeModelSelect(page).selectOption(model);
     await expect.poll(async()=>((await (await fetch(`${connection.base_url}/providers/lm-studio/config`,{headers})).json()).selected_model)).toBe(model);
     for(diagnosticAttempts=1;diagnosticAttempts<=2;diagnosticAttempts++){
       await page.getByRole('button',{name:'Run harmless tool-use diagnostic',exact:true}).click({force:true});
       try{await page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true}).waitFor({timeout:120000});break;}
       catch(error){if(diagnosticAttempts===2)throw error;}
     }
+    await openWorkspace(page);
     await page.getByLabel('Workspace path').fill(workspace);
     const started=Date.now();
     await page.getByRole('button',{name:'Start read-only onboarding demonstration',exact:true}).click();
@@ -258,7 +305,7 @@ try {
     await panel.getByRole('button',{name:'Save new procedure version',exact:true}).click();
     await panel.getByLabel('Procedure version',{exact:true}).selectOption('1');
     await panel.getByRole('button',{name:'Save new procedure version',exact:true}).isDisabled().then(value=>{if(!value)throw new Error('Historical procedure can be overwritten');});
-    await page.reload();await page.getByLabel('Local model').waitFor({timeout:20000});
+      await page.reload();await openWorkspace(page);
     await page.getByText('Reusable procedures',{exact:true}).click();
     panel=page.getByRole('region',{name:'Procedure candidates',exact:true});
     await panel.getByRole('button',{name:`Inspect ${name}`,exact:true}).click();
@@ -290,7 +337,7 @@ try {
     const saved=matched.items[0];
     const events=await (await fetch(`${connection.base_url}/runs/${saved.id}/events`,{headers})).json();
     for(let pass=0;pass<2;pass++){
-      if(pass){await page.reload();await page.getByLabel('Local model').waitFor({timeout:20000});}
+      if(pass){await page.reload();await openWorkspace(page);}
       await page.getByLabel('Search in',{exact:true}).selectOption('conversation');
       await page.getByLabel('Search conversation phrase',{exact:true}).fill(phrase);
       await page.getByRole('button',{name:'Search saved runs',exact:true}).click();
@@ -312,7 +359,7 @@ try {
     const usage=await (await fetch(`${connection.base_url}/runs/${saved.id}/usage`,{headers})).json();
     if(usage.outstanding_reserved_tokens!==300||usage.outstanding_reservations!==1||usage.total_tokens!==0||usage.unmeasured_calls!==1)throw new Error('Saved hold metadata changed');
     for(let pass=0;pass<2;pass++){
-      if(pass){await page.reload();await page.getByLabel('Local model').waitFor({timeout:20000});}
+      if(pass){await page.reload();await openWorkspace(page);}
       await page.getByRole('button',{name:`Open ${saved.objective}`,exact:true}).click();
       await page.getByRole('heading',{name:'Active run paused',exact:true}).waitFor();
       const resources=page.getByRole('region',{name:'Run resources'});
@@ -337,7 +384,7 @@ try {
     const candidate=events.filter(event=>event.event_type==='model.message').at(-1)?.payload.message.content;
     if(!candidate)throw new Error('Saved fixture has no candidate text');
     for(let pass=0;pass<2;pass++){
-      if(pass) {await page.reload();await page.getByLabel('Local model').waitFor({timeout:20000});}
+      if(pass) {await page.reload();await openWorkspace(page);}
       await page.getByRole('button',{name:`Open ${saved.objective}`,exact:true}).click();
       await page.getByRole('heading',{name:'Active run completed'}).waitFor();
       await page.getByRole('heading',{name:'Accepted result',exact:true}).waitFor();
@@ -360,7 +407,7 @@ try {
       const loaded = await fetch(`${connection.base_url}/models/load`, {method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({model:nativeSpecialistModel,context_length:nativeSpecialistModel==='qwen/qwen3.5-9b'?16384:8192})});
       if(!loaded.ok)throw new Error('Native specialist model loading failed');
       instance=(await loaded.json()).instance_id;
-      await page.getByLabel('Local model').selectOption(nativeSpecialistModel);
+      await selectModelInSetup(page, nativeSpecialistModel, connection);
       let diagnosticResult;
       let diagnosticResponse;
       for(let attempt=0;attempt<3;attempt++){
@@ -374,31 +421,31 @@ try {
       const diagnosticPassed=page.getByText('The selected model completed a validated harmless tool round trip.',{exact:true}).waitFor({timeout:180000}).then(()=>true,()=>false);
       const diagnosticFailed=page.getByRole('alert').filter({hasText:'Tool use remains unverified for this model'}).waitFor({timeout:180000}).then(()=>false,()=>false);
       if(!await Promise.race([diagnosticPassed,diagnosticFailed]))throw new Error(`Selected native specialist model failed its UI capability diagnostic: ${await page.getByRole('alert').allTextContents()}`);
+      await openWorkspace(page);
       await page.getByLabel('Workspace path').fill(workspace);
       const created = await fetch(`${connection.base_url}/runs`, {method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({objective,workspace,mode:'observe',model:null,max_iterations:specialists?12:8,max_seconds:240})});
       if(!created.ok)throw new Error('Could not create model-free native specialist fixture run');
       run=await created.json();
       execFileSync('uv',['run','python','scripts/seed_native_specialists.py',run.id,nativeSpecialistModel,filename],{cwd:process.cwd(),windowsHide:true,stdio:'pipe',env:{...process.env,XAA_DATA_DIR:nativeLocalAppData}});
       await page.reload();
-      await page.getByLabel('Local model').waitFor({timeout:20000});
-      await page.getByLabel('Local model').selectOption(nativeSpecialistModel);
+      await selectNativeModel(page, nativeSpecialistModel, connection);
       await page.getByLabel('Workspace path').fill(workspace);
       await page.getByRole('button',{name:`Open ${objective}`,exact:true}).click();
     } else {
       const response = await fetch(connection.base_url + '/models/load', { method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: nativePlanModel, context_length: taskQuotaRequested ? 32768 : 16384 }) });
       if (!response.ok) throw new Error('Native planning model loading failed');
       instance = (await response.json()).instance_id;
-      await page.getByLabel('Local model').selectOption(nativePlanModel);
+      await selectNativeModel(page, nativePlanModel, connection);
       await page.getByLabel('Workspace path').fill(workspace);
-      const specialistRequirements = (specialists||taskQuotaRequested) ? 'Both task objectives must tell the assigned specialist to use workspace_read_file on the actual discovered filename and report the exact code in that file. For both tasks, acceptance_criteria must be exactly ["Report the exact code read from the fixture file."]. The reviewer must independently read the file. ' : '';
+      const specialistRequirements = (specialists||taskQuotaRequested) ? 'Both task objectives must tell the assigned specialist to use workspace_read_file on the actual discovered filename and report the exact code in that file. For both tasks, acceptance_criteria must be exactly ["Report the exact code read from the fixture file."]. The reviewer must independently read the file. In the reviewer objective, explicitly require review_dependency_manifest for inspect with limit 8 or less, paging until eof. For each manifest item of kind source_file, use workspace_read_file on its listed path; do not use review_dependency_file for source_file items. Use review_dependency_file only for kind changed_artifact items, if any. Do not set input_artifacts: that field accepts existing artifact IDs, and this filename is a workspace path. Omit input_artifacts entirely. ' : '';
       const reservations = (specialists ? 'Give inspect max_iterations 4 and review max_iterations 4. ' : taskQuotaRequested ? 'Give inspect max_iterations 2 and review max_iterations 3. ' : 'Give each task max_iterations 2. ')+'The tasks[].id values must be exactly inspect and review, without suffixes. Set review dependencies to ["inspect"]. ';
-      await page.getByLabel('Objective', { exact: true }).fill('First list the workspace root using workspace_list_directory. Then use plan_save to save exactly two tasks: inspect (researcher, no dependencies) and review (reviewer, depends on inspect). Include the actual discovered filename in the inspect objective. ' + reservations + 'Give both tasks max_seconds 60, permission workspace.read, and explicit acceptance_criteria. ' + specialistRequirements + (taskQuotaRequested?'Set inspect max_total_tokens to exactly 1 and max_output_tokens to exactly 256. Set review max_total_tokens and max_output_tokens to null. This is an acceptance test of quota blocking; the tiny inspect allowance is intentional and must not be expanded. ':'') + 'After plan_save succeeds, immediately finish with a plain text answer: the plan is saved and execution is pending. Do not call plan_run_ready or any further tool after saving. The user will dispatch manually. Do not read or modify files and do not execute the tasks during this planning request.');
+      await page.getByLabel('Objective', { exact: true }).fill('Call workspace_list_directory with exactly {"path":"."} to list the workspace root. Then use plan_save to save exactly two tasks: inspect (researcher, no dependencies) and review (reviewer, depends on inspect). Include the actual discovered filename in the inspect objective. ' + reservations + 'Give both tasks max_seconds 60, permission workspace.read, and explicit acceptance_criteria. ' + specialistRequirements + (taskQuotaRequested?'Set inspect max_total_tokens to exactly 1 and max_output_tokens to exactly 256. Set review max_total_tokens and max_output_tokens to null. This is an acceptance test of quota blocking; the tiny inspect allowance is intentional and must not be expanded. ':'') + 'After plan_save succeeds, immediately finish with a plain text answer: the plan is saved and execution is pending. Do not call plan_run_ready or any further tool after saving. The user will dispatch manually. Do not read or modify files and do not execute the tasks during this planning request.');
       if(specialists){
-        await page.getByText('Run limits',{exact:true}).click();
+        await openRunLimits(page);
         await page.getByLabel('Iteration limit',{exact:true}).fill('12');
       }
       if(taskQuotaRequested){
-        await page.getByText('Run limits',{exact:true}).click();
+        await openRunLimits(page);
         await page.getByLabel('Reported token threshold (optional)',{exact:true}).fill('50000');
         await page.getByLabel('Output tokens per request (optional)',{exact:true}).fill('4096');
       }
@@ -416,7 +463,7 @@ try {
     const inspect = graph.tasks.find(task => task.local_id === 'inspect');
     const review = graph.tasks.find(task => task.local_id === 'review');
     if (graph.tasks.length !== 2 || !inspect?.objective.includes(filename) || JSON.stringify(review?.dependencies) !== '["inspect"]' || JSON.stringify(graph.ready) !== '["inspect"]' || graph.tasks.some(task => task.status !== 'queued')) throw new Error('Native plan graph acceptance failed');
-    if (!(await panel.getByRole('article', {name:'Task review'}).textContent()).includes('Waiting for dependencies')) throw new Error('Native dependency display failed');
+    if (!(await panel.getByRole('article', {name:'Task review'}).textContent()).includes('Waiting for prerequisites')) throw new Error('Native dependency display failed');
     if (await readFile(path.join(workspace, filename), 'utf8') !== fixture) throw new Error('Native planning changed fixture bytes');
     await writeFile(path.join(root, 'plan.json'), JSON.stringify(graph, null, 2));
     if(taskQuotaRequested){
@@ -506,7 +553,7 @@ try {
     const response = await fetch(connection.base_url + '/models/load', { method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'qwen/qwen3.5-9b', context_length: 16384 }) });
     if (!response.ok) throw new Error('Native model loading failed');
     instance = (await response.json()).instance_id;
-    await page.getByLabel('Local model').selectOption('qwen/qwen3.5-9b');
+    await selectNativeModel(page, 'qwen/qwen3.5-9b', connection);
     await page.getByLabel('Workspace permissions').selectOption('workspace');
     await page.getByLabel('Workspace path').fill(root);
     await page.getByLabel('File to verify').fill('config.txt');
@@ -578,12 +625,12 @@ try {
     const loaded=await fetch(`${connection.base_url}/models/load`,{method:'POST',headers,body:JSON.stringify({model:'qwen/qwen3.5-9b',context_length:16384})});
     if(!loaded.ok)throw new Error('Native limit model loading failed');
     instance=(await loaded.json()).instance_id;
-    await page.getByLabel('Local model').selectOption('qwen/qwen3.5-9b');
+    await selectNativeModel(page, 'qwen/qwen3.5-9b', connection);
     await page.getByLabel('Workspace path').fill(workspace);
     await page.getByLabel('Workspace permissions').selectOption('observe');
     await page.getByLabel('File to verify').fill('');
     await page.getByLabel('Objective',{exact:true}).fill('Read input.txt with workspace_read_file and report its exact contents.');
-    if(!await page.getByLabel('Iteration limit',{exact:true}).isVisible())await page.getByText('Run limits',{exact:true}).click();
+    await openRunLimits(page);
     await page.getByLabel('Iteration limit',{exact:true}).fill('3');
     await page.getByLabel('Time limit (seconds)',{exact:true}).fill('60');
     await page.getByLabel('Reported token threshold (optional)',{exact:true}).fill('5000');
@@ -640,7 +687,7 @@ try {
   await page.screenshot({ path: path.join(root, 'native.png'), fullPage: true });
   const crash = process.env.XAA_CRASH === '1';
   if (crash) execFileSync('taskkill', ['/PID', String(proc.pid), '/F'], { windowsHide: true, stdio: 'ignore' });
-  else await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:window|close', { label: 'main' })).catch(() => {});
+  else await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('quit_application'));
   for (let attempt = 0; attempt < 40 && proc.exitCode === null; attempt++) await new Promise(resolve => setTimeout(resolve, 250));
   if (proc.exitCode === null) throw new Error('Native app did not exit after closing its window');
   if (!crash && proc.exitCode !== 0) throw new Error(`Native app exited with status ${proc.exitCode}`);

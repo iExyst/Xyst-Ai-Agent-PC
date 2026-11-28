@@ -355,3 +355,8 @@ The installed-desktop MCP smoke now verifies the owner-selected network isolatio
 The fresh staged desktop passed native boot acceptance on this Windows host, including bundled-engine readiness, authenticated API, background/tray and close behavior, restored startup setting, restricted runtime PATH, three System Monitor traces, and graceful engine shutdown. No run or inference was requested; report: [native-current-20261124](../../.acceptance/native-current-20261124/report.json). This did not verify the installer lifecycle for those earlier bytes; the newer exact-source package passed that lifecycle as recorded above. The package remains unsigned, and broader independent-machine compatibility remains open.
 
 Follow-up source checks for this worktree passed: focused readiness, grant/journal, API/identity, and Docker policy/transport tests (131 passed; five real-Docker integration cases skipped because Docker is unavailable), plus execution setup and channel browser checks (3). No live model or messaging service was used.
+
+
+## Exact-head Windows installer acceptance (2026-11-28)
+
+Run [46149254558](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46149254558) passed on commit `18cea34f0e89b2bc4b87a10ab37559eef14e2e6d`. The Windows job completed native/package checks, current-user and standard-user installation, installed boot and uninstall, and backup/restore with data preservation. The unsigned installer artifact is [15265044297](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46149254558/artifacts/15265044297) (82,196,435 bytes). This is hosted exact-head package evidence; code signing, clean-machine compatibility breadth, licensing/legal review and public release readiness remain open.
