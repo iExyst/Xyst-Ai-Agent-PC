@@ -16,7 +16,7 @@ from uuid import uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict
 from xaa.providers.contracts import TokenUsage, validate_completion
-from xaa.providers.lm_studio import AdmissionCallback, LMStudioProvider
+from xaa.providers.lm_studio import AdmissionCallback, LMStudioProvider, ReasoningEffort
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.directory_listing import ListDirectoryArguments
 from xaa.runtime.executor import (
@@ -72,6 +72,7 @@ class MeasuredProvider(LMStudioProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
         on_admission: AdmissionCallback | None = None,
         require_exact_context: bool = False,
     ) -> dict[str, Any]:
@@ -82,6 +83,7 @@ class MeasuredProvider(LMStudioProvider):
                 messages=messages,
                 tools=tools,
                 max_output_tokens=max_output_tokens,
+                reasoning_effort=reasoning_effort,
                 on_admission=on_admission,
                 require_exact_context=require_exact_context,
             )

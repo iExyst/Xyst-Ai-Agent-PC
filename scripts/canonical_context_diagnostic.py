@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from xaa.providers.lm_studio import AdmissionCallback, ContextLimitError, LMStudioProvider
+from xaa.providers.lm_studio import (
+    AdmissionCallback,
+    ContextLimitError,
+    LMStudioProvider,
+    ReasoningEffort,
+)
 from xaa.providers.tokenization import PromptCount, PromptCountRequest
 from xaa.runtime.coordinator import Coordinator
 from xaa.storage.runs import RunStore
@@ -30,6 +35,7 @@ class AuditedProvider(LMStudioProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
         on_admission: AdmissionCallback | None = None,
         require_exact_context: bool = False,
     ) -> dict[str, Any]:
@@ -39,6 +45,7 @@ class AuditedProvider(LMStudioProvider):
                 messages=messages,
                 tools=tools,
                 max_output_tokens=max_output_tokens,
+                reasoning_effort=reasoning_effort,
                 on_admission=on_admission,
                 require_exact_context=require_exact_context,
             )

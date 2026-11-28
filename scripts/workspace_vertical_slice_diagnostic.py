@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from xaa.providers.lm_studio import AdmissionCallback, DiagnosticRequest, LMStudioProvider
+from xaa.providers.lm_studio import (
+    AdmissionCallback,
+    DiagnosticRequest,
+    LMStudioProvider,
+    ReasoningEffort,
+)
 from xaa.runtime.coordinator import Coordinator
 from xaa.runtime.execution_readiness import ExecutionReadiness, ReadinessRequest
 from xaa.runtime.project_validation import ProjectValidationRequest, summary, validate_project
@@ -60,6 +65,7 @@ class FixtureProvider(LMStudioProvider):
         messages: list[dict[str, object]],
         tools: list[dict[str, object]] | None = None,
         max_output_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
         on_admission: AdmissionCallback | None = None,
         require_exact_context: bool = False,
     ) -> dict[str, object]:

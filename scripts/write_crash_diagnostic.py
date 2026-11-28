@@ -15,7 +15,7 @@ from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
-from xaa.providers.lm_studio import DiagnosticRequest, LMStudioProvider
+from xaa.providers.lm_studio import DiagnosticRequest, LMStudioProvider, ReasoningEffort
 from xaa.runtime import executor as executor_module
 from xaa.runtime import tool_worker
 from xaa.runtime.coordinator import Coordinator
@@ -170,6 +170,7 @@ def recover(root: Path, run_id: str) -> None:
                 messages: list[dict[str, Any]],
                 tools: list[dict[str, Any]] | None = None,
                 max_output_tokens: int | None = None,
+                reasoning_effort: ReasoningEffort | None = None,
                 on_admission: Callable[[int, int], None] | None = None,
                 require_exact_context: bool = False,
             ) -> dict[str, Any]:

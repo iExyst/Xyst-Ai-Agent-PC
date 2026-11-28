@@ -17,7 +17,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from xaa.providers.lm_studio import LMStudioProvider
+from xaa.providers.lm_studio import LMStudioProvider, ReasoningEffort
 from xaa.storage.runs import RunStore
 
 CRASH_WRITE_CONTENT = "after-api-crash:" + "x" * (65_536 - len("after-api-crash:"))
@@ -67,6 +67,7 @@ class RestartDiagnosticProvider(LMStudioProvider):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
         max_output_tokens: int | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
         on_admission: Any = None,
         require_exact_context: bool = False,
     ) -> dict[str, Any]:
