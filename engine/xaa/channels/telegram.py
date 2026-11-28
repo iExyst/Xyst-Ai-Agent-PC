@@ -7,6 +7,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import re
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
@@ -39,6 +40,7 @@ TELEGRAM_DOCUMENT_MEDIA_TYPES = {
     "text/plain",
     "text/markdown",
     "text/csv",
+    "audio/wav",
 }
 TELEGRAM_SEND_CONTRACT: dict[str, Any] = {
     "name": "telegram.send_message",
@@ -502,6 +504,19 @@ class TelegramStore:
             return None
         return int(row["next_offset"])
 
+    def has_update(self, account_id: str, update_id: object) -> bool:
+        """Avoid re-fetching or re-transcribing media already journaled for this bot."""
+        if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
+            return False
+        with self.runs.connection() as connection:
+            return (
+                connection.execute(
+                    "SELECT 1 FROM telegram_updates WHERE account_id=? AND update_id=?",
+                    (account_id, update_id),
+                ).fetchone()
+                is not None
+            )
+
     def process_update(
         self,
         identity: TelegramIdentity,
@@ -567,7 +582,11 @@ class TelegramStore:
         if image_bytes is not None and not content:
             content = "Describe the attached image."
         if document_bytes is not None and not content:
-            content = "Summarize the attached document."
+            content = (
+                "Transcribe and respond to the attached audio."
+                if document_media_type == "audio/wav"
+                else "Summarize the attached document."
+            )
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             inserted = connection.execute(
@@ -1073,6 +1092,7 @@ class TelegramService:
         *,
         api_factory: Callable[[str], TelegramBotApi] = TelegramBotApi,
         model_catalog: Callable[[], Awaitable[list[Any]]] | None = None,
+        audio_transcriber: Callable[[bytes], Awaitable[str]] | None = None,
     ) -> None:
         self.runs = runs
         self.store = TelegramStore(runs)
@@ -1080,6 +1100,11 @@ class TelegramService:
         self.submit = submit
         self.api_factory = api_factory
         self.model_catalog = model_catalog
+        if audio_transcriber is None and os.name == "nt":
+            from xaa.runtime.windows_speech import transcribe_windows_wav
+
+            audio_transcriber = transcribe_windows_wav
+        self.audio_transcriber = audio_transcriber
         self.task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -1118,6 +1143,9 @@ class TelegramService:
                         "SELECT selected_model FROM provider_profiles WHERE id='lm-studio'"
                     ).fetchone()
                 selected_model = str(selected[0]) if selected and selected[0] else None
+                if self.store.has_update(identity.account_id, update.get("update_id")):
+                    self.store.process_update(identity, update, model=selected_model)
+                    continue
                 image_bytes: bytes | None = None
                 image_media_type: str | None = None
                 image_rejection: str | None = None
@@ -1200,6 +1228,9 @@ class TelegramService:
                     if (
                         isinstance(media_type, str)
                         and media_type.lower() in TELEGRAM_DOCUMENT_MEDIA_TYPES
+                        and (
+                            media_type.lower() != "audio/wav" or self.audio_transcriber is not None
+                        )
                         and isinstance(file_id, str)
                         and (
                             file_size is None
@@ -1211,7 +1242,24 @@ class TelegramService:
                             path, max_bytes=MAX_TELEGRAM_DOCUMENT_BYTES
                         )
                         try:
-                            document_text = extract_document_text(raw_document, media_type.lower())
+                            if media_type.lower() == "audio/wav":
+                                from xaa.runtime.local_transcription import (
+                                    MAX_TRANSCRIPT_BYTES,
+                                    validate_wav,
+                                )
+
+                                validate_wav(raw_document)
+                                assert self.audio_transcriber is not None
+                                document_text = await self.audio_transcriber(raw_document)
+                                if (
+                                    not document_text.strip()
+                                    or len(document_text) > MAX_TRANSCRIPT_BYTES
+                                ):
+                                    raise ValueError("Telegram WAV transcript failed validation.")
+                            else:
+                                document_text = extract_document_text(
+                                    raw_document, media_type.lower()
+                                )
                         except (ValueError, OSError):
                             document_text = None
                         else:

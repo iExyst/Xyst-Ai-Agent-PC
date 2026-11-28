@@ -3499,7 +3499,7 @@
         "engine/xaa/channels/telegram.py"
       ],
       "xaa_implementation_status": "implemented_partial",
-      "xaa_implemented_scope": "Authorized private text ingress, bounded JPEG/PNG photo ingress for vision-capable models, and one validated PDF/DOCX/XLSX/UTF-8 text/Markdown/CSV document up to 4 MiB as retained untrusted source and extracted-text artifacts. Private pairing, durable update deduplication and reply delivery are enforced. Unsupported photos receive runless notices; invalid/unsupported documents are ignored. Live bot acceptance, other media and topic parity remain open.",
+      "xaa_implemented_scope": "Authorized private text ingress, bounded JPEG/PNG photo ingress for vision-capable models, one validated PDF/DOCX/XLSX/UTF-8 text/Markdown/CSV document up to 4 MiB as retained untrusted source and extracted-text artifacts, and Windows-only bounded PCM WAV transcription through the installed offline speech recognizer. Audio source and transcript are retained as untrusted artifacts. Private pairing, durable update deduplication and reply delivery are enforced; duplicate IDs are checked before media fetch/transcription. Unsupported photos receive runless notices; invalid/unsupported documents are ignored. Native OGG voice notes, live bot acceptance, other media and topic parity remain open.",
       "transport_observation": "python-telegram-bot inbound updates and outbound replies",
       "acceptance_id": "CHANNEL-TELEGRAM",
       "acceptance": "Verify bot identity, sender allowlist, DM/group/topic separation, update replay after restart and one authorized text reply; test media independently.",

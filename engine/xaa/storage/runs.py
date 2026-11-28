@@ -1886,7 +1886,7 @@ class RunStore:
         extracted_text: str,
         filename: str | None = None,
     ) -> tuple[str, str]:
-        """Persist one validated document and its extracted text inside a caller's transaction."""
+        """Persist one validated document or WAV and its text inside a caller's transaction."""
         extensions = {
             "application/pdf": "pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -1894,9 +1894,10 @@ class RunStore:
             "text/plain": "txt",
             "text/markdown": "md",
             "text/csv": "csv",
+            "audio/wav": "wav",
         }
         if media_type not in extensions or not content or len(content) > 4 * 1024 * 1024:
-            raise ValueError("Email document is outside the supported size or media limits.")
+            raise ValueError("Document attachment is outside the supported size or media limits.")
         if not extracted_text or len(extracted_text) > 49_000:
             raise ValueError("Extracted email document text is empty or exceeds its storage limit.")
         artifacts = self.path.parent / "artifacts"
