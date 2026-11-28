@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "physical_device_enumerated": true,
+  "selected_device_used_for_capture": true,
+  "live_audio_track_observed": true,
+  "recording_duration_ms": 2000,
+  "audio_level_diagnostic": {
+    "sample_windows": 33,
+    "peak_rms": 0.12325880180770711,
+    "mean_rms": 0.022266680159228038,
+    "signal_detected": true,
+    "retained_audio_samples": false
+  },
+  "live_input_meter": {
+    "visible": true,
+    "normalized_value": 0.09506455507006238,
+    "status": "Microphone signal detected"
+  },
+  "local_wav_attachment_created": true,
+  "silent_capture_rejected": false,
+  "capture_tracks_stopped": true,
+  "audio_submitted_to_transcription": false,
+  "model_inference_requested": false,
+  "device_name_or_id_recorded": false
+}

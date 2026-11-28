@@ -1,0 +1,15 @@
+{
+  "passed": false,
+  "source": "installed Windows default microphone",
+  "recognizer": "installed Windows System.Speech recognizer",
+  "expected_phrase": "Hello world",
+  "transcript": "MIFF Callahan",
+  "normalized_exact_match": false,
+  "audio_level_event_count": 98,
+  "peak_input_level_percent": 22,
+  "confidence": 0.0538807958,
+  "recognizer_language": "en-US",
+  "microphone_audio_retained": false,
+  "network_used": false,
+  "model_inference_requested": false
+}
