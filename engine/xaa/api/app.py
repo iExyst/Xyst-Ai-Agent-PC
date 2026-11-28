@@ -5865,7 +5865,12 @@ def create_app(
                 status_code=409, detail="Command workspace is unavailable."
             ) from exc
         except TranscriptionError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            status_code = (
+                422
+                if payload.audio is not None and payload.transcription_provider == "windows_offline"
+                else 502
+            )
+            raise HTTPException(status_code=status_code, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ProviderError as exc:

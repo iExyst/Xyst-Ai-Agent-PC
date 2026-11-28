@@ -164,3 +164,36 @@ def test_windows_offline_transcription_rejects_service_url(workspace_tmp_path) -
         )
     assert response.status_code == 409
     assert "only used with an OpenAI-compatible local service" in response.json()["detail"]
+
+
+def test_low_confidence_windows_transcript_creates_no_run_or_artifacts(
+    workspace_tmp_path,
+    monkeypatch,
+) -> None:
+    from xaa.runtime import windows_speech
+    from xaa.runtime.local_transcription import TranscriptionError
+
+    async def reject_audio(_audio: bytes) -> str:
+        raise TranscriptionError(
+            "Windows recognized this audio with low confidence. Speak clearly and try again."
+        )
+
+    monkeypatch.setattr(windows_speech, "transcribe_windows_wav", reject_audio)
+    store = RunStore(workspace_tmp_path / "windows-low-confidence.sqlite3")
+    token = "windows-low-confidence-test-token-long-enough"
+    encoded = "data:audio/wav;base64," + base64.b64encode(wav_data()).decode("ascii")
+    with TestClient(create_app(QuietProvider(), SecretStr(token), store=store)) as client:
+        response = client.post(
+            "/runs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "objective": "Summarize the local recording",
+                "audio": encoded,
+                "transcription_provider": "windows_offline",
+            },
+        )
+
+    assert response.status_code == 422
+    assert "low confidence" in response.json()["detail"]
+    with store.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
