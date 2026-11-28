@@ -75,10 +75,20 @@ async def transcribe_wav(
     audio: bytes,
     endpoint: str,
     *,
+    model: str = "whisper-1",
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> str:
     validate_wav(audio)
     url = validate_transcription_url(endpoint)
+    model = model.strip()
+    if (
+        not model
+        or len(model) > 256
+        or any(ord(character) < 32 or ord(character) == 127 for character in model)
+    ):
+        raise TranscriptionError(
+            "Speech model identifier must be 1–256 characters without control characters."
+        )
     try:
         async with (
             httpx.AsyncClient(
@@ -90,7 +100,7 @@ async def transcribe_wav(
             client.stream(
                 "POST",
                 url,
-                data={"model": "whisper-1", "response_format": "json"},
+                data={"model": model, "response_format": "json"},
                 files={"file": ("audio.wav", audio, "audio/wav")},
             ) as response,
         ):

@@ -5,11 +5,15 @@ export function VoiceTranscriptionSettings({
   onProviderChange,
   endpoint,
   onEndpointChange,
+  model,
+  onModelChange,
 }: {
   provider: TranscriptionProvider;
   onProviderChange: (provider: TranscriptionProvider) => void;
   endpoint: string;
   onEndpointChange: (endpoint: string) => void;
+  model: string;
+  onModelChange: (model: string) => void;
 }) {
   return <>
     <label htmlFor="transcription-provider">Speech transcription</label>
@@ -32,7 +36,18 @@ export function VoiceTranscriptionSettings({
             placeholder="http://127.0.0.1:8000/v1/audio/transcriptions"
           />
         </label>
-        <p>Requires an OpenAI-compatible transcription service running on this computer. X.A.A. accepts loopback addresses only; it does not download models or provide cloud fallback.</p>
+        <label htmlFor="transcription-model">Local speech model
+          <input
+            id="transcription-model"
+            value={model}
+            onChange={event => onModelChange(event.target.value)}
+            maxLength={256}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="whisper-1"
+          />
+        </label>
+        <p>Enter the model identifier your local transcription service expects. Requires an OpenAI-compatible transcription service running on this computer. X.A.A. accepts loopback addresses only; it does not download models or provide cloud fallback.</p>
       </>}
     <p>Transcript text is untrusted reference material.</p>
   </>;

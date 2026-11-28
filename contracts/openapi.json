@@ -1563,6 +1563,18 @@
             "title": "Specialist Credential Grants",
             "type": "array"
           },
+          "transcription_model": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Model"
+          },
           "transcription_provider": {
             "default": "openai_compatible",
             "enum": [

@@ -53,9 +53,11 @@ def test_wav_rejects_header_that_declares_missing_pcm_frames() -> None:
 
 @pytest.mark.asyncio
 async def test_transcription_posts_audio_and_returns_bounded_text() -> None:
+    custom_model = "Systran/faster-whisper-small"
+
     async def respond(request: httpx.Request) -> httpx.Response:
         body = await request.aread()
-        assert b'name="model"' in body and b"whisper-1" in body
+        assert b'name="model"' in body and custom_model.encode() in body
         assert b'name="file"; filename="audio.wav"' in body
         assert pcm_wav() in body
         return httpx.Response(200, json={"text": "  turn on the lights  "})
@@ -63,10 +65,22 @@ async def test_transcription_posts_audio_and_returns_bounded_text() -> None:
     transport = httpx.MockTransport(respond)
     assert (
         await transcribe_wav(
-            pcm_wav(), "http://127.0.0.1:8000/v1/audio/transcriptions", transport=transport
+            pcm_wav(),
+            "http://127.0.0.1:8000/v1/audio/transcriptions",
+            model=custom_model,
+            transport=transport,
         )
         == "turn on the lights"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", ["", "  ", "bad\nmodel", "x" * 257])
+async def test_transcription_rejects_invalid_model_identifier(model: str) -> None:
+    with pytest.raises(TranscriptionError, match="Speech model identifier"):
+        await transcribe_wav(
+            pcm_wav(), "http://127.0.0.1:8000/v1/audio/transcriptions", model=model
+        )
 
 
 @pytest.mark.asyncio

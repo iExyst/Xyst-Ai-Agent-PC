@@ -43,7 +43,7 @@ def test_audio_run_uses_loopback_service_and_keeps_source_and_transcript(
                 self.path == "/v1/audio/transcriptions"
                 and b'filename="audio.wav"' in body
                 and source_audio in body
-                and b"whisper-1" in body
+                and b"Systran/faster-whisper-small" in body
             )
             response = json.dumps(
                 {"text": "untrusted spoken request"} if valid else {"error": "invalid multipart"}
@@ -86,6 +86,7 @@ def test_audio_run_uses_loopback_service_and_keeps_source_and_transcript(
                     "objective": "Summarize the recording",
                     "audio": encoded,
                     "transcription_url": endpoint,
+                    "transcription_model": "  Systran/faster-whisper-small  ",
                 },
             )
             assert response.status_code == 201
@@ -160,6 +161,7 @@ def test_windows_offline_transcription_rejects_service_url(workspace_tmp_path) -
                 "audio": encoded,
                 "transcription_provider": "windows_offline",
                 "transcription_url": "http://127.0.0.1:8000/v1/audio/transcriptions",
+                "transcription_model": "local-speech-model",
             },
         )
     assert response.status_code == 409

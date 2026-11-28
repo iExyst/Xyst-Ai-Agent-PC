@@ -3186,6 +3186,8 @@ export interface components {
             procedure_trial?: components["schemas"]["SkillTrial"] | null;
             /** Specialist Credential Grants */
             specialist_credential_grants?: components["schemas"]["SpecialistCredentialGrant"][];
+            /** Transcription Model */
+            transcription_model?: string | null;
             /**
              * Transcription Provider
              * @default openai_compatible

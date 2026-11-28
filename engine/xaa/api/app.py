@@ -237,6 +237,7 @@ class CreateRunRequest(BaseModel):
     audio_filename: str | None = Field(default=None, max_length=512)
     transcription_provider: Literal["openai_compatible", "windows_offline"] = "openai_compatible"
     transcription_url: str | None = Field(default=None, max_length=2_048)
+    transcription_model: str | None = Field(default=None, max_length=256)
     acceptance_criteria: list[str] = Field(default_factory=list, max_length=50)
     workspace: str | None = Field(default=None, max_length=2_048)
     mode: Literal["observe", "workspace"] = "observe"
@@ -284,6 +285,20 @@ class CreateRunRequest(BaseModel):
     def validate_approved_web_hosts(cls, value: list[str]) -> list[str]:
         return normalize_approved_hosts(value)
 
+    @field_validator("transcription_model")
+    @classmethod
+    def validate_transcription_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized or any(
+            ord(character) < 32 or ord(character) == 127 for character in normalized
+        ):
+            raise ValueError(
+                "Speech model identifier must be non-empty and contain no control characters."
+            )
+        return normalized
+
 
 def validate_attachment_filenames(payload: CreateRunRequest) -> None:
     """Reject display names that are not tied to their uploaded payload."""
@@ -293,6 +308,36 @@ def validate_attachment_filenames(payload: CreateRunRequest) -> None:
         raise ValueError("A document filename requires a document attachment.")
     if payload.audio_filename is not None and payload.audio is None:
         raise ValueError("An audio filename requires an audio attachment.")
+
+
+async def transcribe_audio_attachment(payload: CreateRunRequest) -> tuple[bytes, str]:
+    """Decode and transcribe one WAV attachment using the explicitly selected local path."""
+    if payload.audio is None or not payload.audio.startswith("data:audio/wav;base64,"):
+        raise ValueError("Run audio must be a PCM WAV data URL.")
+    try:
+        decoded_audio = base64.b64decode(payload.audio.split(",", 1)[1], validate=True)
+    except (ValueError, binascii.Error):
+        raise ValueError("Run audio data is invalid.") from None
+
+    if payload.transcription_provider == "windows_offline":
+        if payload.transcription_url is not None or payload.transcription_model is not None:
+            raise ValueError(
+                "A transcription URL and model are only used with an OpenAI-compatible local service."
+            )
+        from xaa.runtime.windows_speech import transcribe_windows_wav
+
+        transcript = await transcribe_windows_wav(decoded_audio)
+    else:
+        if not payload.transcription_url:
+            raise ValueError("Enter a local transcription endpoint to use WAV audio.")
+        from xaa.runtime.local_transcription import transcribe_wav
+
+        transcript = await transcribe_wav(
+            decoded_audio,
+            payload.transcription_url,
+            model=payload.transcription_model or "whisper-1",
+        )
+    return decoded_audio, transcript
 
 
 class RestoreBackupRequest(BaseModel):
@@ -5573,30 +5618,12 @@ def create_app(
                 raise ValueError("Attach one image, document or audio file per run.")
             validate_attachment_filenames(payload)
             if payload.audio is not None:
-                if not payload.audio.startswith("data:audio/wav;base64,"):
-                    raise ValueError("Run audio must be a PCM WAV data URL.")
-                try:
-                    decoded_audio = base64.b64decode(payload.audio.split(",", 1)[1], validate=True)
-                except (ValueError, binascii.Error):
-                    raise ValueError("Run audio data is invalid.") from None
-                if payload.transcription_provider == "windows_offline":
-                    if payload.transcription_url is not None:
-                        raise ValueError(
-                            "A transcription URL is only used with an OpenAI-compatible local service."
-                        )
-                    from xaa.runtime.windows_speech import transcribe_windows_wav
-
-                    document_text = await transcribe_windows_wav(decoded_audio)
-                else:
-                    if not payload.transcription_url:
-                        raise ValueError("Enter a local transcription endpoint to use WAV audio.")
-                    from xaa.runtime.local_transcription import transcribe_wav
-
-                    document_text = await transcribe_wav(decoded_audio, payload.transcription_url)
+                decoded_audio, document_text = await transcribe_audio_attachment(payload)
                 document_bytes = decoded_audio
                 document_type = "audio/wav"
             elif (
                 payload.transcription_url is not None
+                or payload.transcription_model is not None
                 or payload.transcription_provider != "openai_compatible"
             ):
                 raise ValueError("A transcription provider is only used with an audio attachment.")

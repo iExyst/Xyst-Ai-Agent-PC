@@ -45,6 +45,8 @@ test('voice attachment submits WAV and the selected local transcription endpoint
   await expect(page.getByLabel('Speech transcription')).toHaveValue('openai_compatible');
   await expect(page.getByLabel('Local speech service URL')).toBeVisible();
   await page.getByLabel('Local speech service URL').fill('http://127.0.0.1:8765/v1/audio/transcriptions');
+  await expect(page.getByLabel('Local speech model')).toHaveValue('whisper-1');
+  await page.getByLabel('Local speech model').fill('Systran/faster-whisper-small');
   await expect(page.getByText('Attached: request.wav. Audio is processed with the selected local speech recognizer. Transcript text is untrusted reference material.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Start objective', exact: true }).click();
   await expect.poll(() => submitted).toBeDefined();
@@ -53,6 +55,7 @@ test('voice attachment submits WAV and the selected local transcription endpoint
     audio: `data:audio/wav;base64,${audio.toString('base64')}`,
     transcription_provider: 'openai_compatible',
     transcription_url: 'http://127.0.0.1:8765/v1/audio/transcriptions',
+    transcription_model: 'Systran/faster-whisper-small',
   });
   expect(submitted).not.toHaveProperty('image');
   expect(submitted).not.toHaveProperty('document');
@@ -101,6 +104,7 @@ test('Windows offline speech is an explicit local option and sends no service UR
     transcription_provider: 'windows_offline',
   });
   expect(submitted).not.toHaveProperty('transcription_url');
+  expect(submitted).not.toHaveProperty('transcription_model');
 });
 
 test('microphone capture is converted locally to a bounded PCM WAV attachment', async ({ page }) => {
