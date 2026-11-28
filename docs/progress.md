@@ -2,7 +2,7 @@
 
 Paired private Telegram users can send one supported PDF, DOCX, XLSX, UTF-8 TXT, Markdown, or CSV document up to 4 MiB. The service checks the pairing and private-chat binding before `getFile`, bounds the download, validates the MIME type and extracts supported text through the shared parser. It retains the sanitized source filename, original document, and extracted text in checksum-managed untrusted run artifacts in the deduplicated update transaction. Unsupported, malformed, and oversized documents are ignored; scanned PDFs without extractable text remain unsupported on this channel.
 
-The focused Telegram suite passes (**37 tests**); Ruff and production Pyright pass. No live Telegram bot or model was used. Exact-source hosted Windows CI and installer acceptance are pending.
+The focused Telegram suite passes (**37 tests**); Ruff and production Pyright pass. Exact-source Windows workflow [46113987040](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46113987040) passed on `f2211004`: **1,866 tests passed, 50 skipped**, with configured browser/desktop, static/type, API contract, Hermes inventory, SDK, and process-recovery checks. Exact-source installer workflow [46113994922](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46113994922) passed the frozen and installed Windows package checks, including standard-user installation, backup/restore, and uninstall. The unsigned setup is 83,353,564 bytes with SHA-256 `94da873719e42b192816f9b631dea112d8fc5b7a9338993d8caf1a5ffc8fdec8`, matching its manifest; reports and package are archived under [`.acceptance/hosted-installer-46113994922/`](../.acceptance/hosted-installer-46113994922/). No live Telegram bot or model was used.
 
 ## Accept one bounded email document attachment (2026-11-28)
 
