@@ -38,12 +38,17 @@ def test_frozen_engine_metadata_export_rejects_invalid_requirement_lines() -> No
 
 
 class _Archive:
-    def __init__(self, entries: dict[str, bytes]) -> None:
+    def __init__(self, entries: dict[str, bytes], python_modules: set[str] | None = None) -> None:
         self.toc = dict.fromkeys(entries)
         self.entries = entries
+        self.python_modules: set[str] = set() if python_modules is None else python_modules
 
     def extract(self, name: str) -> bytes:
         return self.entries[name]
+
+    def open_embedded_archive(self, name: str) -> SimpleNamespace:
+        assert name == "PYZ.pyz"
+        return SimpleNamespace(toc=self.python_modules)
 
 
 class _ReaderFactory:
@@ -83,3 +88,19 @@ def test_frozen_runtime_size_verifier_fails_above_shared_appcontainer_limit(
 
     with pytest.raises(RuntimeError, match="Windows AppContainer runtime limit"):
         frozen_archive.verify_frozen_runtime_size(tmp_path / "engine.exe")
+
+
+def test_frozen_audio_resources_require_dynamic_soundfile_module(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    resources = {
+        "_soundfile_data\\libsndfile_x64.dll": b"decoder",
+        "_soundfile_data\\COPYING": b"decoder license",
+        "soundfile-0.14.0.dist-info\\LICENSE": b"soundfile license",
+        "numpy-2.5.5.dist-info\\licenses\\LICENSE.txt": b"numpy license",
+    }
+    _use_archive(monkeypatch, _Archive(resources))
+
+    with pytest.raises(RuntimeError, match="dynamically imported _soundfile binding"):
+        build_engine.verify_audio_decoder_resources(tmp_path / "engine.exe")

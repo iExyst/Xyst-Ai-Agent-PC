@@ -64,6 +64,12 @@ try {
     $report.offline_speech = Get-Content -LiteralPath (Join-Path $speechReportRoot 'report.json') -Raw | ConvertFrom-Json
     if (-not $report.offline_speech.passed -or $report.offline_speech.package_kind -ne 'Installed Windows package engine' -or $report.offline_speech.engine_sha256 -ne $manifest.artifacts.engine.sha256) { throw 'Installed Windows speech report did not verify the installed package engine.' }
     $report.installed_offline_speech_verified = $true
+    $telegramOggReport = Join-Path $root 'telegram-ogg/report.json'
+    & uv run python (Join-Path $workspace 'scripts/installed_telegram_ogg_acceptance.py') --engine $engine --report $telegramOggReport
+    if ($LASTEXITCODE -ne 0) { throw 'Installed Windows Telegram Ogg/Opus acceptance failed.' }
+    $report.telegram_ogg_opus = Get-Content -LiteralPath $telegramOggReport -Raw | ConvertFrom-Json
+    if (-not $report.telegram_ogg_opus.passed -or $report.telegram_ogg_opus.engine_sha256 -ne $manifest.artifacts.engine.sha256) { throw 'Telegram Ogg/Opus acceptance did not verify the installed package engine.' }
+    $report.installed_telegram_ogg_verified = $true
 } finally {
     if (Test-Path -LiteralPath $uninstaller) {
         $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
@@ -72,7 +78,7 @@ try {
     } else {
         $report.binaries_removed = $false
     }
-$report.passed = $report.installed_binary_hashes_match -and $report.installed_engine_readiness_verified -and $report.installed_npm_lock_worker_verified -and $report.installed_coordinator_command_verified -and $report.installed_offline_speech_verified -and $report.binaries_removed -and $report.uninstaller_exit_code -eq 0
+$report.passed = $report.installed_binary_hashes_match -and $report.installed_engine_readiness_verified -and $report.installed_npm_lock_worker_verified -and $report.installed_coordinator_command_verified -and $report.installed_offline_speech_verified -and $report.installed_telegram_ogg_verified -and $report.binaries_removed -and $report.uninstaller_exit_code -eq 0
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'report.json') -Encoding utf8
 }
 if (-not $report.passed) { throw "Installed AppContainer acceptance failed. Evidence: $root" }

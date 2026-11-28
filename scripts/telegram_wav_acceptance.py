@@ -96,7 +96,7 @@ class _FixtureBot:
         raise AssertionError("The acceptance must not send an external message.")
 
 
-def _synthetic_wav(powershell: Path) -> bytes:
+def synthetic_wav(powershell: Path) -> bytes:
     program = r"""
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.ASCIIEncoding]::new()
@@ -224,7 +224,7 @@ async def _accept(audio: bytes, root: Path, *, ogg_opus: bool = False) -> dict[s
     return report
 
 
-def _synthetic_ogg_opus(wav_audio: bytes) -> bytes:
+def synthetic_ogg_opus(wav_audio: bytes) -> bytes:
     from io import BytesIO
 
     import numpy as np
@@ -250,10 +250,10 @@ def main() -> None:
         raise SystemExit("Windows PowerShell is not available.")
     root = Path(".acceptance") / f"telegram-audio-{uuid4()}"
     root.mkdir(parents=True, exist_ok=False)
-    audio = _synthetic_wav(powershell)
+    audio = synthetic_wav(powershell)
     (root / "synthetic-hello.wav").write_bytes(audio)
     wav_report = asyncio.run(_accept(audio, root / "wav"))
-    ogg_audio = _synthetic_ogg_opus(audio)
+    ogg_audio = synthetic_ogg_opus(audio)
     (root / "synthetic-hello.ogg").write_bytes(ogg_audio)
     ogg_report = asyncio.run(_accept(ogg_audio, root / "ogg", ogg_opus=True))
     report: dict[str, object] = {

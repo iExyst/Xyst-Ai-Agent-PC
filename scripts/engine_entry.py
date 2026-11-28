@@ -18,6 +18,8 @@ if __name__ == "__main__":
         raise SystemExit(main(sys.argv[2:]))
     elif sys.argv[1:] == ["--tokenizer-worker"]:
         from xaa.providers.tokenizer_worker import main
+    elif sys.argv[1:] == ["--telegram-audio-diagnostic"]:
+        from xaa.runtime.telegram_audio_diagnostic import main
     elif sys.argv[1:] == ["--pypi-resolver-worker"]:
         from xaa.extensions.pypi_resolver_worker import main
     elif sys.argv[1:] == ["--pypi-wheel-worker"]:

@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -46,6 +47,15 @@ def verify_audio_decoder_resources(executable: Path) -> dict[str, str]:
         "numpy-2.5.5.dist-info/licenses/license.txt",
     )
     fingerprints: dict[str, str] = {}
+    python_archive = archive.open_embedded_archive("PYZ.pyz")
+    if "_soundfile" not in python_archive.toc:
+        raise RuntimeError("Frozen engine is missing the dynamically imported _soundfile binding.")
+    soundfile_spec = importlib.util.find_spec("_soundfile")
+    if soundfile_spec is None or soundfile_spec.origin is None:
+        raise RuntimeError("The locked runtime has no source file for the _soundfile binding.")
+    fingerprints["_soundfile"] = hashlib.sha256(
+        Path(soundfile_spec.origin).read_bytes()
+    ).hexdigest()
     for suffix in required_suffixes:
         member = next(
             (name for normalized, name in names.items() if normalized.endswith(suffix)), None
@@ -136,6 +146,10 @@ def main() -> None:
             *metadata_arguments,
             "--hidden-import",
             "xaa.cli",
+            "--hidden-import",
+            "xaa.runtime.telegram_audio_diagnostic",
+            "--hidden-import",
+            "_soundfile",
             "--hidden-import",
             "xaa.extensions.pypi_resolver_worker",
             "--hidden-import",
