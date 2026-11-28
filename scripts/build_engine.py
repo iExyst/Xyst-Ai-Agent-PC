@@ -119,6 +119,11 @@ def main() -> None:
             "_soundfile_data",
             "--collect-all",
             "playwright",
+            # pypdfium2 exposes NumPy only through an unused lazy convenience
+            # API; the Windows Ogg decoder calls _soundfile's CFFI binding
+            # directly. Excluding NumPy avoids bundling its large OpenBLAS DLL.
+            "--exclude-module",
+            "numpy",
             "--collect-all",
             "acp",
             *metadata_arguments,
