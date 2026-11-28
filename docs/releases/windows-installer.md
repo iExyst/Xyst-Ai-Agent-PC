@@ -1,3 +1,6 @@
+## Latest exact-source hosted installer acceptance (2026-11-28)
+
+Exact-source Windows workflow [46113987040](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46113987040) passed on product commit `f2211004`: 1,866 tests passed and 50 were skipped, with configured browser/desktop, static/type, API contract, Hermes inventory, SDK, and process-recovery checks. Exact-source installer workflow [46113994922](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46113994922) passed frozen and installed Windows checks, including standard-user installation, backup/restore, and uninstall. Its unsigned setup executable is 83,353,564 bytes with SHA-256 `94da873719e42b192816f9b631dea112d8fc5b7a9338993d8caf1a5ffc8fdec8`, matching the package manifest; the installer and reports are retained under [`.acceptance/hosted-installer-46113994922/`](../../.acceptance/hosted-installer-46113994922/). This verifies the package on a hosted Windows runner, not an independent customer machine. Signing, legal review, independent-machine installation, live-model acceptance, and live Telegram interoperability remain open.
 # Unsigned Windows installer development build
 
 ## Latest exact-source hosted installer acceptance (2026-11-28)
