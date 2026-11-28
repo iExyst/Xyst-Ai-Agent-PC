@@ -3499,7 +3499,7 @@
         "engine/xaa/channels/telegram.py"
       ],
       "xaa_implementation_status": "implemented_partial",
-      "xaa_implemented_scope": "Authorized text ingress, private pairing, durable deduplication and text delivery; live service acceptance and media/topic parity remain open.",
+      "xaa_implemented_scope": "Authorized private text ingress and bounded JPEG/PNG photo ingress for vision-capable models, private pairing, durable update deduplication and reply delivery. Unsupported photos receive runless notices. Live bot acceptance, other media and topic parity remain open.",
       "transport_observation": "python-telegram-bot inbound updates and outbound replies",
       "acceptance_id": "CHANNEL-TELEGRAM",
       "acceptance": "Verify bot identity, sender allowlist, DM/group/topic separation, update replay after restart and one authorized text reply; test media independently.",

@@ -1,3 +1,7 @@
+## Refresh the generated Telegram capability inventory (2026-11-28)
+
+The source-backed Hermes channel inventory still described X.A.A.'s Telegram scope as text-only after bounded private-photo support landed. Updated the inventory generator and requirements page to identify vision-gated JPEG/PNG photos, runless unsupported-image notices, and the remaining live-bot, other-media, and topic gaps; regenerated `channel-inventory.json`. `uv run python scripts/audit_channel_inventory.py --check` and `git diff --check` pass. Hosted verification is pending; no runtime behavior changed in this audit-only slice.
+
 ## Distinguish unavailable vision from invalid Telegram photos (2026-11-28)
 
 Telegram now records whether a paired user's photo was rejected because the selected model lacks vision or because image validation failed. The durable reply gives capability guidance only in the first case; invalid files receive format and size guidance. Both remain deduplicated, runless outbox notices that create no artifact and can be reconciled after an ambiguous send. The focused Telegram suite passes (32 tests), Ruff lint and formatting pass, production Pyright passes, and `git diff --check` passes. Hosted verification of this refinement is pending. No live bot or model was used.

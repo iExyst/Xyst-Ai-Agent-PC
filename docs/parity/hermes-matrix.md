@@ -2,6 +2,10 @@
 
 Paired private users receive a fixed explanation when a photo cannot be processed because vision is unavailable or image validation fails. The runless notice uses the same durable outbox, update deduplication, and unknown-delivery reconciliation as run replies, and a confirmed sent notice is retained in session history without a run association. Focused Telegram tests (31), Ruff, production Pyright and diff checks pass. Exact-source Windows workflow [46099486225](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46099486225) passed on `9d2d770f` with 1,858 tests passed and 50 skipped, plus configured browser/static, official A2A SDK, and process-recovery checks. No live bot was used. This improves the implemented photo path but does not promote Telegram or Hermes channel parity beyond partial; live bot interoperability and other media remain open.
 
+## Refresh Telegram scope in the generated channel inventory (2026-11-28)
+
+The generated inventory still called X.A.A.'s Telegram implementation text-only after bounded, vision-gated private JPEG/PNG support landed. Updated its source generator, generated record and requirements page to describe the supported photo path and runless rejection notices, while retaining live bot, other media, and topic behavior as open. `uv run python scripts/audit_channel_inventory.py --check` and `git diff --check` pass. This corrects parity reporting only; no feature is promoted to full parity.
+
 ## Distinguish invalid Telegram photos from unavailable vision (2026-11-28)
 
 The paired-user photo rejection flow now records distinct runless states for a model without vision capability and an invalid/oversized raster, and sends guidance appropriate to each cause through the durable outbox. Regressions verify the invalid-image notice does not tell a vision-capable user to change models; all 32 Telegram tests, Ruff, production Pyright and diff checks pass. Hosted verification is pending. No live bot was used; channel parity remains partial.
