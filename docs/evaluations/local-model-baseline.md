@@ -29,3 +29,17 @@ A repeat with the current runtime and the same three installed model identifiers
 These results are not directly comparable to the 2026-11-03 baseline: LM Studio already had multiple model instances loaded before the run, including two 9B instances; host GPU memory samples were around 15.4 GiB of 16.3 GiB. This was not a controlled idle-machine comparison, and host snapshots are not peak or per-model measurements. The follow-up one-repetition 9B run after the harness fix also failed both trials (`.acceptance/ad33a895-0772-448a-b994-d431395a95e3/report.json`), with one provider error and one timeout while reusing an existing 16,384-context instance. It did not load or unload that instance. The preloaded instance counts for the three benchmarked models were restored after the first refreshed attempt; current configurations are recorded in LM Studio itself, not asserted from benchmark outcomes.
 
 The harness now reads LM Studio's native loaded-instance inventory, reuses a preexisting instance (preferring the requested context), records the selected instance/context, and unloads only an instance it loaded itself. This avoids changing an existing instance's lifecycle and reports a different existing context honestly. A default remains unselected. The newer sample shows that the old four-trial 9B success is not a reliability guarantee; an idle, serialized, repeated benchmark with process-attributed peak resource metrics is still needed before recommending a default.
+
+## Latest bounded comparison (2026-11-28)
+
+Ran `uv run python scripts/benchmark_local_models.py --repetitions 1` on Windows 11 build 26200 with an AMD Family 26 processor and RTX 5080 (driver 621.24). The two synthetic cases per model produced the following one-sample outcomes:
+
+| Model identifier | Read nonce | Targeted edit | Median trial seconds | Median request seconds |
+|---|---:|---:|---:|---:|
+| `qwen2.5-0.5b-instruct` | 0/1 | 0/1 | 2.989 | 0.304 |
+| `qwen3-0.6b` | 1/1 | 0/1 | 17.256 | 1.263 |
+| `qwen/qwen3.5-9b` | 1/1 | 0/1 | 12.045 | 2.666 |
+
+All 12 proposed tool calls were parseable and schema-valid; no completion envelope was invalid. Both 0.5B runs stopped with `filesystem_worker_interrupted` before a journaled public tool call. The 0.6B edit hallucinated `expected_sha256` rather than using the hash from its read, was safely rejected as `file_changed`, repeatedly claimed the file had changed despite independent verification, and exhausted context. The 9B edit run stopped at `diagnostic_output_limit` before task execution. Both read-nonce successes reached candidate verification with the exact random marker and no file edits. The 9B trial reused a preexisting 32,768-context instance; the other models were loaded by the harness at 16,384 context. No instance was unloaded if it existed before the run.
+
+Full per-trial tokens, request timings, host-resource samples, state journals, and fixture evidence are in `.acceptance/e41d302d-7f54-4b6d-b463-fd1bf1e819ba/report.json` and its `trial-*` subdirectories. Resource samples are host-wide, not process-attributed. This one repetition measures observed bounded behavior, not a stable completion rate; tool-schema validity did not predict success. It does not justify a production default. Broader repeated reliability, streaming, cancellation/recovery, complex coding, multi-agent behavior, and per-process peak-resource measurements remain open.
