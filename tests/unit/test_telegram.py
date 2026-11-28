@@ -467,6 +467,47 @@ def test_confirmed_runless_image_notice_is_saved_in_linked_session(
     ]
 
 
+def test_confirmed_run_reply_is_saved_once_in_linked_session(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "telegram-run-reply-reconcile.sqlite3")
+    channel = TelegramStore(runs)
+    pair_user(channel)
+    result = channel.process_update(
+        IDENTITY, private_update(2, 123, "Tell me something"), model="fixture/model"
+    )
+    run_id = str(result["run_id"])
+    with runs.connection() as connection:
+        connection.execute("UPDATE runs SET state='completed' WHERE id=?", (run_id,))
+        RunStore.record_event(
+            connection,
+            run_id,
+            "model.message",
+            {"message": {"role": "assistant", "content": "Confirmed answer."}},
+        )
+        connection.execute(
+            "UPDATE telegram_updates SET delivery_state='unknown' WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        )
+
+    assert channel.reconcile_delivery(IDENTITY.account_id, 2, "delivered")
+    assert not channel.reconcile_delivery(IDENTITY.account_id, 2, "delivered")
+    with runs.connection() as connection:
+        row = connection.execute(
+            "SELECT session_id,run_id FROM telegram_updates WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        ).fetchone()
+        messages = connection.execute(
+            "SELECT run_id,role,content FROM messages WHERE session_id=? ORDER BY sequence",
+            (row["session_id"],),
+        ).fetchall()
+    assert row["run_id"] == run_id
+    assert [(item["run_id"], item["role"], item["content"]) for item in messages] == [
+        (run_id, "user", "Tell me something"),
+        (run_id, "assistant", "Confirmed answer."),
+    ]
+
+
 def test_abandoned_send_intent_becomes_unknown_after_restart(workspace_tmp_path: Path) -> None:
     runs = RunStore(workspace_tmp_path / "telegram-recovery.sqlite3")
     channel = TelegramStore(runs)

@@ -295,11 +295,11 @@ def main() -> None:
                     (IDENTITY.account_id,),
                 ).fetchone()[0]
             )
-    runless_saved_message = False
-    if image_rejection:
+    session_message_saved = False
+    if not scheduled:
         reopened_channel = TelegramStore(reopened)
         if not reopened_channel.reconcile_delivery(IDENTITY.account_id, 2, "delivered"):
-            raise RuntimeError("Could not owner-reconcile the accepted image notice.")
+            raise RuntimeError("Could not owner-reconcile the accepted Telegram message.")
     with reopened.connection() as connection:
         if scheduled:
             assert execution_id is not None
@@ -316,26 +316,31 @@ def main() -> None:
                     (IDENTITY.account_id,),
                 ).fetchone()[0]
             )
-        if image_rejection:
+        if not scheduled:
             row = connection.execute(
                 "SELECT session_id,run_id FROM telegram_updates WHERE account_id=? AND update_id=2",
                 (IDENTITY.account_id,),
             ).fetchone()
-            if row is None or row["run_id"] is not None:
+            if row is None or (image_rejection and row["run_id"] is not None):
                 raise RuntimeError("Runless image rejection unexpectedly created a run.")
+            if not image_rejection and row["run_id"] != run_id:
+                raise RuntimeError("Inbound reply recovery lost its run association.")
             saved = connection.execute(
                 "SELECT content FROM messages WHERE session_id=? AND role='assistant' ORDER BY sequence DESC LIMIT 1",
                 (row["session_id"],),
             ).fetchone()
-            runless_saved_message = bool(
-                saved is not None
-                and saved["content"]
-                == "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
+            expected_saved_text = (
+                "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
+                if image_rejection
+                else "Diagnostic result."
+            )
+            session_message_saved = bool(
+                saved is not None and saved["content"] == expected_saved_text
             )
     passed = (
         before_reconcile == "sending"
         and state_after_restart == "unknown"
-        and after_reconcile == ("sent" if image_rejection else "unknown")
+        and after_reconcile == ("unknown" if scheduled else "sent")
         and len(accepted_before) == 1
         and accepted_after == accepted_before
         and json.loads(accepted_after[0])
@@ -350,7 +355,7 @@ def main() -> None:
                 else "Diagnostic result."
             ),
         }
-        and (not image_rejection or runless_saved_message)
+        and (scheduled or session_message_saved)
     )
     report: dict[str, Any] = {
         "passed": passed,
@@ -366,11 +371,11 @@ def main() -> None:
         "run_id": run_id,
         "delivery_state_before_restart": before_reconcile,
         "delivery_state_after_restart": state_after_restart,
-        "delivery_state_after_owner_reconciliation": after_reconcile if image_rejection else None,
+        "delivery_state_after_owner_reconciliation": after_reconcile if not scheduled else None,
         "accepted_effects_before_restart": len(accepted_before),
         "accepted_effects_after_restart": len(accepted_after),
-        "runless_notice_saved_after_owner_reconciliation": runless_saved_message
-        if image_rejection
+        "session_message_saved_after_owner_reconciliation": session_message_saved
+        if not scheduled
         else None,
     }
     (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
