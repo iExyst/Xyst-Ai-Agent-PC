@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import os
 import subprocess
 import wave
@@ -34,7 +35,7 @@ try {
         return
     }
     if ($result.Text.Length -gt 48000) { throw 'The recognized text exceeds the response limit.' }
-    [Console]::Out.Write((@{text=$result.Text; culture=$recognizerInfo.Culture.Name} | ConvertTo-Json -Compress))
+    [Console]::Out.Write((@{text=$result.Text; culture=$recognizerInfo.Culture.Name; confidence=$result.Confidence} | ConvertTo-Json -Compress))
 }
 finally {
     $recognizer.Dispose()
@@ -45,6 +46,7 @@ _POWERSHELL_ENCODED = base64.b64encode(_POWERSHELL_PROGRAM.encode("utf-16le")).d
 _MAX_RESPONSE_BYTES = 64 * 1024
 _RECOGNITION_TIMEOUT_SECONDS = 40
 MAX_TELEGRAM_OPUS_SECONDS = 60
+MIN_SPEECH_CONFIDENCE = 0.15
 
 
 def decode_telegram_ogg_opus(audio: bytes) -> bytes:
@@ -220,4 +222,16 @@ async def transcribe_windows_wav(audio: bytes) -> str:
     text = result.get("text")
     if not isinstance(text, str) or not text.strip() or len(text) > MAX_TRANSCRIPT_BYTES:
         raise TranscriptionError("Windows speech recognition returned no usable transcript.")
+    confidence = result.get("confidence")
+    if (
+        isinstance(confidence, bool)
+        or not isinstance(confidence, (float, int))
+        or not math.isfinite(confidence)
+        or not 0 <= confidence <= 1
+    ):
+        raise TranscriptionError("Windows speech recognition returned an invalid confidence score.")
+    if confidence < MIN_SPEECH_CONFIDENCE:
+        raise TranscriptionError(
+            "Windows recognized this audio with low confidence. Speak clearly and try again, or select a local speech service."
+        )
     return text.strip()

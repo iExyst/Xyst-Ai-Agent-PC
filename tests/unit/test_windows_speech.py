@@ -80,7 +80,10 @@ async def test_transcribes_with_installed_windows_recognizer_and_bounded_environ
         return SimpleNamespace(
             returncode=0,
             communicate=AsyncMock(
-                return_value=(json.dumps({"text": "hello world"}).encode("utf-8"), b"")
+                return_value=(
+                    json.dumps({"text": "hello world", "confidence": 0.92}).encode("utf-8"),
+                    b"",
+                )
             ),
             kill=lambda: None,
             wait=AsyncMock(),
@@ -144,6 +147,27 @@ async def test_windows_recognizer_reports_no_detected_speech(
     monkeypatch.setattr(windows_speech.asyncio, "create_subprocess_exec", create_process)
 
     with pytest.raises(TranscriptionError, match="did not detect speech.*microphone input"):
+        await windows_speech.transcribe_windows_wav(wav_bytes())
+
+
+@pytest.mark.asyncio
+async def test_windows_recognizer_rejects_low_confidence_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def create_process(*_args: object, **_kwargs: object) -> SimpleNamespace:
+        response = json.dumps({"text": "MIFF Callahan", "confidence": 0.0538807958})
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(response.encode("utf-8"), b"")),
+            kill=lambda: None,
+            wait=AsyncMock(),
+        )
+
+    monkeypatch.setattr(windows_speech.os, "name", "nt")
+    monkeypatch.setattr(windows_speech.Path, "is_file", lambda _self: True)
+    monkeypatch.setattr(windows_speech.asyncio, "create_subprocess_exec", create_process)
+
+    with pytest.raises(TranscriptionError, match="recognized this audio with low confidence"):
         await windows_speech.transcribe_windows_wav(wav_bytes())
 
 
