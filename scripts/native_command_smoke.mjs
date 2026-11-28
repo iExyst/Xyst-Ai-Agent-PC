@@ -30,12 +30,13 @@ const port=listener.address().port;await new Promise((resolve,reject)=>listener.
 const dataDirectory=path.join(root,'data');
 const appDataDirectory=path.join(root,'appdata');
 const localAppDataDirectory=path.join(root,'localappdata');
-await mkdir(appDataDirectory,{recursive:true});await mkdir(localAppDataDirectory,{recursive:true});
-const logPath=path.join(localAppDataDirectory,'dev.xyst.xaa','logs','engine.log');
+const appLogDirectory=path.join(root,'logs');
+await mkdir(appDataDirectory,{recursive:true});await mkdir(localAppDataDirectory,{recursive:true});await mkdir(appLogDirectory,{recursive:true});
+const logPath=path.join(appLogDirectory,'engine.log');
 const priorLog=(await readFile(logPath,'utf8').catch(()=>'' )).length;
 const nativeEnv=Object.fromEntries(Object.entries(process.env).filter(([key])=>!['PATH','PYTHONPATH','VIRTUAL_ENV'].includes(key.toUpperCase())));
-nativeEnv.PATH=path.join(process.env.SystemRoot,'System32');
-const proc=spawn(desktopPath,[],{windowsHide:true,stdio:'ignore',env:{...nativeEnv,XAA_TEST_HIDDEN:'1',APPDATA:appDataDirectory,LOCALAPPDATA:localAppDataDirectory,XAA_DATA_DIR:dataDirectory,XAA_EXACT_CONTEXT:'1',WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`}});
+nativeEnv.PATH=path.join(process.env.SystemRoot,'System32');nativeEnv.XAA_TEST_LOG_DIR=appLogDirectory;
+const proc=spawn(desktopPath,[],{windowsHide:true,stdio:'ignore',env:{...nativeEnv,XAA_TEST_HIDDEN:'1',XAA_TEST_ACCEPTANCE:'1',APPDATA:appDataDirectory,LOCALAPPDATA:localAppDataDirectory,XAA_DATA_DIR:dataDirectory,XAA_EXACT_CONTEXT:'1',WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`}});
 let browser,connection,instance;
 const report={passed:false,distribution,model,build_sha256:binaryHashes,scope:installedDesktop?'Installed Tauri package + bundled frozen engine + real LM Studio/WSL; isolated install/data directory; not clean-machine/upgrade/reboot acceptance':'Native development Tauri WebView + bundled frozen engine + real LM Studio/WSL; no connection shim; not installed/clean-machine/upgrade/reboot acceptance',fixture_review_automated:true,project_fix_requested:fixProject};
 try{
@@ -45,8 +46,15 @@ try{
   }
   if(!browser)throw new Error('No native WebView debugging connection');
   const page=browser.contexts()[0].pages()[0];
-  await page.getByLabel('Local model').waitFor({timeout:30000});
-  await expect(page.getByLabel('Local model')).toHaveValue('');
+  await page.getByRole('button',{name:/^Model: Choose a model\. Open model setup\.$/}).click();
+  const modelSelect=page.getByLabel('Local model or compatible provider model');
+  await modelSelect.waitFor({timeout:30000});
+  await modelSelect.selectOption(model);
+  await page.getByRole('link',{name:'Settings',exact:true}).click();
+  await page.getByLabel('When the main window closes').selectOption('exit_on_close');
+  await page.getByLabel('Workspace permissions').selectOption('workspace');
+  await page.getByRole('link',{name:'Tools & integrations',exact:true}).click();
+  await page.getByText('Command sandbox setup',{exact:true}).click();
   connection=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('engine_connection'));
   const headers={Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'};
   async function api(route,method='GET',data){
@@ -58,17 +66,16 @@ try{
   report.app_owned_api_credentials_verified=true;
   const inventory=await api('/models');if(!inventory.some(item=>item.id===model))throw new Error('Requested model is not installed; no download is permitted');
   instance=(await api('/models/load','POST',{model,context_length:32768})).instance_id;
-  await page.getByText('Command sandbox setup',{exact:true}).click();
   await page.getByRole('button',{name:'Find installed distributions',exact:true}).click();
   await page.getByLabel('Execution distribution').selectOption(distribution);
   const readiness=page.waitForResponse(response=>new URL(response.url()).pathname==='/execution/readiness');
   await page.getByRole('button',{name:'Check sandbox',exact:true}).click();
   const ready=await(await readiness).json();if(ready.state!=='ready')throw new Error('Native frozen sandbox readiness failed');
   report.profile_sha256=ready.profile_sha256;report.checks=ready.checks;
-  await page.getByLabel('Workspace permissions').selectOption('workspace');
+  await page.getByRole('link',{name:'New objective',exact:true}).click();
   await page.getByLabel('Workspace path').fill(project);
-  await page.getByLabel('Local model').selectOption(model);
   await page.getByLabel('Objective',{exact:true}).fill(fixProject?'The project percentage calculator returns the wrong answer: percentage(200,15) should be 30. Inspect calculator.py and check.py, diagnose and fix calculator.py using the workspace file tools, then execute the existing check.py exactly once using workspace_run_command with argv ["/usr/bin/python3", "-I", "check.py"] and max_seconds 10. Do not edit check.py, create extra files or save a plan. After the check passes, report the changed filename, the fix and the entire NATIVE-CHECK- stdout line. All retained edits must use workspace file tools because command changes are discarded.':'Please execute the existing project check.py using workspace_run_command with argv ["/usr/bin/python3", "-I", "check.py"] and max_seconds 10. Tell me what it printed in stdout. Include the entire NATIVE-CHECK- line in your final answer. Use only this one command. Do not read or edit files or save a plan.');
+  await page.getByText('Permissions, attachments and run limits',{exact:true}).click();
   await page.getByText('Run limits',{exact:true}).click();
   await page.getByLabel('Iteration limit',{exact:true}).fill(fixProject?'10':'4');
   await page.getByLabel('Time limit (seconds)',{exact:true}).fill(fixProject?'300':'180');
@@ -144,10 +151,10 @@ try{
   if(!stopped)throw new Error('Owned native engine remains reachable');
   const shutdown=(await readFile(logPath,'utf8').catch(()=>'' )).slice(priorLog);
   if(shutdown)await writeFile(path.join(root,'shutdown.log'),shutdown);
-  const engineDatabase=path.join(localAppDataDirectory,'XAA','xaa.sqlite3');
+  const engineDatabase=path.join(dataDirectory,'XAA','xaa.sqlite3');
   if(!(await readFile(engineDatabase).catch(()=>null)))throw new Error('Engine did not use the isolated Windows data profile.');
   if(process.env.XAA_DATA_DIR&&await readFile(path.join(process.env.XAA_DATA_DIR,'XAA','xaa.sqlite3')).then(()=>true).catch(()=>false))throw new Error('Hostile XAA_DATA_DIR redirected engine storage.');
-  report.parent_environment_isolated=true;report.isolated_database_path=engineDatabase;report.native_exit=true;report.engine_stopped=true;report.shutdown_log_captured=shutdown.includes('Application shutdown complete.')&&shutdown.includes('Finished server process');report.graceful_shutdown=true;report.passed=true;
+  report.parent_environment_isolated=true;report.isolated_database_path=engineDatabase;report.native_exit=true;report.engine_stopped=true;report.shutdown_log_captured=shutdown.length>0;report.graceful_shutdown=shutdown.includes('Application shutdown complete.')&&shutdown.includes('Finished server process');if(!report.graceful_shutdown)throw new Error('Native engine shutdown was not confirmed in the isolated log.');report.passed=true;
 }catch(error){report.error=String(error);await browser?.contexts()[0]?.pages()[0]?.screenshot({path:path.join(root,'failure.png'),fullPage:true}).catch(()=>{});throw error;}
 finally{
   if(instance&&connection)await fetch(connection.base_url+'/models/unload',{method:'POST',headers:{Authorization:`Bearer ${connection.token}`,'Content-Type':'application/json'},body:JSON.stringify({instance_id:instance}),signal:AbortSignal.timeout(20000)}).catch(()=>{});
