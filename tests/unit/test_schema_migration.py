@@ -1027,6 +1027,7 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
             "VALUES ('legacy-preference', 'preference', 'local-user', 'Keep answers concise', 'user', 1.0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 1)"
         )
         connection.execute("DROP TABLE task_identity_memories")
+        connection.execute("DROP TABLE docker_sessions")
         connection.execute("DROP TABLE skill_python_dependency_locks")
         connection.execute("DROP TABLE skill_python_dependency_environments")
         connection.execute("DROP TABLE skill_npm_dependency_locks")
@@ -1046,6 +1047,7 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
         connection.execute("ALTER TABLE memories DROP COLUMN source_uri")
         connection.execute("ALTER TABLE a2a_listener_settings DROP COLUMN tls_cert_path")
         connection.execute("ALTER TABLE a2a_listener_settings DROP COLUMN tls_key_path")
+        connection.execute("DROP TABLE a2a_listener_settings")
         connection.execute("PRAGMA user_version=35")
 
     migrated = RunStore(database)
@@ -1085,6 +1087,8 @@ def test_schema_thirty_five_migrates_procedure_and_schedule_records_through_curr
             "skill_npm_dependency_environments",
             "idempotent_schedule_requests",
             "task_identity_memories",
+            "docker_sessions",
+            "a2a_listener_settings",
             "a2a_outbound_peers",
             "a2a_outbound_tasks",
         }.issubset(tables)
