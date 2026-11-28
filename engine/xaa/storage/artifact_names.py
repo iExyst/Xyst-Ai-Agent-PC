@@ -16,6 +16,7 @@ _EXTENSIONS = {
     "text/markdown": "md",
     "text/csv": "csv",
     "audio/wav": "wav",
+    "audio/ogg": "ogg",
 }
 
 

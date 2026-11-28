@@ -16,3 +16,7 @@ def test_upload_filename_uses_a_bounded_fallback():
     result = safe_upload_filename(f"{'a' * 240}.md", "text/markdown")
     assert len(result) <= 180
     assert result.endswith(".md")
+
+
+def test_ogg_voice_notes_use_safe_ogg_extension():
+    assert safe_upload_filename("voice-note.bin", "audio/ogg") == "voice-note.ogg"

@@ -1895,6 +1895,7 @@ class RunStore:
             "text/markdown": "md",
             "text/csv": "csv",
             "audio/wav": "wav",
+            "audio/ogg": "ogg",
         }
         if media_type not in extensions or not content or len(content) > 4 * 1024 * 1024:
             raise ValueError("Document attachment is outside the supported size or media limits.")

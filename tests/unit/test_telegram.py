@@ -1216,6 +1216,98 @@ def test_service_transcribes_bounded_wav_once_for_paired_private_user(
     assert runs.document_text(row["run_id"]) == "The meeting starts at noon."
 
 
+def test_service_transcribes_bounded_ogg_voice_note_once_for_paired_private_user(
+    workspace_tmp_path: Path,
+) -> None:
+    import asyncio
+    from io import BytesIO
+
+    import numpy as np
+    import soundfile as sf
+
+    runs = RunStore(workspace_tmp_path / "telegram-ogg-voice-cycle.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store)
+    with runs.connection() as connection:
+        now = utc_now()
+        connection.execute(
+            "INSERT INTO provider_profiles VALUES ('lm-studio','lm-studio','http://127.0.0.1:1234','fixture/model',NULL,NULL,?,?)",
+            (now, now),
+        )
+    encoded = BytesIO()
+    sf.write(
+        encoded,
+        np.zeros((48_000, 1), dtype="int16"),
+        48_000,
+        format="OGG",
+        subtype="OPUS",
+    )
+    source = encoded.getvalue()
+    update = {
+        "update_id": 4,
+        "message": {
+            "voice": {
+                "file_id": "fixture-voice",
+                "mime_type": "audio/ogg",
+                "file_size": len(source),
+                "duration": 1,
+            },
+            "from": {"id": 123},
+            "chat": {"id": 123, "type": "private"},
+        },
+    }
+
+    class FixtureApi(FakeTelegramBotApi):
+        def __init__(self, token: str) -> None:
+            super().__init__(token)
+            self.fetched: list[str] = []
+
+        async def get_updates(self, _offset):
+            return [update, update]
+
+        async def get_file(self, file_id):
+            self.fetched.append(file_id)
+            return "voice/fixture.ogg"
+
+        async def download_file(self, _path, *, max_bytes):
+            assert max_bytes == MAX_TELEGRAM_DOCUMENT_BYTES
+            return source
+
+    class Credentials(MemoryCredentials):
+        def __init__(self) -> None:
+            super().__init__()
+            self.values["telegram-bot"] = "fixture-token"
+
+    transcribed: list[bytes] = []
+
+    async def transcriber(audio: bytes) -> str:
+        transcribed.append(audio)
+        return "Voice note transcript."
+
+    api = FixtureApi("fixture-token")
+    submitted: list[str] = []
+    service = TelegramService(
+        runs,
+        Credentials(),
+        submitted.append,
+        api_factory=lambda _token: api,
+        ogg_transcriber=transcriber,
+    )
+    asyncio.run(service.cycle())
+    with runs.connection() as connection:
+        row = connection.execute(
+            "SELECT run_id,state FROM telegram_updates WHERE account_id=? AND update_id=4",
+            (IDENTITY.account_id,),
+        ).fetchone()
+
+    assert row["state"] == "queued"
+    assert submitted == [row["run_id"]]
+    assert api.fetched == ["fixture-voice"]
+    assert transcribed == [source]
+    assert runs.document_attachment(row["run_id"]) == (source, "audio/ogg", "voice-note.ogg")
+    assert runs.document_text(row["run_id"]) == "Voice note transcript."
+
+
 def test_telegram_rate_limit_above_policy_bound_is_not_retryable() -> None:
     async def scenario() -> None:
         async def handler(_request: httpx.Request) -> httpx.Response:

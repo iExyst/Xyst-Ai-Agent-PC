@@ -23,6 +23,51 @@ def wav_bytes() -> bytes:
     return output.getvalue()
 
 
+def ogg_opus_bytes(seconds: int = 1) -> bytes:
+    from io import BytesIO
+
+    import numpy as np
+    import soundfile as sf
+
+    output = BytesIO()
+    sf.write(
+        output,
+        np.zeros((48_000 * seconds, 1), dtype="int16"),
+        48_000,
+        format="OGG",
+        subtype="OPUS",
+    )
+    return output.getvalue()
+
+
+def test_decodes_bounded_telegram_ogg_opus_to_mono_pcm_wav() -> None:
+    import wave
+    from io import BytesIO
+
+    decoded = windows_speech.decode_telegram_ogg_opus(ogg_opus_bytes())
+    with wave.open(BytesIO(decoded), "rb") as audio:
+        assert audio.getnchannels() == 1
+        assert audio.getsampwidth() == 2
+        assert audio.getframerate() == 16_000
+        assert audio.getnframes() == 16_000
+
+
+@pytest.mark.parametrize("audio", [b"", b"not an ogg file"])
+def test_rejects_invalid_telegram_ogg_opus(audio: bytes) -> None:
+    with pytest.raises(TranscriptionError):
+        windows_speech.decode_telegram_ogg_opus(audio)
+
+
+def test_rejects_telegram_ogg_opus_above_size_limit() -> None:
+    with pytest.raises(TranscriptionError, match="4 MiB"):
+        windows_speech.decode_telegram_ogg_opus(b"x" * (4 * 1024 * 1024 + 1))
+
+
+def test_rejects_telegram_ogg_opus_above_duration_limit() -> None:
+    with pytest.raises(TranscriptionError, match="60 seconds"):
+        windows_speech.decode_telegram_ogg_opus(ogg_opus_bytes(seconds=61))
+
+
 @pytest.mark.asyncio
 async def test_transcribes_with_installed_windows_recognizer_and_bounded_environment(
     monkeypatch: pytest.MonkeyPatch,

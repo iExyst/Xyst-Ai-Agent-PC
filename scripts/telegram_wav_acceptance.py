@@ -1,4 +1,4 @@
-"""Exercise Telegram WAV ingress through the installed Windows offline recognizer."""
+"""Exercise Telegram WAV and Ogg/Opus ingress through Windows offline speech."""
 
 from __future__ import annotations
 
@@ -39,10 +39,11 @@ class _Credentials(CredentialStore):
 
 
 class _FixtureBot:
-    def __init__(self, token: str, audio: bytes) -> None:
+    def __init__(self, token: str, audio: bytes, *, ogg_opus: bool = False) -> None:
         if token != "fixture-token":
             raise AssertionError("Unexpected Telegram credential.")
         self.audio = audio
+        self.ogg_opus = ogg_opus
         self.get_file_calls: list[str] = []
         self.download_calls = 0
 
@@ -56,15 +57,25 @@ class _FixtureBot:
         return IDENTITY
 
     async def get_updates(self, _offset: int | None) -> list[dict[str, object]]:
+        media: dict[str, object] = (
+            {
+                "file_id": "fixture-voice",
+                "mime_type": "audio/ogg",
+                "file_size": len(self.audio),
+                "duration": 3,
+            }
+            if self.ogg_opus
+            else {
+                "file_id": "fixture-wav",
+                "file_name": "synthetic-hello.wav",
+                "mime_type": "audio/wav",
+                "file_size": len(self.audio),
+            }
+        )
         update: dict[str, object] = {
             "update_id": 2,
             "message": {
-                "document": {
-                    "file_id": "fixture-wav",
-                    "file_name": "synthetic-hello.wav",
-                    "mime_type": "audio/wav",
-                    "file_size": len(self.audio),
-                },
+                "voice" if self.ogg_opus else "document": media,
                 "from": {"id": 123},
                 "chat": {"id": 123, "type": "private"},
             },
@@ -73,11 +84,11 @@ class _FixtureBot:
 
     async def get_file(self, file_id: str) -> str:
         self.get_file_calls.append(file_id)
-        return "documents/synthetic-hello.wav"
+        return "voice/synthetic-hello.ogg" if self.ogg_opus else "documents/synthetic-hello.wav"
 
     async def download_file(self, _path: str, *, max_bytes: int) -> bytes:
         if max_bytes != MAX_TELEGRAM_DOCUMENT_BYTES:
-            raise AssertionError("Telegram WAV must use the document download bound.")
+            raise AssertionError("Telegram audio must use the bounded document download path.")
         self.download_calls += 1
         return self.audio
 
@@ -134,7 +145,8 @@ $stream.Dispose()
         raise RuntimeError("Windows returned invalid synthetic speech data.") from None
 
 
-async def _accept(audio: bytes, root: Path) -> dict[str, object]:
+async def _accept(audio: bytes, root: Path, *, ogg_opus: bool = False) -> dict[str, object]:
+    root.mkdir(parents=True, exist_ok=True)
     runs = RunStore(root / "runs.sqlite3")
     store = TelegramStore(runs)
     store.save_bot(IDENTITY)
@@ -160,7 +172,7 @@ async def _accept(audio: bytes, root: Path) -> dict[str, object]:
             (now, now),
         )
 
-    fixture = _FixtureBot("fixture-token", audio)
+    fixture = _FixtureBot("fixture-token", audio, ogg_opus=ogg_opus)
     submitted: list[str] = []
     service = TelegramService(
         runs,
@@ -179,9 +191,11 @@ async def _accept(audio: bytes, root: Path) -> dict[str, object]:
     run_id = str(update["run_id"])
     attached = runs.document_attachment(run_id)
     transcript = runs.document_text(run_id)
-    if attached != (audio, "audio/wav", "synthetic-hello.wav") or not transcript:
+    media_type = "audio/ogg" if ogg_opus else "audio/wav"
+    filename = "voice-note.ogg" if ogg_opus else "synthetic-hello.wav"
+    if attached != (audio, media_type, filename) or not transcript:
         raise RuntimeError(
-            "Telegram WAV source and transcript artifacts were not retained exactly."
+            "Telegram audio source and transcript artifacts were not retained exactly."
         )
 
     def normalize(value: str) -> str:
@@ -196,7 +210,8 @@ async def _accept(audio: bytes, root: Path) -> dict[str, object]:
         "audio_artifact_byte_exact": attached[0] == audio,
         "transcript": transcript,
         "normalized_exact_match": normalize(transcript) == "hello world",
-        "duplicate_update_skipped_media": fixture.get_file_calls == ["fixture-wav"]
+        "duplicate_update_skipped_media": fixture.get_file_calls
+        == (["fixture-voice"] if ogg_opus else ["fixture-wav"])
         and fixture.download_calls == 1,
         "submitted_run_count": len(submitted),
         "credential_store_written": False,
@@ -209,6 +224,23 @@ async def _accept(audio: bytes, root: Path) -> dict[str, object]:
     return report
 
 
+def _synthetic_ogg_opus(wav_audio: bytes) -> bytes:
+    from io import BytesIO
+
+    import numpy as np
+    import soundfile as sf
+
+    samples, sample_rate = sf.read(BytesIO(wav_audio), dtype="float32", always_2d=True)
+    mono = samples.mean(axis=1)
+    target_count = round(len(mono) * 48_000 / sample_rate)
+    source_positions = np.arange(len(mono), dtype="float64")
+    target_positions = np.linspace(0, len(mono) - 1, target_count)
+    resampled = np.interp(target_positions, source_positions, mono)
+    output = BytesIO()
+    sf.write(output, resampled, 48_000, format="OGG", subtype="OPUS")
+    return output.getvalue()
+
+
 def main() -> None:
     if sys.platform != "win32":
         raise SystemExit("Telegram WAV acceptance requires Windows offline speech recognition.")
@@ -216,18 +248,27 @@ def main() -> None:
     powershell = system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     if not powershell.is_file():
         raise SystemExit("Windows PowerShell is not available.")
-    root = Path(".acceptance") / f"telegram-wav-{uuid4()}"
+    root = Path(".acceptance") / f"telegram-audio-{uuid4()}"
     root.mkdir(parents=True, exist_ok=False)
     audio = _synthetic_wav(powershell)
     (root / "synthetic-hello.wav").write_bytes(audio)
-    report = asyncio.run(_accept(audio, root))
-    report["synthetic_audio_bytes"] = len(audio)
+    wav_report = asyncio.run(_accept(audio, root / "wav"))
+    ogg_audio = _synthetic_ogg_opus(audio)
+    (root / "synthetic-hello.ogg").write_bytes(ogg_audio)
+    ogg_report = asyncio.run(_accept(ogg_audio, root / "ogg", ogg_opus=True))
+    report: dict[str, object] = {
+        "passed": bool(wav_report["passed"] and ogg_report["passed"]),
+        "wav": wav_report,
+        "ogg_opus": ogg_report,
+        "synthetic_wav_bytes": len(audio),
+        "synthetic_ogg_bytes": len(ogg_audio),
+    }
     report["tested_at"] = datetime.now(UTC).isoformat()
     report_path = root / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({**report, "report_path": str(report_path)}, indent=2))
     if not report["passed"]:
-        raise SystemExit("Windows offline speech did not match the synthetic phrase.")
+        raise SystemExit("Windows offline Telegram audio acceptance did not match the phrase.")
 
 
 if __name__ == "__main__":

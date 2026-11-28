@@ -41,6 +41,7 @@ TELEGRAM_DOCUMENT_MEDIA_TYPES = {
     "text/markdown",
     "text/csv",
     "audio/wav",
+    "audio/ogg",
 }
 TELEGRAM_SEND_CONTRACT: dict[str, Any] = {
     "name": "telegram.send_message",
@@ -584,7 +585,7 @@ class TelegramStore:
         if document_bytes is not None and not content:
             content = (
                 "Transcribe and respond to the attached audio."
-                if document_media_type == "audio/wav"
+                if document_media_type in {"audio/wav", "audio/ogg"}
                 else "Summarize the attached document."
             )
         with self.runs.connection() as connection:
@@ -1093,6 +1094,7 @@ class TelegramService:
         api_factory: Callable[[str], TelegramBotApi] = TelegramBotApi,
         model_catalog: Callable[[], Awaitable[list[Any]]] | None = None,
         audio_transcriber: Callable[[bytes], Awaitable[str]] | None = None,
+        ogg_transcriber: Callable[[bytes], Awaitable[str]] | None = None,
     ) -> None:
         self.runs = runs
         self.store = TelegramStore(runs)
@@ -1104,7 +1106,12 @@ class TelegramService:
             from xaa.runtime.windows_speech import transcribe_windows_wav
 
             audio_transcriber = transcribe_windows_wav
+        if ogg_transcriber is None and os.name == "nt":
+            from xaa.runtime.windows_speech import transcribe_windows_ogg_opus
+
+            ogg_transcriber = transcribe_windows_ogg_opus
         self.audio_transcriber = audio_transcriber
+        self.ogg_transcriber = ogg_transcriber
         self.task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -1216,21 +1223,30 @@ class TelegramService:
                         else:
                             image_rejection = "image_invalid"
                 document = as_mapping(message.get("document")) if message else None
+                voice = as_mapping(message.get("voice")) if message else None
+                is_voice = document is None and voice is not None
+                media_input = voice if is_voice else document
                 if (
                     image_bytes is None
-                    and document is not None
+                    and media_input is not None
                     and selected_model is not None
                     and self.store.is_authorized_private_update(identity, update)
                 ):
-                    media_type = document.get("mime_type")
-                    file_id = document.get("file_id")
-                    file_size = document.get("file_size")
+                    media_type = "audio/ogg" if is_voice else media_input.get("mime_type")
+                    file_id = media_input.get("file_id")
+                    file_size = media_input.get("file_size")
+                    transcriber = (
+                        self.ogg_transcriber
+                        if is_voice
+                        else self.audio_transcriber
+                        if media_type == "audio/wav"
+                        else None
+                    )
                     if (
                         isinstance(media_type, str)
                         and media_type.lower() in TELEGRAM_DOCUMENT_MEDIA_TYPES
-                        and (
-                            media_type.lower() != "audio/wav" or self.audio_transcriber is not None
-                        )
+                        and (media_type.lower() not in {"audio/wav", "audio/ogg"} or transcriber)
+                        and (not is_voice or media_type.lower() == "audio/ogg")
                         and isinstance(file_id, str)
                         and (
                             file_size is None
@@ -1242,15 +1258,17 @@ class TelegramService:
                             path, max_bytes=MAX_TELEGRAM_DOCUMENT_BYTES
                         )
                         try:
-                            if media_type.lower() == "audio/wav":
+                            if media_type.lower() in {"audio/wav", "audio/ogg"}:
                                 from xaa.runtime.local_transcription import (
                                     MAX_TRANSCRIPT_BYTES,
-                                    validate_wav,
                                 )
 
-                                validate_wav(raw_document)
-                                assert self.audio_transcriber is not None
-                                document_text = await self.audio_transcriber(raw_document)
+                                if media_type.lower() == "audio/wav":
+                                    from xaa.runtime.local_transcription import validate_wav
+
+                                    validate_wav(raw_document)
+                                assert transcriber is not None
+                                document_text = await transcriber(raw_document)
                                 if (
                                     not document_text.strip()
                                     or len(document_text) > MAX_TRANSCRIPT_BYTES
@@ -1265,7 +1283,7 @@ class TelegramService:
                         else:
                             document_bytes = raw_document
                             document_media_type = media_type.lower()
-                            filename = document.get("file_name")
+                            filename = "voice-note.ogg" if is_voice else media_input.get("file_name")
                             document_filename = filename if isinstance(filename, str) else None
                 result = self.store.process_update(
                     identity,

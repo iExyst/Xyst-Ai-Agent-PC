@@ -7,6 +7,8 @@ import base64
 import json
 import os
 import subprocess
+import wave
+from io import BytesIO
 from pathlib import Path
 from typing import cast
 
@@ -39,6 +41,57 @@ finally {
 _POWERSHELL_ENCODED = base64.b64encode(_POWERSHELL_PROGRAM.encode("utf-16le")).decode("ascii")
 _MAX_RESPONSE_BYTES = 64 * 1024
 _RECOGNITION_TIMEOUT_SECONDS = 40
+MAX_TELEGRAM_OPUS_SECONDS = 60
+
+
+def decode_telegram_ogg_opus(audio: bytes) -> bytes:
+    """Decode a bounded Telegram Ogg/Opus voice note to mono 16 kHz PCM WAV."""
+    if not audio or len(audio) > 4 * 1024 * 1024:
+        raise TranscriptionError("Telegram voice notes must be between 1 byte and 4 MiB.")
+    try:
+        import numpy as np
+        import soundfile as sf
+
+        source = BytesIO(audio)
+        info = sf.info(source)
+        if (
+            info.format != "OGG"
+            or info.subtype != "OPUS"
+            or info.samplerate != 48_000
+            or info.channels not in {1, 2}
+            or info.frames < 1
+            or info.frames > 48_000 * MAX_TELEGRAM_OPUS_SECONDS
+        ):
+            raise TranscriptionError(
+                "Telegram voice notes must be mono or stereo Ogg/Opus audio up to 60 seconds."
+            )
+        source.seek(0)
+        samples, sample_rate = sf.read(source, dtype="int16", always_2d=True)
+        if sample_rate != 48_000 or samples.shape != (info.frames, info.channels):
+            raise TranscriptionError("Telegram voice note is truncated or malformed.")
+        mono = samples.astype(np.int32).sum(axis=1) // info.channels
+        remainder = len(mono) % 3
+        if remainder:
+            mono = np.pad(mono, (0, 3 - remainder))
+        resampled = (mono.reshape(-1, 3).sum(axis=1) // 3).astype("<i2")
+        output = BytesIO()
+        with wave.open(output, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(16_000)
+            wav.writeframes(resampled.tobytes())
+        decoded = output.getvalue()
+        validate_wav(decoded)
+        return decoded
+    except TranscriptionError:
+        raise
+    except (RuntimeError, OSError, ValueError, wave.Error, EOFError):
+        raise TranscriptionError("Telegram voice note is not a valid Ogg/Opus recording.") from None
+
+
+async def transcribe_windows_ogg_opus(audio: bytes) -> str:
+    """Decode Telegram Ogg/Opus locally and pass PCM WAV to Windows SAPI."""
+    return await transcribe_windows_wav(decode_telegram_ogg_opus(audio))
 
 
 async def transcribe_windows_wav(audio: bytes) -> str:

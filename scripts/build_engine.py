@@ -32,6 +32,28 @@ def verify_execution_resources(executable: Path) -> dict[str, str]:
     return fingerprints
 
 
+def verify_audio_decoder_resources(executable: Path) -> dict[str, str]:
+    """Require the native Ogg decoder and wheel license files in the frozen engine."""
+    readers = importlib.import_module("PyInstaller.archive.readers")
+    archive = readers.CArchiveReader(str(executable))
+    entries: dict[str, Any] = archive.toc
+    names = {name.replace("\\", "/").lower(): name for name in entries}
+    required_suffixes = (
+        "_soundfile_data/libsndfile_x64.dll",
+        "_soundfile_data/copying",
+        "soundfile-0.14.0.dist-info/license",
+        "numpy-2.5.5.dist-info/licenses/license.txt",
+    )
+    fingerprints: dict[str, str] = {}
+    for suffix in required_suffixes:
+        member = next((name for normalized, name in names.items() if normalized.endswith(suffix)), None)
+        if member is None:
+            raise RuntimeError(f"Frozen engine is missing audio decoder resource {suffix}.")
+        data: bytes = archive.extract(member)
+        fingerprints[suffix] = hashlib.sha256(data).hexdigest()
+    return fingerprints
+
+
 def metadata_copy_arguments(exported_requirements: str) -> list[str]:
     """Copy locked runtime dist-info so read-only metadata checks work in the frozen app."""
     names = {"xaa-engine"}
@@ -92,6 +114,8 @@ def main() -> None:
             "--collect-all",
             "pypdfium2_raw",
             "--collect-all",
+            "_soundfile_data",
+            "--collect-all",
             "playwright",
             "--collect-all",
             "acp",
@@ -122,10 +146,12 @@ def main() -> None:
     )
     executable = destination / "xaa-engine-x86_64-pc-windows-msvc.exe"
     resources = verify_execution_resources(executable)
+    audio_resources = verify_audio_decoder_resources(executable)
     manifest = {
         "engine_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
         "profile_sha256": profile_fingerprint()[0],
         "resource_sha256": resources,
+        "audio_resource_sha256": audio_resources,
     }
     Path("build/execution-resources.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
