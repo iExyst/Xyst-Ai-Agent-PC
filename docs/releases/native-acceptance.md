@@ -1,5 +1,9 @@
 # Native development acceptance
 
+## Telegram WAV ingress with Windows offline recognition
+
+Run `uv run python scripts/telegram_wav_acceptance.py` on Windows. The diagnostic synthesizes a local WAV, pairs a fixture private user, submits duplicate document updates through `TelegramService`, and exercises the installed System.Speech recognizer and run-store artifact path. It requires an exact “Hello world” transcript, byte-identical retained WAV, one queued run, and duplicate suppression before repeated media fetch. Evidence is written under a unique `.acceptance/telegram-wav-<uuid>/` folder. The fixture cannot contact Telegram, writes no OS credentials, sends no messages, and does not invoke a model. It verifies synthetic recognition and adapter wiring; it does not verify human speech, physical microphones, Telegram OGG voice notes, or live bot interoperability.
+
 ## Physical microphone capture
 
 Build the Windows native development app with `npm run build:native:dev`, then run `npm run test:native:physical-mic` (or pass a desktop executable path as the first argument). The smoke launches the actual Tauri/WebView2 app with an isolated profile, enumerates a real Windows audio input after permission, records locally for two seconds from the selected device, creates a WAV attachment only when non-silent input is present, and verifies all capture tracks stop. The report omits the microphone name and device ID. Audio is not submitted to transcription, and no model inference or external service is used. The latest host run enumerated and selected a device but observed zero RMS, rejected silent recording, and created no attachment: `.acceptance/physical-microphone-d20cdd22-130c-4e5d-b173-40b59b8f8a85/report.json`. This verifies silent-capture handling, not successful human-audio capture or transcription compatibility.
