@@ -308,6 +308,9 @@ jobs:
       - name: Verify scheduled Telegram outbox recovery after worker process death
         run: uv run python scripts/telegram_crash_diagnostic.py --scheduled
         timeout-minutes: 2
+      - name: Verify runless Telegram image rejection recovery after worker process death
+        run: uv run python scripts/telegram_crash_diagnostic.py --image-rejection
+        timeout-minutes: 2
       - name: Verify due schedule dispatch after process restart
         run: uv run python scripts/schedule_restart_diagnostic.py
         timeout-minutes: 2

@@ -420,6 +420,53 @@ def test_unknown_delivery_reconciliation_is_account_scoped_atomic_and_audited(
     assert state == "pending"
 
 
+def test_confirmed_runless_image_notice_is_saved_in_linked_session(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "telegram-image-notice-reconcile.sqlite3")
+    channel = TelegramStore(runs)
+    pair_user(channel)
+    result = channel.process_update(
+        IDENTITY,
+        {
+            "update_id": 2,
+            "message": {
+                "photo": [{"file_id": "fixture-image"}],
+                "from": {"id": 123},
+                "chat": {"id": 123, "type": "private"},
+            },
+        },
+        model=None,
+        image_rejection="vision_unavailable",
+    )
+    assert result == {"state": "vision_unavailable", "run_id": None, "duplicate": False}
+    with runs.connection() as connection:
+        connection.execute(
+            "UPDATE telegram_updates SET delivery_state='unknown' WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        )
+
+    assert channel.reconcile_delivery(IDENTITY.account_id, 2, "delivered")
+    with runs.connection() as connection:
+        update = connection.execute(
+            "SELECT session_id,run_id,delivery_state FROM telegram_updates WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        ).fetchone()
+        messages = connection.execute(
+            "SELECT run_id,role,content FROM messages WHERE session_id=? ORDER BY sequence",
+            (update["session_id"],),
+        ).fetchall()
+    assert update["run_id"] is None
+    assert update["delivery_state"] == "sent"
+    assert [(row["run_id"], row["role"], row["content"]) for row in messages] == [
+        (
+            None,
+            "assistant",
+            "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image.",
+        )
+    ]
+
+
 def test_abandoned_send_intent_becomes_unknown_after_restart(workspace_tmp_path: Path) -> None:
     runs = RunStore(workspace_tmp_path / "telegram-recovery.sqlite3")
     channel = TelegramStore(runs)

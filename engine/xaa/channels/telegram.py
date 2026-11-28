@@ -419,6 +419,10 @@ class TelegramStore:
         state = "sent" if resolution == "delivered" else "pending"
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT session_id,state FROM telegram_updates WHERE account_id=? AND update_id=? AND delivery_state='unknown'",
+                (account_id, update_id),
+            ).fetchone()
             changed = connection.execute(
                 "UPDATE telegram_updates SET delivery_state=?,updated_at=? WHERE account_id=? AND update_id=? AND delivery_state='unknown'",
                 (state, now, account_id, update_id),
@@ -429,6 +433,27 @@ class TelegramStore:
                 "INSERT INTO telegram_delivery_reconciliations (id,account_id,update_id,resolution,resolved_at) VALUES (?,?,?,?,?)",
                 (str(uuid4()), account_id, update_id, resolution, now),
             )
+            if (
+                resolution == "delivered"
+                and row is not None
+                and row["session_id"] is not None
+                and row["state"] in {"vision_unavailable", "image_invalid"}
+            ):
+                content = (
+                    "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
+                    if row["state"] == "vision_unavailable"
+                    else "I couldn't read that image. Send a valid PNG or JPEG image within the documented size and dimension limits."
+                )
+                session_id = str(row["session_id"])
+                sequence = connection.execute(
+                    "SELECT COALESCE(MAX(sequence),0)+1 FROM messages WHERE session_id=?",
+                    (session_id,),
+                ).fetchone()[0]
+                connection.execute(
+                    "INSERT INTO messages (id,session_id,run_id,sequence,role,content,created_at) VALUES (?,?,NULL,?,'assistant',?,?)",
+                    (str(uuid4()), session_id, sequence, content, now),
+                )
+                connection.execute("UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id))
         return True
 
     def current_offset(self, account_id: str, now: datetime | None = None) -> int | None:

@@ -73,7 +73,9 @@ class AcceptingTelegramApi(TelegramBotApi):
         return 73
 
 
-def prepare_database(root: Path, *, scheduled: bool) -> tuple[str, str | None]:
+def prepare_database(
+    root: Path, *, scheduled: bool, image_rejection: bool
+) -> tuple[str | None, str | None]:
     runs = RunStore(root / "runs.sqlite3")
     channel = TelegramStore(runs)
     channel.save_bot(IDENTITY)
@@ -124,6 +126,24 @@ def prepare_database(root: Path, *, scheduled: bool) -> tuple[str, str | None]:
             raise RuntimeError("The scheduled delivery execution was not persisted.")
         execution_id = str(row["id"])
         expected_text = "Scheduled result."
+    elif image_rejection:
+        queued = channel.process_update(
+            IDENTITY,
+            {
+                "update_id": 2,
+                "message": {
+                    "photo": [{"file_id": "diagnostic-image"}],
+                    "from": {"id": 9001},
+                    "chat": {"id": 9001, "type": "private"},
+                },
+            },
+            model=None,
+            image_rejection="vision_unavailable",
+        )
+        if queued["state"] != "vision_unavailable" or queued["run_id"] is not None:
+            raise RuntimeError("Could not prepare the runless image rejection fixture.")
+        run_id = None
+        expected_text = "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
     else:
         queued = channel.process_update(
             IDENTITY,
@@ -139,16 +159,17 @@ def prepare_database(root: Path, *, scheduled: bool) -> tuple[str, str | None]:
         )
         run_id = str(queued["run_id"])
         expected_text = "Diagnostic result."
-    with runs.connection() as connection:
-        connection.execute(
-            "UPDATE runs SET state='completed',updated_at=? WHERE id=?", (utc_now(), run_id)
-        )
-        RunStore.record_event(
-            connection,
-            run_id,
-            "model.message",
-            {"message": {"role": "assistant", "content": expected_text}},
-        )
+    if run_id is not None:
+        with runs.connection() as connection:
+            connection.execute(
+                "UPDATE runs SET state='completed',updated_at=? WHERE id=?", (utc_now(), run_id)
+            )
+            RunStore.record_event(
+                connection,
+                run_id,
+                "model.message",
+                {"message": {"role": "assistant", "content": expected_text}},
+            )
     return run_id, execution_id
 
 
@@ -165,15 +186,17 @@ def make_service(root: Path, *, block_after_accept: bool) -> TelegramService:
     )
 
 
-def child(root: Path, *, scheduled: bool) -> None:
-    del scheduled
+def child(root: Path) -> None:
     asyncio.run(make_service(root, block_after_accept=True).cycle())
 
 
 def main() -> None:
     scheduled = "--scheduled" in sys.argv
+    image_rejection = "--image-rejection" in sys.argv
+    if scheduled and image_rejection:
+        raise RuntimeError("Choose one Telegram delivery scenario.")
     if "--child" in sys.argv:
-        child(Path(sys.argv[sys.argv.index("--child") + 1]), scheduled=scheduled)
+        child(Path(sys.argv[sys.argv.index("--child") + 1]))
         return
     if "--reconcile" in sys.argv:
         root = Path(sys.argv[sys.argv.index("--reconcile") + 1])
@@ -184,7 +207,9 @@ def main() -> None:
     root.mkdir(parents=True)
     accepted_log = root / "accepted.jsonl"
     accepted_log.write_text("", encoding="utf-8")
-    run_id, execution_id = prepare_database(root, scheduled=scheduled)
+    run_id, execution_id = prepare_database(
+        root, scheduled=scheduled, image_rejection=image_rejection
+    )
     with (root / "worker.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
             [
@@ -257,6 +282,27 @@ def main() -> None:
     with reopened.connection() as connection:
         if scheduled:
             assert execution_id is not None
+            state_after_restart = str(
+                connection.execute(
+                    "SELECT state FROM schedule_deliveries WHERE execution_id=?",
+                    (execution_id,),
+                ).fetchone()[0]
+            )
+        else:
+            state_after_restart = str(
+                connection.execute(
+                    "SELECT delivery_state FROM telegram_updates WHERE account_id=? AND update_id=2",
+                    (IDENTITY.account_id,),
+                ).fetchone()[0]
+            )
+    runless_saved_message = False
+    if image_rejection:
+        reopened_channel = TelegramStore(reopened)
+        if not reopened_channel.reconcile_delivery(IDENTITY.account_id, 2, "delivered"):
+            raise RuntimeError("Could not owner-reconcile the accepted image notice.")
+    with reopened.connection() as connection:
+        if scheduled:
+            assert execution_id is not None
             after_reconcile = str(
                 connection.execute(
                     "SELECT state FROM schedule_deliveries WHERE execution_id=?",
@@ -270,28 +316,62 @@ def main() -> None:
                     (IDENTITY.account_id,),
                 ).fetchone()[0]
             )
+        if image_rejection:
+            row = connection.execute(
+                "SELECT session_id,run_id FROM telegram_updates WHERE account_id=? AND update_id=2",
+                (IDENTITY.account_id,),
+            ).fetchone()
+            if row is None or row["run_id"] is not None:
+                raise RuntimeError("Runless image rejection unexpectedly created a run.")
+            saved = connection.execute(
+                "SELECT content FROM messages WHERE session_id=? AND role='assistant' ORDER BY sequence DESC LIMIT 1",
+                (row["session_id"],),
+            ).fetchone()
+            runless_saved_message = bool(
+                saved is not None
+                and saved["content"]
+                == "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
+            )
     passed = (
         before_reconcile == "sending"
-        and after_reconcile == "unknown"
+        and state_after_restart == "unknown"
+        and after_reconcile == ("sent" if image_rejection else "unknown")
         and len(accepted_before) == 1
         and accepted_after == accepted_before
         and json.loads(accepted_after[0])
         == {
             "sequence": 1,
             "chat_id": "9001",
-            "text": "Scheduled result." if scheduled else "Diagnostic result.",
+            "text": (
+                "Scheduled result."
+                if scheduled
+                else "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
+                if image_rejection
+                else "Diagnostic result."
+            ),
         }
+        and (not image_rejection or runless_saved_message)
     )
     report: dict[str, Any] = {
         "passed": passed,
         "transport": "deterministic fsynced local acceptor; no Telegram endpoint or bot used",
         "crash_boundary": "send accepted durably before delivery journal completion; reconciled in a fresh process",
-        "delivery_kind": "scheduled outbox" if scheduled else "inbound reply",
+        "delivery_kind": (
+            "scheduled outbox"
+            if scheduled
+            else "runless image rejection"
+            if image_rejection
+            else "inbound reply"
+        ),
         "run_id": run_id,
         "delivery_state_before_restart": before_reconcile,
-        "delivery_state_after_restart": after_reconcile,
+        "delivery_state_after_restart": state_after_restart,
+        "delivery_state_after_owner_reconciliation": after_reconcile if image_rejection else None,
         "accepted_effects_before_restart": len(accepted_before),
         "accepted_effects_after_restart": len(accepted_after),
+        "runless_notice_saved_after_owner_reconciliation": runless_saved_message
+        if image_rejection
+        else None,
     }
     (root / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({**report, "evidence": str(root)}, indent=2))
