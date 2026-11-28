@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from xaa.api.app import create_app
 from xaa.channels.telegram import (
+    MAX_TELEGRAM_RESPONSE_BYTES,
     MAX_TEXT_CHARS,
     TELEGRAM_SEND_CONTRACT,
     TelegramApiError,
@@ -877,6 +878,33 @@ def test_telegram_api_uses_https_and_sanitizes_errors() -> None:
     asyncio.run(scenario())
     assert paths[0].startswith("https://api.telegram.org/bot")
     assert token in paths[0]  # Telegram Bot API authenticates in its HTTPS URL path.
+
+
+def test_telegram_api_response_is_bounded_and_owned_client_ignores_proxy_environment() -> None:
+    async def scenario() -> None:
+        api = TelegramBotApi(TOKEN)
+        try:
+            assert api.client._trust_env is False
+        finally:
+            await api.close()
+
+        async def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b" " * (MAX_TELEGRAM_RESPONSE_BYTES + 1))
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            api = TelegramBotApi(TOKEN, client=client)
+            try:
+                await api.get_me()
+            except TelegramApiError as failure:
+                assert not failure.definitive
+                assert "2 MiB" in str(failure)
+                assert TOKEN not in str(failure)
+            else:
+                raise AssertionError("Oversized Telegram response was accepted")
+
+    import asyncio
+
+    asyncio.run(scenario())
 
 
 def test_telegram_service_routes_paired_input_through_coordinator_and_delivers_once(

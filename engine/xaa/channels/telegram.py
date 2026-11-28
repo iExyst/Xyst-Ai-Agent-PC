@@ -27,6 +27,7 @@ OFFSET_RESET_AFTER = timedelta(days=6)
 MAX_TELEGRAM_RETRY_AFTER_SECONDS = 300
 TELEGRAM_API_TIMEOUT_SECONDS = 35
 TELEGRAM_API_CONNECT_TIMEOUT_SECONDS = 10
+MAX_TELEGRAM_RESPONSE_BYTES = 2 * 1024 * 1024
 TELEGRAM_SEND_CONTRACT: dict[str, Any] = {
     "name": "telegram.send_message",
     "version": "1",
@@ -106,7 +107,8 @@ class TelegramBotApi:
             timeout=httpx.Timeout(
                 TELEGRAM_API_TIMEOUT_SECONDS,
                 connect=TELEGRAM_API_CONNECT_TIMEOUT_SECONDS,
-            )
+            ),
+            trust_env=False,
         )
         self.owns_client = client is None
 
@@ -124,25 +126,45 @@ class TelegramBotApi:
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]{0,63}", method):
             raise ValueError("Invalid Telegram method name.")
         try:
-            response = await self.client.post(
+            async with self.client.stream(
+                "POST",
                 f"https://api.telegram.org/bot{self.token}/{method}",
                 json=dict(payload or {}),
                 follow_redirects=False,
-            )
+            ) as response:
+                declared_length = response.headers.get("content-length")
+                if declared_length is not None:
+                    try:
+                        if int(declared_length) > MAX_TELEGRAM_RESPONSE_BYTES:
+                            raise TelegramApiError(
+                                "Telegram response exceeded the 2 MiB size limit.",
+                                definitive=False,
+                            )
+                    except ValueError:
+                        pass
+                body_bytes = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body_bytes.extend(chunk)
+                    if len(body_bytes) > MAX_TELEGRAM_RESPONSE_BYTES:
+                        raise TelegramApiError(
+                            "Telegram response exceeded the 2 MiB size limit.",
+                            definitive=False,
+                        )
+                status_code = response.status_code
         except httpx.HTTPError:
             raise TelegramApiError(
                 "Telegram request failed before a response was received.", definitive=False
             ) from None
         try:
-            body = as_mapping(response.json())
+            body = as_mapping(json.loads(body_bytes))
         except ValueError as exc:
             raise TelegramApiError(
                 "Telegram returned an invalid response.", definitive=False
             ) from exc
         error_code = body.get("error_code") if body is not None else None
-        if response.status_code >= 500 or (type(error_code) is int and error_code >= 500):
+        if status_code >= 500 or (type(error_code) is int and error_code >= 500):
             raise TelegramApiError("Telegram service returned a server error.", definitive=False)
-        if response.status_code == 429 or error_code == 429:
+        if status_code == 429 or error_code == 429:
             parameters = as_mapping(body.get("parameters")) if body is not None else None
             retry_after = parameters.get("retry_after") if parameters is not None else None
             delay = (

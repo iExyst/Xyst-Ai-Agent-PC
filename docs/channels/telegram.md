@@ -1,6 +1,6 @@
 # Telegram channel setup and operation
 
-X.A.A. supports a first, text-only Telegram Bot API adapter. Telegram Bot API requests use HTTPS and the official `getMe`, `getUpdates`, and `sendMessage` methods. See the [Telegram Bot API documentation](https://core.telegram.org/bots/api).
+X.A.A. supports a first, text-only Telegram Bot API adapter. Telegram Bot API requests use HTTPS and the official `getMe`, `getUpdates`, and `sendMessage` methods. The client ignores environment proxy settings so the bot token in the HTTPS URL is not routed through an ambient proxy, disables redirects, and caps each response at 2 MiB. See the [Telegram Bot API documentation](https://core.telegram.org/bots/api).
 
 ## Configure the bot
 
