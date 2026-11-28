@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import logging
 import re
 import sqlite3
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Self, cast
@@ -28,6 +29,7 @@ MAX_TELEGRAM_RETRY_AFTER_SECONDS = 300
 TELEGRAM_API_TIMEOUT_SECONDS = 35
 TELEGRAM_API_CONNECT_TIMEOUT_SECONDS = 10
 MAX_TELEGRAM_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_TELEGRAM_IMAGE_BYTES = 3 * 1024 * 1024
 TELEGRAM_SEND_CONTRACT: dict[str, Any] = {
     "name": "telegram.send_message",
     "version": "1",
@@ -200,6 +202,57 @@ class TelegramBotApi:
             raise TelegramApiError("Telegram returned malformed updates.", definitive=False)
         return [cast(dict[str, Any], item) for item in updates]
 
+    async def get_file(self, file_id: str) -> str:
+        if not file_id or len(file_id) > 512:
+            raise TelegramApiError("Telegram returned an invalid image reference.", definitive=True)
+        result = as_mapping(await self.call("getFile", {"file_id": file_id}))
+        path = result.get("file_path") if result is not None else None
+        if (
+            not isinstance(path, str)
+            or len(path) > 1024
+            or path.startswith("/")
+            or "\\" in path
+            or "%" in path
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+            or re.fullmatch(r"[A-Za-z0-9_./-]+", path) is None
+        ):
+            raise TelegramApiError("Telegram returned an invalid image path.", definitive=True)
+        return path
+
+    async def download_file(self, path: str) -> bytes:
+        if (
+            not path
+            or path.startswith("/")
+            or "\\" in path
+            or "%" in path
+            or any(part in {"", ".", ".."} for part in path.split("/"))
+            or re.fullmatch(r"[A-Za-z0-9_./-]+", path) is None
+        ):
+            raise ValueError("Invalid Telegram file path.")
+        try:
+            async with self.client.stream(
+                "GET",
+                f"https://api.telegram.org/file/bot{self.token}/{path}",
+                follow_redirects=False,
+            ) as response:
+                if response.status_code != 200:
+                    raise TelegramApiError("Telegram image download failed.", definitive=False)
+                declared = response.headers.get("content-length")
+                if declared is not None and int(declared) > MAX_TELEGRAM_IMAGE_BYTES:
+                    raise TelegramApiError(
+                        "Telegram image exceeds the 3 MiB limit.", definitive=True
+                    )
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > MAX_TELEGRAM_IMAGE_BYTES:
+                        raise TelegramApiError(
+                            "Telegram image exceeds the 3 MiB limit.", definitive=True
+                        )
+                return bytes(body)
+        except (httpx.HTTPError, ValueError):
+            raise TelegramApiError("Telegram image download failed.", definitive=False) from None
+
     async def send_message(self, chat_id: str, text: str) -> int:
         result = as_mapping(
             await self.call(
@@ -244,6 +297,29 @@ class TelegramStore:
             connection.execute(
                 "INSERT INTO telegram_bots (account_id,username,created_at,updated_at) VALUES (?,?,?,?) ON CONFLICT(account_id) DO UPDATE SET username=excluded.username,updated_at=excluded.updated_at",
                 (identity.account_id, identity.username, now, now),
+            )
+
+    def is_authorized_private_update(
+        self, identity: TelegramIdentity, update: Mapping[str, Any]
+    ) -> bool:
+        message = as_mapping(update.get("message"))
+        user = as_mapping(message.get("from")) if message else None
+        chat = as_mapping(message.get("chat")) if message else None
+        user_id = user.get("id") if user else None
+        if (
+            type(user_id) is not int
+            or not chat
+            or chat.get("type") != "private"
+            or chat.get("id") != user_id
+        ):
+            return False
+        with self.runs.connection() as connection:
+            return (
+                connection.execute(
+                    "SELECT 1 FROM channel_bindings WHERE channel='telegram' AND account_id=? AND external_identity=? AND authorized=1",
+                    (identity.account_id, str(user_id)),
+                ).fetchone()
+                is not None
             )
 
     def revoke_users(self, account_id: str) -> int:
@@ -378,6 +454,9 @@ class TelegramStore:
         update: Mapping[str, Any],
         *,
         model: str | None,
+        image_bytes: bytes | None = None,
+        image_media_type: str | None = None,
+        reject_image: bool = False,
     ) -> dict[str, Any]:
         update_id = update.get("update_id")
         if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
@@ -404,7 +483,16 @@ class TelegramStore:
         state = "ignored"
         session_id: str | None = None
         delivery_state: str | None = None
-        content = text.strip() if isinstance(text, str) else ""
+        caption = message.get("caption") if isinstance(message, dict) else None
+        content = (
+            text.strip()
+            if isinstance(text, str)
+            else caption.strip()
+            if isinstance(caption, str)
+            else ""
+        )
+        if image_bytes is not None and not content:
+            content = "Describe the attached image."
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             inserted = connection.execute(
@@ -422,7 +510,7 @@ class TelegramStore:
                 )
                 return {"state": previous["state"], "run_id": previous["run_id"], "duplicate": True}
 
-            if private and content:
+            if private and (content or image_bytes is not None or reject_image):
                 pair_match = PAIR_COMMAND.fullmatch(content)
                 if pair_match is not None:
                     code_hash = self.hash_pairing_code(pair_match.group(1))
@@ -479,7 +567,9 @@ class TelegramStore:
                     ).fetchone()
                     if binding is not None:
                         session_id = str(binding["session_id"])
-                        if model is None:
+                        if reject_image:
+                            state = "vision_unavailable"
+                        elif model is None:
                             state = "model_unavailable"
                         elif len(content) > MAX_TEXT_CHARS:
                             state = "message_too_long"
@@ -522,6 +612,45 @@ class TelegramStore:
                                 "INSERT INTO run_limits VALUES (?,?,?)", (run_id, 8, 900)
                             )
                             connection.execute("INSERT INTO run_checks VALUES (?, '[]')", (run_id,))
+                            if image_bytes is not None:
+                                if (
+                                    image_media_type not in {"image/png", "image/jpeg"}
+                                    or not image_bytes
+                                    or len(image_bytes) > MAX_TELEGRAM_IMAGE_BYTES
+                                    or not image_bytes.startswith(
+                                        b"\x89PNG\r\n\x1a\n"
+                                        if image_media_type == "image/png"
+                                        else b"\xff\xd8\xff"
+                                    )
+                                ):
+                                    raise ValueError(
+                                        "Telegram image failed media or size validation."
+                                    )
+                                artifact_id = str(uuid4())
+                                extension = "png" if image_media_type == "image/png" else "jpg"
+                                artifact_name = f"{uuid4().hex}.{extension}"
+                                artifact_dir = self.runs.path.parent / "artifacts"
+                                artifact_dir.mkdir(parents=True, exist_ok=True)
+                                with (artifact_dir / artifact_name).open("xb") as artifact_file:
+                                    artifact_file.write(image_bytes)
+                                connection.execute(
+                                    "INSERT INTO artifacts (id,run_id,task_id,media_type,storage_key,size_bytes,sha256,provenance,created_at,original_filename) VALUES (?, ?, NULL, ?, ?, ?, ?, 'user.input_image', ?, NULL)",
+                                    (
+                                        artifact_id,
+                                        run_id,
+                                        image_media_type,
+                                        artifact_name,
+                                        len(image_bytes),
+                                        hashlib.sha256(image_bytes).hexdigest(),
+                                        now,
+                                    ),
+                                )
+                                RunStore.record_event(
+                                    connection,
+                                    run_id,
+                                    "run.image_attached",
+                                    {"artifact_id": artifact_id, "media_type": image_media_type},
+                                )
                             connection.execute(
                                 "UPDATE sessions SET updated_at=? WHERE id=?", (now, session_id)
                             )
@@ -836,12 +965,14 @@ class TelegramService:
         submit: Callable[[str], None],
         *,
         api_factory: Callable[[str], TelegramBotApi] = TelegramBotApi,
+        model_catalog: Callable[[], Awaitable[list[Any]]] | None = None,
     ) -> None:
         self.runs = runs
         self.store = TelegramStore(runs)
         self.credentials = credentials
         self.submit = submit
         self.api_factory = api_factory
+        self.model_catalog = model_catalog
         self.task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -879,10 +1010,79 @@ class TelegramService:
                     selected = connection.execute(
                         "SELECT selected_model FROM provider_profiles WHERE id='lm-studio'"
                     ).fetchone()
+                selected_model = str(selected[0]) if selected and selected[0] else None
+                image_bytes: bytes | None = None
+                image_media_type: str | None = None
+                reject_image = False
+                message = as_mapping(update.get("message"))
+                photos = message.get("photo") if message else None
+                if (
+                    isinstance(photos, list)
+                    and photos
+                    and self.store.is_authorized_private_update(identity, update)
+                ):
+                    vision_ready = False
+                    if selected_model is not None and self.model_catalog is not None:
+                        try:
+                            models = await self.model_catalog()
+                            vision_ready = any(
+                                getattr(item, "id", None) == selected_model
+                                and getattr(getattr(item, "capabilities", None), "vision", False)
+                                for item in models
+                            )
+                        except (RuntimeError, ValueError, OSError):
+                            vision_ready = False
+                    if not vision_ready:
+                        reject_image = True
+                    else:
+                        raw_photos = cast(list[object], photos)
+                        photo_entries = [as_mapping(item) for item in raw_photos]
+                        photo_entries = [entry for entry in photo_entries if entry is not None]
+
+                        def photo_area(item: Mapping[str, Any]) -> int:
+                            width, height = item.get("width"), item.get("height")
+                            return (
+                                width * height
+                                if type(width) is int
+                                and type(height) is int
+                                and width > 0
+                                and height > 0
+                                else 0
+                            )
+
+                        best = max(
+                            photo_entries,
+                            key=photo_area,
+                            default=None,
+                        )
+                        file_id = best.get("file_id") if best else None
+                        file_size = best.get("file_size") if best else None
+                        if isinstance(file_id, str) and (
+                            file_size is None
+                            or (type(file_size) is int and file_size <= MAX_TELEGRAM_IMAGE_BYTES)
+                        ):
+                            path = await api.get_file(file_id)
+                            raw_image = await api.download_file(path)
+                            from xaa.runtime.image_input import decode_run_image_data_url
+
+                            try:
+                                image_bytes, image_media_type, _, _ = decode_run_image_data_url(
+                                    "data:image/jpeg;base64,"
+                                    + base64.b64encode(raw_image).decode("ascii")
+                                )
+                            except ValueError:
+                                reject_image = True
+                                image_bytes = None
+                                image_media_type = None
+                        else:
+                            reject_image = True
                 result = self.store.process_update(
                     identity,
                     update,
-                    model=str(selected[0]) if selected and selected[0] else None,
+                    model=selected_model,
+                    image_bytes=image_bytes,
+                    image_media_type=image_media_type,
+                    reject_image=reject_image,
                 )
                 if result["run_id"]:
                     self.submit(str(result["run_id"]))

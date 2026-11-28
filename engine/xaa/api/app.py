@@ -1093,7 +1093,12 @@ def create_app(
     schedule_service = ScheduleService(run_store, supervisor.submit)
     telegram_store = TelegramStore(run_store)
     telegram_service = (
-        TelegramService(run_store, credential_store, supervisor.submit)
+        TelegramService(
+            run_store,
+            credential_store,
+            supervisor.submit,
+            model_catalog=provider.models,
+        )
         if credential_store is not None
         else None
     )

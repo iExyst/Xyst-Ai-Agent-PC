@@ -158,6 +158,64 @@ def test_pairing_authorizes_private_user_and_duplicate_updates_create_one_run(
         assert connection.execute("SELECT next_offset FROM telegram_offsets").fetchone()[0] == 3
 
 
+def test_paired_private_photo_is_attached_once_to_the_durable_run(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "telegram-photo.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store)
+    update = {
+        "update_id": 2,
+        "message": {
+            "photo": [{"file_id": "fixture-file"}],
+            "caption": "What is in this picture?",
+            "from": {"id": 123},
+            "chat": {"id": 123, "type": "private"},
+        },
+    }
+    image = b"\x89PNG\r\n\x1a\nfixture"
+    first = store.process_update(
+        IDENTITY, update, model="fixture/vision", image_bytes=image, image_media_type="image/png"
+    )
+    duplicate = store.process_update(
+        IDENTITY, update, model="fixture/vision", image_bytes=image, image_media_type="image/png"
+    )
+    assert first["state"] == "queued"
+    assert duplicate["duplicate"] is True
+    assert (
+        runs.image_data_url(str(first["run_id"]))
+        == "data:image/png;base64," + __import__("base64").b64encode(image).decode()
+    )
+    with runs.connection() as connection:
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM artifacts WHERE provenance='user.input_image'"
+            ).fetchone()[0]
+            == 1
+        )
+
+
+def test_paired_private_photo_without_vision_capability_creates_no_run(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "telegram-photo-no-vision.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store)
+    update = {
+        "update_id": 2,
+        "message": {
+            "photo": [{"file_id": "fixture-file"}],
+            "from": {"id": 123},
+            "chat": {"id": 123, "type": "private"},
+        },
+    }
+    result = store.process_update(IDENTITY, update, model="fixture/text", reject_image=True)
+    assert result["state"] == "vision_unavailable"
+    with runs.connection() as connection:
+        assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+        assert connection.execute("SELECT count(*) FROM artifacts").fetchone()[0] == 0
+
+
 def test_unpaired_users_and_group_chats_cannot_create_runs(workspace_tmp_path: Path) -> None:
     runs = RunStore(workspace_tmp_path / "telegram-auth.sqlite3")
     channel = TelegramStore(runs)
@@ -640,6 +698,112 @@ def test_telegram_rate_limit_exposes_only_bounded_retry_delay() -> None:
     import asyncio
 
     asyncio.run(scenario())
+
+
+def test_telegram_image_download_uses_fixed_host_and_enforces_size_limit() -> None:
+    import asyncio
+
+    async def scenario() -> None:
+        requests: list[httpx.Request] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            if request.url.path.endswith("/getFile"):
+                return httpx.Response(
+                    200, json={"ok": True, "result": {"file_path": "photos/image.jpg"}}
+                )
+            if request.url.path.endswith("/photos/large.jpg"):
+                return httpx.Response(200, headers={"content-length": str(3 * 1024 * 1024 + 1)})
+            return httpx.Response(200, content=b"\xff\xd8\xfffixture")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            api = TelegramBotApi("fixture-token", client=client)
+            path = await api.get_file("fixture-file-id")
+            content = await api.download_file(path)
+            assert content == b"\xff\xd8\xfffixture"
+            assert all(request.url.host == "api.telegram.org" for request in requests)
+            assert requests[-1].url.path.endswith("/file/botfixture-token/photos/image.jpg")
+            try:
+                await api.download_file("../outside.jpg")
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("Traversal image path was accepted")
+            try:
+                await api.download_file("photos/large.jpg")
+            except TelegramApiError as failure:
+                assert failure.definitive
+            else:
+                raise AssertionError("Oversized Telegram image was accepted")
+
+    asyncio.run(scenario())
+
+
+def test_service_cycle_routes_vision_capable_private_photo_to_shared_run(
+    workspace_tmp_path: Path,
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    runs = RunStore(workspace_tmp_path / "telegram-photo-cycle.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store)
+    with runs.connection() as connection:
+        now = utc_now()
+        connection.execute(
+            "INSERT INTO provider_profiles VALUES ('lm-studio','lm-studio','http://127.0.0.1:1234','fixture/vision',NULL,NULL,?,?)",
+            (now, now),
+        )
+    update = {
+        "update_id": 2,
+        "message": {
+            "photo": [{"file_id": "fixture-file", "width": 1, "height": 1}],
+            "from": {"id": 123},
+            "chat": {"id": 123, "type": "private"},
+        },
+    }
+
+    class FixtureApi(FakeTelegramBotApi):
+        async def get_updates(self, _offset):
+            return [update]
+
+        async def get_file(self, _file_id):
+            return "photos/fixture.jpg"
+
+        async def download_file(self, _path):
+            return b"\xff\xd8\xfffixture-image"
+
+    class Credentials(MemoryCredentials):
+        def __init__(self) -> None:
+            super().__init__()
+            self.values["telegram-bot"] = "fixture-token"
+
+    submitted: list[str] = []
+    service = TelegramService(
+        runs,
+        Credentials(),
+        submitted.append,
+        api_factory=FixtureApi,
+        model_catalog=lambda: asyncio.sleep(
+            0,
+            result=[
+                SimpleNamespace(id="fixture/vision", capabilities=SimpleNamespace(vision=True))
+            ],
+        ),
+    )
+    asyncio.run(service.cycle())
+    with runs.connection() as connection:
+        row = connection.execute(
+            "SELECT run_id,state FROM telegram_updates WHERE account_id=? AND update_id=2",
+            (IDENTITY.account_id,),
+        ).fetchone()
+    assert row["state"] == "queued"
+    assert submitted == [row["run_id"]]
+    assert (
+        runs.image_data_url(str(row["run_id"]))
+        == "data:image/jpeg;base64,"
+        + __import__("base64").b64encode(b"\xff\xd8\xfffixture-image").decode()
+    )
 
 
 def test_telegram_rate_limit_above_policy_bound_is_not_retryable() -> None:
