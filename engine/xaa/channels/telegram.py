@@ -456,7 +456,7 @@ class TelegramStore:
         model: str | None,
         image_bytes: bytes | None = None,
         image_media_type: str | None = None,
-        reject_image: bool = False,
+        image_rejection: str | None = None,
     ) -> dict[str, Any]:
         update_id = update.get("update_id")
         if isinstance(update_id, bool) or not isinstance(update_id, int) or update_id < 0:
@@ -510,7 +510,7 @@ class TelegramStore:
                 )
                 return {"state": previous["state"], "run_id": previous["run_id"], "duplicate": True}
 
-            if private and (content or image_bytes is not None or reject_image):
+            if private and (content or image_bytes is not None or image_rejection is not None):
                 pair_match = PAIR_COMMAND.fullmatch(content)
                 if pair_match is not None:
                     code_hash = self.hash_pairing_code(pair_match.group(1))
@@ -567,8 +567,10 @@ class TelegramStore:
                     ).fetchone()
                     if binding is not None:
                         session_id = str(binding["session_id"])
-                        if reject_image:
-                            state = "vision_unavailable"
+                        if image_rejection is not None:
+                            if image_rejection not in {"vision_unavailable", "image_invalid"}:
+                                raise ValueError("Unsupported Telegram image rejection reason.")
+                            state = image_rejection
                             delivery_state = "pending"
                         elif model is None:
                             state = "model_unavailable"
@@ -671,7 +673,7 @@ class TelegramStore:
         with self.runs.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT u.update_id,u.chat_id,u.run_id,u.state,r.state AS run_state FROM telegram_updates u LEFT JOIN runs r ON r.id=u.run_id WHERE u.account_id=? AND u.delivery_state='pending' AND (u.state='vision_unavailable' OR r.state IN (?,?,?,?)) ORDER BY u.update_id LIMIT 1",
+                "SELECT u.update_id,u.chat_id,u.run_id,u.state,r.state AS run_state FROM telegram_updates u LEFT JOIN runs r ON r.id=u.run_id WHERE u.account_id=? AND u.delivery_state='pending' AND (u.state IN ('vision_unavailable','image_invalid') OR r.state IN (?,?,?,?)) ORDER BY u.update_id LIMIT 1",
                 (
                     account_id,
                     RunState.COMPLETED.value,
@@ -684,6 +686,8 @@ class TelegramStore:
                 return None
             if str(row["state"]) == "vision_unavailable":
                 text = "I couldn't accept that image. Choose a vision-capable model and send a valid PNG or JPEG image."
+            elif str(row["state"]) == "image_invalid":
+                text = "I couldn't read that image. Send a valid PNG or JPEG image within the documented size and dimension limits."
             else:
                 events = connection.execute(
                     "SELECT payload FROM run_events WHERE run_id=? AND event_type='model.message' ORDER BY sequence DESC",
@@ -1025,7 +1029,7 @@ class TelegramService:
                 selected_model = str(selected[0]) if selected and selected[0] else None
                 image_bytes: bytes | None = None
                 image_media_type: str | None = None
-                reject_image = False
+                image_rejection: str | None = None
                 message = as_mapping(update.get("message"))
                 photos = message.get("photo") if message else None
                 if (
@@ -1045,7 +1049,7 @@ class TelegramService:
                         except (RuntimeError, ValueError, OSError):
                             vision_ready = False
                     if not vision_ready:
-                        reject_image = True
+                        image_rejection = "vision_unavailable"
                     else:
                         raw_photos = cast(list[object], photos)
                         photo_entries = [as_mapping(item) for item in raw_photos]
@@ -1083,18 +1087,18 @@ class TelegramService:
                                     + base64.b64encode(raw_image).decode("ascii")
                                 )
                             except ValueError:
-                                reject_image = True
+                                image_rejection = "image_invalid"
                                 image_bytes = None
                                 image_media_type = None
                         else:
-                            reject_image = True
+                            image_rejection = "image_invalid"
                 result = self.store.process_update(
                     identity,
                     update,
                     model=selected_model,
                     image_bytes=image_bytes,
                     image_media_type=image_media_type,
-                    reject_image=reject_image,
+                    image_rejection=image_rejection,
                 )
                 if result["run_id"]:
                     self.submit(str(result["run_id"]))

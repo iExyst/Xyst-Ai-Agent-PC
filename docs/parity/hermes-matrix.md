@@ -2,6 +2,10 @@
 
 Paired private users receive a fixed explanation when a photo cannot be processed because vision is unavailable or image validation fails. The runless notice uses the same durable outbox, update deduplication, and unknown-delivery reconciliation as run replies, and a confirmed sent notice is retained in session history without a run association. Focused Telegram tests (31), Ruff, production Pyright and diff checks pass. Exact-source Windows workflow [46099486225](https://github.com/iExyst/Xyst-Ai-Agent-PC/actions/runs/46099486225) passed on `9d2d770f` with 1,858 tests passed and 50 skipped, plus configured browser/static, official A2A SDK, and process-recovery checks. No live bot was used. This improves the implemented photo path but does not promote Telegram or Hermes channel parity beyond partial; live bot interoperability and other media remain open.
 
+## Distinguish invalid Telegram photos from unavailable vision (2026-11-28)
+
+The paired-user photo rejection flow now records distinct runless states for a model without vision capability and an invalid/oversized raster, and sends guidance appropriate to each cause through the durable outbox. Regressions verify the invalid-image notice does not tell a vision-capable user to change models; all 32 Telegram tests, Ruff, production Pyright and diff checks pass. Hosted verification is pending. No live bot was used; channel parity remains partial.
+
 ## Recheck local physical-microphone speech capture (2026-11-27)
 
 The user-authorized local Windows offline speech check listened for up to 35 seconds but received no audio signal: 280 level events, 0% peak, and `silent_input` ([report](../../.acceptance/windows-microphone-speech-95237a79-c08a-4e93-a8bb-61b4e45e03f4/report.json)). The native capture path separately verifies device selection and stream cleanup, and rejects silent capture without retaining or transcribing audio ([report](../../.acceptance/physical-microphone-1662cf86-7c18-440b-88c7-4b36089ad53e/report.json)). No audio was retained; no network or model inference occurred. This does not verify speech recognition or promote Hermes voice parity.

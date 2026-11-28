@@ -219,7 +219,9 @@ def test_paired_private_photo_without_vision_capability_creates_no_run(
             "chat": {"id": 123, "type": "private"},
         },
     }
-    result = store.process_update(IDENTITY, update, model="fixture/text", reject_image=True)
+    result = store.process_update(
+        IDENTITY, update, model="fixture/text", image_rejection="vision_unavailable"
+    )
     assert result["state"] == "vision_unavailable"
     delivery = store.claim_delivery(IDENTITY.account_id)
     assert delivery is not None
@@ -241,6 +243,33 @@ def test_paired_private_photo_without_vision_capability_creates_no_run(
                 "SELECT role,content,run_id FROM messages ORDER BY sequence DESC LIMIT 1"
             ).fetchone()
         ) == ("assistant", delivery["text"], None)
+
+
+def test_invalid_telegram_photo_notice_does_not_blame_model_capability(
+    workspace_tmp_path: Path,
+) -> None:
+    runs = RunStore(workspace_tmp_path / "telegram-photo-invalid.sqlite3")
+    store = TelegramStore(runs)
+    pair_user(store)
+    update = {
+        "update_id": 3,
+        "message": {
+            "photo": [{"file_id": "fixture-file"}],
+            "from": {"id": 123},
+            "chat": {"id": 123, "type": "private"},
+        },
+    }
+    result = store.process_update(
+        IDENTITY, update, model="fixture/vision", image_rejection="image_invalid"
+    )
+    assert result["state"] == "image_invalid"
+    delivery = store.claim_delivery(IDENTITY.account_id)
+    assert delivery is not None
+    assert "couldn't read that image" in delivery["text"]
+    assert "vision-capable" not in delivery["text"]
+    with runs.connection() as connection:
+        assert connection.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+        assert connection.execute("SELECT count(*) FROM artifacts").fetchone()[0] == 0
 
 
 def test_unpaired_users_and_group_chats_cannot_create_runs(workspace_tmp_path: Path) -> None:
